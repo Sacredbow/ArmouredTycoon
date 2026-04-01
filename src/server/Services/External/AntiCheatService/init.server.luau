@@ -7,7 +7,7 @@ local KickPlayer = Remotes.Interface:WaitForChild("KickPlayer")
 local LoggingEvent = ServerScriptService.Services.External.LogService:WaitForChild("Logging")
 local MaxSpeed = 36
 local MaxJumpHeight = 20
-local ViolationDecayTime = 10
+local ViolationDecayTime = 400
 
 
 
@@ -44,7 +44,7 @@ Players.PlayerAdded:Connect(function(Player)
 		end
 
 
-		local rayParams = RaycastParams.new()
+		
 		
 		local function CheckNoclip(lastPos, currentPos, character)
 			local direction = currentPos - lastPos

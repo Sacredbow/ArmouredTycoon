@@ -58,9 +58,7 @@ end
 function TycoonService:_OnPlayerRemoving(player)
 	local tycoon = self.TycoonsByOwner[player]
 	if tycoon then
-		warn("Got Tycoon")
-		tycoon:Cleanup()  
-		self.PlayerService:ResetTycoon(tycoon, player)
+		tycoon:Cleanup() 
 		self.TycoonsByOwner[player] = nil
 	end
 end

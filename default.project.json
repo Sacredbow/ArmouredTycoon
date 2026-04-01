@@ -5,6 +5,21 @@
 
     "ReplicatedStorage": {
    
+
+      "CharacterUtilities": {
+       
+        "$path": "src/shared/CharacterUtilities"
+      },
+
+         "Libraries": {
+       
+        "$path": "src/shared/Libraries"
+      },
+
+         "Modules": {
+       
+        "$path": "src/shared/Modules"
+      }
     },
 
     "ServerScriptService": {

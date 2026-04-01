@@ -2,7 +2,7 @@ local HTTPService = game:GetService("HttpService")
 
 
 local LoggingEvent =  Instance.new("BindableEvent")
-LoggingEvent.Name = "LoggingEvent"
+LoggingEvent.Name = "Logging"
 LoggingEvent.Parent = script
 
 

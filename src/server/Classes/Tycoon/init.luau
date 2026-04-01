@@ -18,6 +18,7 @@ local RocketSystem = require(ServerScriptService.Classes.Tycoon.Systems.Rocket)
 local TweenManager =  require(ReplicatedStorage.Modules.TweenManager) :: ModuleScript
 local ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 local ReloadConfiguation = require(script.Systems.ReloadConfig)
+local ColorConfiguration = require(script.Configuration.ColorConfiguration)
 
 local VisualEffects = GamePackage["Visual Effects"]
 
@@ -44,6 +45,7 @@ function Tycoon.new(tycoonModel, playerService, purchaseService, ragdollModule, 
 	self.Stages = tycoonModel:WaitForChild("Stages")
 	self.Buttons = tycoonModel:WaitForChild("Buttons")
 	self.PurchasedItems = tycoonModel:WaitForChild("PurchasedItems")
+	self.Droppers = tycoonModel:WaitForChild("Droppers")
 	self.GunModels = tycoonModel:WaitForChild("GunModels")
 	self.DropperPartsFolder = tycoonModel:FindFirstChild("DropperParts")
 	self.Components = tycoonModel:FindFirstChild("Components")
@@ -63,6 +65,7 @@ function Tycoon.new(tycoonModel, playerService, purchaseService, ragdollModule, 
 
 	self.x2Upgraders = {}
 	self.x3Upgraders = {}
+	self.MovedItems = {}
 
 
 	
@@ -74,6 +77,13 @@ function Tycoon.new(tycoonModel, playerService, purchaseService, ragdollModule, 
 	self.Rocket = self.Components.Rocket
 
 	self.IsSetup = false
+
+
+
+
+
+	self.ButtonTemplate  = self.Buttons:Clone() 
+	self.ButtonTemplate.Parent = nil
 
 	return self
 end
@@ -346,11 +356,11 @@ end
 
 
 function Tycoon:_FindTemplate(itemName)
-	local droppers = self.PurchasedItems:WaitForChild("Droppers")
-
-
-	local template = droppers:FindFirstChild(itemName)
-	if template then return template end
+	
+	local template = self.Droppers:FindFirstChild(itemName)
+	if template then
+		 return template
+	 end
 
 	
 	template = self.GunModels:FindFirstChild(itemName)
@@ -390,13 +400,89 @@ end
 function Tycoon:_SpawnItem(item)
 	if not item then return end
 
-
+	self:_CacheMovedItem(item)
 	item.Parent = self.PurchasedItems
 
 	
 	task.spawn(function()
 		self:_FadeInComplete(item)
 	end)
+end
+
+function Tycoon:_CacheMovedItem(item)
+	if self.MovedItems[item] then
+		return
+	end
+
+	self.MovedItems[item] = {
+		Parent = item.Parent,
+		Template = item:Clone(),
+	}
+
+	self.MovedItems[item].Template.Parent = nil
+end
+
+function Tycoon:_RestoreItemFromTemplate(item, template)
+	if item:IsA("Model") and template:IsA("Model") then
+		item:PivotTo(template:GetPivot())
+	elseif item:IsA("BasePart") and template:IsA("BasePart") then
+		item.CFrame = template.CFrame
+	end
+
+	if item:IsA("BasePart") and template:IsA("BasePart") then
+		item.Transparency = template.Transparency
+		item.CanCollide = template.CanCollide
+		item.Material = template.Material
+		item.Color = template.Color
+	elseif item:IsA("Decal") and template:IsA("Decal") then
+		item.Transparency = template.Transparency
+	elseif item:IsA("Texture") and template:IsA("Texture") then
+		item.Transparency = template.Transparency
+	elseif item:IsA("BillboardGui") and template:IsA("BillboardGui") then
+		item.Enabled = template.Enabled
+	elseif item:IsA("SurfaceGui") and template:IsA("SurfaceGui") then
+		item.Enabled = template.Enabled
+	elseif item:IsA("ProximityPrompt") and template:IsA("ProximityPrompt") then
+		item.Enabled = template.Enabled
+		item.ActionText = template.ActionText
+	elseif item:IsA("ParticleEmitter") and template:IsA("ParticleEmitter") then
+		item.Enabled = template.Enabled
+	elseif item:IsA("PointLight") and template:IsA("PointLight") then
+		item.Brightness = template.Brightness
+	end
+
+	local itemChildren = item:GetChildren()
+	local templateChildren = template:GetChildren()
+	for index, templateChild in ipairs(templateChildren) do
+		local itemChild = itemChildren[index]
+		if (not itemChild or itemChild.Name ~= templateChild.Name or itemChild.ClassName ~= templateChild.ClassName) then
+			itemChild = item:FindFirstChild(templateChild.Name)
+		end
+
+		if itemChild and itemChild.ClassName == templateChild.ClassName then
+			self:_RestoreItemFromTemplate(itemChild, templateChild)
+		end
+	end
+end
+
+function Tycoon:_RestoreMovedItems()
+	local movedItems = {}
+	for item, restoreData in self.MovedItems do
+		table.insert(movedItems, {Item = item, RestoreData = restoreData})
+	end
+
+	for _, entry in ipairs(movedItems) do
+		local item = entry.Item
+		local restoreData = entry.RestoreData
+
+		if item and item.Parent then
+			self:_RestoreItemFromTemplate(item, restoreData.Template)
+			item.Parent = restoreData.Parent
+		end
+
+		restoreData.Template:Destroy()
+		self.MovedItems[item] = nil
+	end
 end
 
 
@@ -608,7 +694,7 @@ function Tycoon:_FadeInComplete(dropper)
 	self.Dropper = dropper
 	if spawnPart and spawnPart:IsA("BasePart") then
 		task.spawn(function()
-			while dropper and dropper.Parent and spawnPart.Parent do
+			while self.Dropper do
 
 				local part = Instance.new("Part")
 				part.Size = Vector3.new(1,1,1)
@@ -748,19 +834,33 @@ function Tycoon:_SetupCollector()
 end
 
 function Tycoon:Cleanup()
+	local previousOwner = self.OwnerValue.Value
 
 	local door = self.MainItems.OwnerDoor.Door
 	local titleLabel = self.MainItems.OwnerDoor.Title.SurfaceGui.TextLabel
 	titleLabel.Text = "Unclaimed Tycoon"
-	door.Transparency = 0
-	door.CanCollide = true
+	door.Transparency = 0.25
+	
+	self.ATM.Display.SurfaceGui.Money.Text = "0"
+	self.CollectorAmount = 0
 
+	if self.Buttons then
+		self.Buttons:Destroy()
+
+		self.Buttons = self.ButtonTemplate:Clone()
+		self.Buttons.Parent = self.Model
+
+		self:_SetupButtons()
+	end
+
+	self.Dropper = nil
+
+	self:_RestoreMovedItems()
 
 	for _, item in ipairs(self.PurchasedItems:GetChildren()) do
-		if item:IsA("Model") or item:IsA("BasePart") or item:IsA("Folder") then
-			item:Destroy()
-		end
+		item:Destroy()
 	end
+
 
 
 	if self.DropperPartsFolder then
@@ -769,47 +869,9 @@ function Tycoon:Cleanup()
 		end
 	end
 
-
-	self.CollectorAmount = 0
-	if self.MoneyCollector and self.MoneyCollector:FindFirstChild("Display") then
-		local display = self.MoneyCollector.Display
-		if display:FindFirstChild("SurfaceGui") and display.SurfaceGui:FindFirstChild("Money") then
-			display.SurfaceGui.Money.Text = "0"
-		end
-	end
+	self.Dropper = nil
 	self.x2Upgraders = {}
 	self.x3Upgraders = {}
-
-
-	for _, button in ipairs(self.Buttons:GetChildren()) do
-		if button:IsA("BasePart") then
-			local dependencies = button:FindFirstChild("Dependencies")
-			local dependency = button:FindFirstChild("Dependency")
-			if dependencies or dependency then
-				button.Transparency = 1
-				button.CanCollide = false
-				local billboard = button:FindFirstChild("BillboardGui")
-				if billboard then billboard.Enabled = false end
-			else
-				button.Transparency = 0
-				button.CanCollide = true
-				local billboard = button:FindFirstChild("BillboardGui")
-				if billboard then billboard.Enabled = true end
-			end
-		end
-	end
-
-
-	for _, part in ipairs(self.PurchasedItems:GetDescendants()) do
-		if part:IsA("BasePart") and part:FindFirstChild("SwitchLight") then
-			part.Material = Enum.Material.SmoothPlastic
-			part.BrickColor = BrickColor.new("Dark stone grey")
-		end
-		if part:IsA("PointLight") then
-			part.Brightness = 0
-		end
-	end
-
 
 	local stage4 = self.Stages:FindFirstChild("Stage4")
 	if stage4 then
@@ -823,7 +885,23 @@ function Tycoon:Cleanup()
 		end
 	end
 
-	
+	local buttonStand = self.Components and self.Components:FindFirstChild("ButtonStand")
+	if buttonStand and buttonStand:FindFirstChild("Button") then
+		buttonStand.Button.BrickColor = BrickColor.new("Bright green")
+	end
+
+	if previousOwner then
+		local hasTycoon = previousOwner:FindFirstChild("hasTycoon")
+		if hasTycoon then
+			hasTycoon.Value = false
+		end
+
+		previousOwner:SetAttribute("Multiplier", 1)
+		previousOwner:SetAttribute("Power", false)
+		previousOwner:SetAttribute("ArmourEquipped", false)
+	end
+
+
 	self.OwnerValue.Value = nil
 
 
@@ -832,118 +910,72 @@ function Tycoon:Cleanup()
 		self.CharacterAddedConn = nil
 	end
 
-
-	if self.FriendBindable then
-		self.FriendBindable:Destroy()
-		self.FriendBindable = nil
-	end
-
-
-
-	if self.Dropper then
-		for _, v in ipairs(self.Dropper:GetDescendants()) do
-			if v:IsA("BasePart") or v:IsA("UnionOperation") then
-				v.Transparency = 1
-				v.CanCollide = false
-			end
-			if v:IsA("Decal") then
-				v.Transparency = 1
-			end
-			if v:IsA("BillboardGui") then
-				v.Enabled = false
-			end
-			if v:IsA("SurfaceGui") then
-				v.Enabled = false
-			end
-			if v:IsA("ProximityPrompt") then
-				v.Enabled = false
-			end
-			if v:IsA("ParticleEmitter") then
-				v.Enabled = false
-			end
-			if v:IsA("PointLight") then
-				v.Brightness = 0
-			end
-		end
-		self.Dropper = nil 
-	end
-	
-	
-
 	warn(`Cleanup complete: {self.Model.Name}`)
 end
 
 function Tycoon:_SetupUpgraders()
-	
-	local droppers = self.PurchasedItems:WaitForChild("Droppers")
+	for _, item in ipairs(self.Droppers:GetChildren()) do
+		self:_SetupUpgrader(item)
+	end
+end
 
-	
-	local basicUpgrader = droppers:FindFirstChild("BasicUpgrader")
-	if basicUpgrader then
-		local x2Part = basicUpgrader:FindFirstChild("x2")
-		if x2Part then
-			self.x2Upgraders["BasicUpgrader"] = x2Part
-			
-			local touched = false
-			x2Part.Touched:Connect(function(hit)
-				
-				if touched then return end
-				if x2Part.Transparency < 1 and hit.Name == "DropperPart" then
-
-			
-					local owner = self.OwnerValue.Value
-					local currentMultiplier = owner:GetAttribute("Multiplier")
-					
-					
-					if owner then
-						if currentMultiplier == 1 then
-							owner:SetAttribute("Multiplier", currentMultiplier * 2) 
-
-						else
-							
-							owner:SetAttribute("Multiplier", currentMultiplier + 2) 
-						end
-						touched = true
-					end
-			
-				end
-				
-			end)
-		end
+function Tycoon:_SetupUpgrader(dropper)
+	if not dropper or not dropper:IsA("Model") then
+		return
 	end
 
-	
-	local enhancedUpgrader = droppers:FindFirstChild("EnchancedUpgrader")
-	if enhancedUpgrader then
-		local x3Part : BasePart = enhancedUpgrader:FindFirstChild("x3")
-		if x3Part then
-			self.x3Upgraders["EnchancedUpgrader"] = x3Part
-			local touched = false
-			x3Part.Touched:Connect(function(hit)
-				
-				if touched then return end
-					if x3Part.Transparency < 1 and hit.Name == "DropperPart" then
-					
-						local owner = self.OwnerValue.Value
-					local currentMultiplier = owner:GetAttribute("Multiplier")
-						
-						if owner then
-							if currentMultiplier == 1 then
-							owner:SetAttribute("Multiplier", currentMultiplier * 3) 
-							
-							else
-								
-							owner:SetAttribute("Multiplier", currentMultiplier + 3) 
-							end
-						
-						touched = true
-						end
-					
-					end
-			
-			end)
-		
-		end
+	if dropper:GetAttribute("UpgraderSetup") then
+		return
+	end
+
+	local x2Part = dropper:FindFirstChild("x2")
+	if x2Part and dropper.Name == "BasicUpgrader" then
+		dropper:SetAttribute("UpgraderSetup", true)
+		self.x2Upgraders[dropper.Name] = x2Part
+
+		local touched = false
+		x2Part.Touched:Connect(function(hit)
+			if touched then return end
+			if x2Part.Transparency >= 1 or hit.Name ~= "DropperPart" then return end
+
+			local owner = self.OwnerValue.Value
+			if not owner then return end
+
+			local currentMultiplier = owner:GetAttribute("Multiplier") or 1
+			if currentMultiplier == 1 then
+				owner:SetAttribute("Multiplier", currentMultiplier * 2)
+			else
+				owner:SetAttribute("Multiplier", currentMultiplier + 2)
+			end
+
+			touched = true
+		end)
+
+		return
+	end
+
+	local x3Part = dropper:FindFirstChild("x3")
+	if x3Part and dropper.Name == "EnchancedUpgrader" then
+		dropper:SetAttribute("UpgraderSetup", true)
+		self.x3Upgraders[dropper.Name] = x3Part
+
+		local touched = false
+		x3Part.Touched:Connect(function(hit)
+			if touched then return end
+			if x3Part.Transparency >= 1 or hit.Name ~= "DropperPart" then return end
+
+			local owner = self.OwnerValue.Value
+			if not owner then return end
+
+			local currentMultiplier = owner:GetAttribute("Multiplier") or 1
+			if currentMultiplier == 1 then
+				owner:SetAttribute("Multiplier", currentMultiplier * 3)
+			else
+				owner:SetAttribute("Multiplier", currentMultiplier + 3)
+			end
+
+			touched = true
+		end)
 	end
 end
 

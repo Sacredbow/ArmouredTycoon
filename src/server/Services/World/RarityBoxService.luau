@@ -1,10 +1,9 @@
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 
 local RarityModule = require(ServerScriptService.Modules.RarityModule)
-local FollowService = require(ServerScriptService.Modules.FollowService)
+local FollowService = require(ServerScriptService.Services.External.FollowService)
 
 local SPAWN_INTERVAL = 60
 local BOX_LIFETIME = 30
@@ -16,6 +15,9 @@ local REWARDS = {
 	Mythical =  { cash = {100000, 180000}, emerald = {40, 80},   requiresFollow = true },
 	Divine =    { cash = {300000, 350000}, emerald = {80, 120},  requiresFollow = true },
 }
+
+local BoxRegistry = {} -- preventing multiple players
+
 
 local FOLLOW_IDS = {1372952359, 5330259633}
 
@@ -43,7 +45,7 @@ function RarityBoxService:_GiveReward(player, boxName)
 	if reward.requiresFollow then
 		local isFollowing = false
 		for _, id in ipairs(FOLLOW_IDS) do
-			if FollowService.IsFollowing(player.UserId, id) then
+			if FollowService.IsFollowing(player.UserId, id, "") then
 				isFollowing = true
 				break
 			end
@@ -70,7 +72,7 @@ function RarityBoxService:_SpawnBox()
 	if #spawnPoints == 0 then return end
 
 	local randomSpawn = spawnPoints[math.random(1, #spawnPoints)]
-	local boxModel = RarityModule.spawnRandomBox()
+	local boxModel = RarityModule:SpawnRandomBox()
 	if not boxModel then return end
 
 	local clone = boxModel:Clone()
@@ -92,10 +94,15 @@ function RarityBoxService:_SpawnBox()
 	clone.PrimaryPart.Touched:Connect(function(hit)
 		if touched then return end
 		local player = Players:GetPlayerFromCharacter(hit.Parent)
-		if not player then return end
+		table.insert(BoxRegistry, player)
+
+		if not player then
+			 return
+		end
 		touched = true
-		self:_GiveReward(player, clone.Name)
+		self:_GiveReward(BoxRegistry[1], clone.Name)
 		clone:Destroy()
+		table.clear(BoxRegistry)
 	end)
 end
 

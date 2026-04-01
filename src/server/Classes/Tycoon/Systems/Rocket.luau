@@ -11,7 +11,7 @@ local ServerStorage       = game:GetService("ServerStorage")
 
 
 
-local Services     = ServerScriptService:FindFirstChild("Services") :: Folder
+local Services     = ServerScriptService:FindFirstChild("Services") 
 local NuclearFrame = ServerStorage.UI:FindFirstChild("NuclearFrame")       :: Frame
 local RocketFunc   = ReplicatedStorage.Remotes:FindFirstChild("ReturnRequest") :: RemoteEvent
 
@@ -20,8 +20,7 @@ type IPlayerService = {
 	HasActivated: (self: IPlayerService, player: Player) -> boolean,
 }
 
-local PlayerService: IPlayerService =
-	require(Services:FindFirstChild("PlayerService") :: ModuleScript) :: IPlayerService
+local PlayerService = require(Services.Tycoon.PlayerService :: ModuleScript) :: IPlayerService
 
 
 type RocketAssets = {

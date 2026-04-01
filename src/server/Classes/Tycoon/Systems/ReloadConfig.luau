@@ -24,11 +24,11 @@ type GunSettingsType = {
 }
 
 
-if not Infinite then
-	script.Parent.ObjectText = BulletType.." | "..Stored.Value
-else
-	script.Parent.ObjectText = BulletType
-end
+--if not Infinite then
+--	script.Parent.ObjectText = BulletType.." | "..Stored.Value
+--else
+--	script.Parent.ObjectText = BulletType
+--end
 
 function ReloadConfig.onPromptTriggered(player)
 	if player.Character and player.Character:FindFirstChild("Humanoid") ~= nil and player.Character.Humanoid.Health > 0 then
