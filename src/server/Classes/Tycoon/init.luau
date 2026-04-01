@@ -102,6 +102,7 @@ function Tycoon:Init()
 	
 	
 	self:_BuildTemplateCache()
+	self:_ApplyStageColors()
 	self:_SetupDoor()
 	self:_SetupButtons()
 	self:_SetupCollector()
@@ -117,6 +118,25 @@ function Tycoon:Init()
 	self:_SetupProximityPrompts()
 	self:ReloadConfiguration()
 	
+end
+
+function Tycoon:_ApplyStageColors()
+	local palette = ColorConfiguration.White
+	if not palette then
+		return
+	end
+
+	for _, descendant in ipairs(self.Stages:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			if CollectionService:HasTag(descendant, "Primary") then
+				descendant.Color = palette.Primary
+			elseif CollectionService:HasTag(descendant, "Secondary") then
+				descendant.Color = palette.Secondary
+			elseif CollectionService:HasTag(descendant, "Accent") then
+				descendant.Color = palette.Accent
+			end
+		end
+	end
 end
 
 
@@ -1065,7 +1085,7 @@ function Tycoon:_SetupLabDoors()
 				local params = OverlapParams.new()
 				params.FilterDescendantsInstances = {owner.Character}
 				params.FilterType = Enum.RaycastFilterType.Include
-				local parts = workspace:GetPartsBoundInBox(
+				local parts = workspace:GetPartBoundsInBox(
 					boxPart.CFrame,
 					boxPart.Size,
 					params
