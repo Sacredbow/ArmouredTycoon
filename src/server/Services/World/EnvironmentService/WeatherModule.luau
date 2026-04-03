@@ -9,6 +9,7 @@ local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting = game:GetService("Lighting")
 local GamePackage = ReplicatedStorage.GamePackage
+local LightningModule = require(script.Parent.LightningModule)
 
 local WeatherModule = {}
 WeatherModule.__index = WeatherModule
@@ -639,8 +640,12 @@ function WeatherModule:ClearWeather()
 	print("[WEATHER] Clearing weather effects...")
 
 	for _, effect in ipairs(self.activeEffects) do
-		if effect then
+		if typeof(effect) == "Instance" then
 			effect:Destroy()
+		elseif type(effect) == "function" then
+			effect()
+		elseif type(effect) == "table" and effect.Cleanup then
+			effect:Cleanup()
 		end
 	end
 
@@ -671,354 +676,452 @@ function WeatherModule:GetAllWeatherTypes()
 	return weatherList
 end
 
+local WEATHER_BOUNDS = {
+	Horizontal = 500,
+	SkyHeight = 200,
+}
 
+local function randomFloat(minValue, maxValue)
+	return minValue + (maxValue - minValue) * math.random()
+end
+
+local function randomPointInRadius(radius, y)
+	local angle = math.random() * math.pi * 2
+	local distance = radius * math.sqrt(math.random())
+	return Vector3.new(math.cos(angle) * distance, y or 0, math.sin(angle) * distance)
+end
+
+local function createAnchorPart(name, size, position)
+	local anchor = Instance.new('Part')
+	anchor.Name = name
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.Transparency = 1
+	anchor.Size = size
+	anchor.CFrame = CFrame.new(position)
+	return anchor
+end
+
+local function createColorSequence(colors)
+	if typeof(colors) == 'Color3' then
+		return ColorSequence.new(colors)
+	end
+
+	return ColorSequence.new(colors)
+end
+
+function WeatherModule:_TrackEffect(effect)
+	table.insert(self.activeEffects, effect)
+	return effect
+end
+
+function WeatherModule:_CreateCleanupToken()
+	local token = { Active = true }
+	self:_TrackEffect(function()
+		token.Active = false
+	end)
+	return token
+end
+
+function WeatherModule:_CreateEffectFolder(name)
+	local folder = Instance.new('Folder')
+	folder.Name = name
+	folder.Parent = workspace
+	return self:_TrackEffect(folder)
+end
+
+function WeatherModule:_CreateParticleField(config)
+	local anchor = createAnchorPart(
+		config.Name,
+		config.Size or Vector3.new(WEATHER_BOUNDS.Horizontal, 1, WEATHER_BOUNDS.Horizontal),
+		config.Position or Vector3.new(0, WEATHER_BOUNDS.SkyHeight, 0)
+	)
+
+	local emitter = Instance.new('ParticleEmitter')
+	emitter.Texture = config.Texture
+	emitter.Color = createColorSequence(config.Color)
+	emitter.Size = config.SizeSequence or NumberSequence.new(1)
+	emitter.Transparency = config.Transparency or NumberSequence.new(0)
+	emitter.Lifetime = config.Lifetime or NumberRange.new(1)
+	emitter.Rate = config.Rate or 10
+	emitter.Speed = config.Speed or NumberRange.new(1)
+	emitter.SpreadAngle = config.SpreadAngle or Vector2.new(0, 0)
+	emitter.EmissionDirection = config.EmissionDirection or Enum.NormalId.Bottom
+	emitter.Rotation = config.Rotation or NumberRange.new(0, 0)
+	emitter.RotSpeed = config.RotSpeed or NumberRange.new(0, 0)
+	emitter.LightEmission = config.LightEmission or 0
+	emitter.Drag = config.Drag or 0
+	emitter.Acceleration = config.Acceleration or Vector3.zero
+	emitter.Parent = anchor
+
+	anchor.Parent = workspace
+	return self:_TrackEffect(anchor), emitter
+end
+
+function WeatherModule:_AttachPointLight(part, brightness, range, color)
+	local light = Instance.new('PointLight')
+	light.Brightness = brightness
+	light.Range = range
+	light.Color = color
+	light.Parent = part
+	return light
+end
+
+function WeatherModule:_StartColorCycle(instance, speed, saturation, value)
+	local token = self:_CreateCleanupToken()
+	local hue = math.random()
+
+	task.spawn(function()
+		while token.Active and instance.Parent do
+			hue = (hue + speed) % 1
+			instance.Color = Color3.fromHSV(hue, saturation, value)
+			task.wait(0.1)
+		end
+	end)
+end
+
+function WeatherModule:_CreateTweenMover(part, targetPosition, duration)
+	local tween = TweenService:Create(
+		part,
+		TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+		{ CFrame = CFrame.new(targetPosition) }
+	)
+	tween:Play()
+	return tween
+end
+
+function WeatherModule:_SpawnAnimatedOrb(folder, config)
+	local part = Instance.new('Part')
+	part.Shape = Enum.PartType.Ball
+	part.Material = config.Material or Enum.Material.Neon
+	part.Color = config.Color
+	part.Size = config.Size
+	part.Anchored = true
+	part.CanCollide = false
+	part.CastShadow = false
+	part.CFrame = CFrame.new(config.Position)
+	part.Parent = folder
+
+	if config.Light then
+		self:_AttachPointLight(part, config.Light.Brightness, config.Light.Range, config.Light.Color or config.Color)
+	end
+
+	local token = self:_CreateCleanupToken()
+	local origin = config.Position
+	local phase = math.random() * math.pi * 2
+	local lifetime = config.Lifetime or 20
+	local startedAt = tick()
+
+	task.spawn(function()
+		while token.Active and part.Parent and (tick() - startedAt) < lifetime do
+			local elapsed = tick() - startedAt
+			local horizontal = Vector3.new(
+				math.cos(elapsed * config.HorizontalSpeed + phase) * config.HorizontalRadius,
+				0,
+				math.sin(elapsed * config.HorizontalSpeed + phase) * config.HorizontalRadius
+			)
+			local vertical = math.sin(elapsed * config.VerticalSpeed + phase) * config.VerticalAmplitude
+			part.CFrame = CFrame.new(origin + horizontal + Vector3.new(0, vertical, 0))
+			task.wait(0.05)
+		end
+
+		if part.Parent then
+			part:Destroy()
+		end
+	end)
+
+	return part
+end
 
 function WeatherModule:CreateRain(count, speed)
-	local rain = Instance.new("Part")
-	rain.Anchored = true
-	rain.CanCollide = false
-	rain.Transparency = 1
-	rain.Size = Vector3.new(500, 1, 500)
-	rain.CFrame = CFrame.new(0, 200, 0)
-	rain.Name = "RainEmitter"
-
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
-	emitter.Color = ColorSequence.new(Color3.fromRGB(100, 150, 200))
-	emitter.Size = NumberSequence.new(0.3)
-	emitter.Transparency = NumberSequence.new(0.5)
-	emitter.Lifetime = NumberRange.new(3, 5)
-	emitter.Rate = count
-	emitter.Speed = NumberRange.new(speed, speed + 10)
-	emitter.SpreadAngle = Vector2.new(5, 5)
-	emitter.EmissionDirection = Enum.NormalId.Bottom
-	emitter.Parent = rain
-
-	rain.Parent = workspace
-	table.insert(self.activeEffects, rain)
+	self:_CreateParticleField({
+		Name = 'RainEmitter',
+		Texture = 'rbxasset://textures/particles/smoke_main.dds',
+		Color = Color3.fromRGB(100, 150, 200),
+		SizeSequence = NumberSequence.new(0.3),
+		Transparency = NumberSequence.new(0.5),
+		Lifetime = NumberRange.new(3, 5),
+		Rate = count,
+		Speed = NumberRange.new(speed, speed + 10),
+		SpreadAngle = Vector2.new(5, 5),
+	})
 end
 
 function WeatherModule:CreateSnow(count, speed)
-	local snow = Instance.new("Part")
-	snow.Anchored = true
-	snow.CanCollide = false
-	snow.Transparency = 1
-	snow.Size = Vector3.new(500, 1, 500)
-	snow.CFrame = CFrame.new(0, 200, 0)
-	snow.Name = "SnowEmitter"
-
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	emitter.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255))
-	emitter.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.3),
-		NumberSequenceKeypoint.new(0.5, 0.5),
-		NumberSequenceKeypoint.new(1, 0.3)
+	self:_CreateParticleField({
+		Name = 'SnowEmitter',
+		Texture = 'rbxasset://textures/particles/sparkles_main.dds',
+		Color = Color3.fromRGB(255, 255, 255),
+		SizeSequence = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.3),
+			NumberSequenceKeypoint.new(0.5, 0.5),
+			NumberSequenceKeypoint.new(1, 0.3),
+		}),
+		Transparency = NumberSequence.new(0.2),
+		Lifetime = NumberRange.new(8, 12),
+		Rate = count,
+		Speed = NumberRange.new(speed, speed + 5),
+		SpreadAngle = Vector2.new(10, 10),
+		Rotation = NumberRange.new(0, 360),
+		RotSpeed = NumberRange.new(-40, 40),
 	})
-	emitter.Transparency = NumberSequence.new(0.2)
-	emitter.Lifetime = NumberRange.new(8, 12)
-	emitter.Rate = count
-	emitter.Speed = NumberRange.new(speed, speed + 5)
-	emitter.SpreadAngle = Vector2.new(10, 10)
-	emitter.EmissionDirection = Enum.NormalId.Bottom
-	emitter.Rotation = NumberRange.new(0, 360)
-	emitter.RotSpeed = NumberRange.new(-40, 40)
-	emitter.Parent = snow
-
-	snow.Parent = workspace
-	table.insert(self.activeEffects, snow)
 end
 
 function WeatherModule:CreateClouds(count, color)
-	local cloudsFolder = Instance.new("Folder")
-	cloudsFolder.Name = "Clouds"
-	cloudsFolder.Parent = workspace
+	local folder = self:_CreateEffectFolder('Clouds')
 
-	for i = 1, count do
-		local cloud = Instance.new("Part")
+	for index = 1, count do
+		local angle = (index / count) * math.pi * 2
+		local radius = randomFloat(120, 520)
+		local cloud = Instance.new('Part')
 		cloud.Anchored = true
 		cloud.CanCollide = false
 		cloud.Material = Enum.Material.SmoothPlastic
 		cloud.Color = color
-		cloud.Size = Vector3.new(math.random(30, 60), math.random(15, 25), math.random(30, 60))
+		cloud.Size = Vector3.new(randomFloat(30, 60), randomFloat(15, 25), randomFloat(30, 60))
 		cloud.Transparency = 0.7
 		cloud.CFrame = CFrame.new(
-			math.random(-500, 500),
-			math.random(150, 250),
-			math.random(-500, 500)
+			math.cos(angle) * radius,
+			randomFloat(150, 250),
+			math.sin(angle) * radius
 		)
-		cloud.Parent = cloudsFolder
+		cloud.Parent = folder
 	end
-
-	table.insert(self.activeEffects, cloudsFolder)
 end
 
 function WeatherModule:CreateLightningStorm(radius, duration)
-	
-	local LightningModule = require(script.Parent.LightningModule)
-	local stormId = LightningModule.StartStorm(Vector3.new(0, 0, 0), radius, duration)
-	
+	local stormId = LightningModule.StartStorm(Vector3.zero, radius, duration)
+	self:_TrackEffect(function()
+		LightningModule.StopStorm(stormId)
+	end)
 end
 
 function WeatherModule:CreateAurora()
-	local aurora = Instance.new("Part")
-	aurora.Anchored = true
-	aurora.CanCollide = false
-	aurora.Material = Enum.Material.Neon
-	aurora.Size = Vector3.new(1000, 200, 50)
-	aurora.Transparency = 0.5
-	aurora.CFrame = CFrame.new(0, 300, 0) * CFrame.Angles(0, math.rad(45), 0)
-	aurora.Name = "Aurora"
-	aurora.Parent = workspace
+	local folder = self:_CreateEffectFolder('Aurora')
+	local token = self:_CreateCleanupToken()
 
+	for index = 1, 3 do
+		local band = Instance.new('Part')
+		band.Anchored = true
+		band.CanCollide = false
+		band.Material = Enum.Material.Neon
+		band.Size = Vector3.new(900, 80, 24)
+		band.Transparency = 0.45
+		band.CastShadow = false
+		band.CFrame = CFrame.new(0, 260 + index * 28, -80 + index * 20) * CFrame.Angles(0, math.rad(30 + index * 12), 0)
+		band.Parent = folder
 
-
-	task.spawn(function()
-		local hue = 0
-		while aurora.Parent do
-			hue = (hue + 0.005) % 1
-			aurora.Color = Color3.fromHSV(hue, 0.8, 1)
-			task.wait(0.1)
-		end
-	end)
-
-	table.insert(self.activeEffects, aurora)
+		task.spawn(function()
+			local elapsed = 0
+			while token.Active and band.Parent do
+				elapsed += 0.05
+				local hue = (0.33 + elapsed * 0.02 + index * 0.12) % 1
+				local sway = math.sin(elapsed * 1.6 + index) * 18
+				band.Color = Color3.fromHSV(hue, 0.75, 1)
+				band.CFrame = CFrame.new(sway, 260 + index * 28, -80 + index * 20) * CFrame.Angles(0, math.rad(30 + index * 12), 0)
+				task.wait(0.05)
+			end
+		end)
+	end
 end
 
 function WeatherModule:CreateMeteorShower(count)
+	local folder = self:_CreateEffectFolder('MeteorShower')
+	local token = self:_CreateCleanupToken()
+
 	task.spawn(function()
-		for i = 1, count do
-			local meteor = Instance.new("Part")
+		for _ = 1, count do
+			if not token.Active then
+				break
+			end
+
+			local startPosition = Vector3.new(randomFloat(-500, 500), 500, randomFloat(-500, 500))
+			local travel = Vector3.new(randomFloat(-120, 120), -260, randomFloat(-120, 120))
+			local meteor = Instance.new('Part')
 			meteor.Shape = Enum.PartType.Ball
 			meteor.Material = Enum.Material.Neon
 			meteor.Color = Color3.fromRGB(255, 150, 50)
 			meteor.Size = Vector3.new(4, 4, 4)
-			meteor.CFrame = CFrame.new(
-				math.random(-500, 500),
-				500,
-				math.random(-500, 500)
-			)
-			meteor.Parent = workspace
+			meteor.Anchored = true
+			meteor.CanCollide = false
+			meteor.CFrame = CFrame.new(startPosition)
+			meteor.Parent = folder
 
-			
-			
-			local trail = Instance.new("Trail")
+			local attachment0 = Instance.new('Attachment')
+			attachment0.Parent = meteor
+			local attachment1 = Instance.new('Attachment')
+			attachment1.Position = Vector3.new(0, 2, 0)
+			attachment1.Parent = meteor
+
+			local trail = Instance.new('Trail')
 			trail.Color = ColorSequence.new(Color3.fromRGB(255, 100, 0))
 			trail.Lifetime = 1
+			trail.Attachment0 = attachment0
+			trail.Attachment1 = attachment1
 			trail.Parent = meteor
 
-			local a0 = Instance.new("Attachment", meteor)
-			local a1 = Instance.new("Attachment", meteor)
-			a1.Position = Vector3.new(0, 2, 0)
-			trail.Attachment0 = a0
-			trail.Attachment1 = a1
-
-		
-			local bodyVelocity = Instance.new("BodyVelocity")
-			bodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-			bodyVelocity.Velocity = Vector3.new(math.random(-50, 50), -200, math.random(-50, 50))
-			bodyVelocity.Parent = meteor
-
+			self:_CreateTweenMover(meteor, startPosition + travel, randomFloat(1.6, 2.4))
 			Debris:AddItem(meteor, 5)
-
-			task.wait(math.random(1, 3))
+			task.wait(randomFloat(0.6, 1.4))
 		end
 	end)
 end
 
 function WeatherModule:CreateCrystalRain(count)
-	local rain = Instance.new("Part")
-	rain.Anchored = true
-	rain.CanCollide = false
-	rain.Transparency = 1
-	rain.Size = Vector3.new(500, 1, 500)
-	rain.CFrame = CFrame.new(0, 200, 0)
-
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	emitter.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 200, 255)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200, 150, 255)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 255, 200))
+	self:_CreateParticleField({
+		Name = 'CrystalRainEmitter',
+		Texture = 'rbxasset://textures/particles/sparkles_main.dds',
+		Color = {
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 200, 255)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200, 150, 255)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 255, 200)),
+		},
+		SizeSequence = NumberSequence.new(0.5),
+		Transparency = NumberSequence.new(0.3),
+		Lifetime = NumberRange.new(4, 6),
+		Rate = count,
+		Speed = NumberRange.new(40, 50),
+		SpreadAngle = Vector2.new(5, 5),
+		Rotation = NumberRange.new(0, 360),
+		LightEmission = 1,
 	})
-	emitter.Size = NumberSequence.new(0.5)
-	emitter.SContinueTransparency = NumberSequence.new(0.3)
-	emitter.Lifetime = NumberRange.new(4, 6)
-	emitter.Rate = count
-	emitter.Speed = NumberRange.new(40, 50)
-	emitter.SpreadAngle = Vector2.new(5, 5)
-	emitter.EmissionDirection = Enum.NormalId.Bottom
-	emitter.Rotation = NumberRange.new(0, 360)
-	emitter.LightEmission = 1
-	emitter.Parent = rain
-	rain.Parent = workspace
-	table.insert(self.activeEffects, rain)
 end
+
 function WeatherModule:CreateBloodMoon()
-	local sky = Instance.new("Sky")
+	local sky = Instance.new('Sky')
 	sky.MoonAngularSize = 30
-	sky.MoonTextureId = "rbxasset://sky/moon.jpg"
-	sky.SkyboxBk = "rbxasset://textures/sky/sky512_bk.tex"
-	sky.SkyboxDn = "rbxasset://textures/sky/sky512_dn.tex"
-	sky.SkyboxFt = "rbxasset://textures/sky/sky512_ft.tex"
-	sky.SkyboxLf = "rbxasset://textures/sky/sky512_lf.tex"
-	sky.SkyboxRt = "rbxasset://textures/sky/sky512_rt.tex"
-	sky.SkyboxUp = "rbxasset://textures/sky/sky512_up.tex"
+	sky.MoonTextureId = 'rbxasset://sky/moon.jpg'
+	sky.SkyboxBk = 'rbxasset://textures/sky/sky512_bk.tex'
+	sky.SkyboxDn = 'rbxasset://textures/sky/sky512_dn.tex'
+	sky.SkyboxFt = 'rbxasset://textures/sky/sky512_ft.tex'
+	sky.SkyboxLf = 'rbxasset://textures/sky/sky512_lf.tex'
+	sky.SkyboxRt = 'rbxasset://textures/sky/sky512_rt.tex'
+	sky.SkyboxUp = 'rbxasset://textures/sky/sky512_up.tex'
 	sky.Parent = Lighting
-	
-	local colorCorrection = Instance.new("ColorCorrectionEffect")
+
+	local colorCorrection = Instance.new('ColorCorrectionEffect')
 	colorCorrection.TintColor = Color3.fromRGB(255, 100, 100)
 	colorCorrection.Parent = Lighting
 
-	table.insert(self.activeEffects, sky)
-	table.insert(self.activeEffects, colorCorrection)
+	self:_TrackEffect(sky)
+	self:_TrackEffect(colorCorrection)
 end
+
 function WeatherModule:CreateEclipse()
-	local sky = Instance.new("Sky")
+	local sky = Instance.new('Sky')
 	sky.SunAngularSize = 20
 	sky.MoonAngularSize = 20
 	sky.Parent = Lighting
 
-	local colorCorrection = Instance.new("ColorCorrectionEffect")
+	local colorCorrection = Instance.new('ColorCorrectionEffect')
 	colorCorrection.Brightness = -0.5
 	colorCorrection.Parent = Lighting
 
-	table.insert(self.activeEffects, sky)
-	table.insert(self.activeEffects, colorCorrection)
+	self:_TrackEffect(sky)
+	self:_TrackEffect(colorCorrection)
 end
+
 function WeatherModule:CreateStarShower()
+	local folder = self:_CreateEffectFolder('StarShower')
+	local token = self:_CreateCleanupToken()
+
 	task.spawn(function()
-		while self.currentWeather == "StarShower" do
-			local star = Instance.new("Part")
+		while token.Active and self.currentWeather == 'StarShower' do
+			local startPosition = Vector3.new(randomFloat(-300, 300), 400, randomFloat(-300, 300))
+			local star = Instance.new('Part')
 			star.Shape = Enum.PartType.Ball
 			star.Material = Enum.Material.Neon
 			star.Color = Color3.fromRGB(255, 255, 200)
 			star.Size = Vector3.new(1, 1, 1)
-			star.CFrame = CFrame.new(
-				math.random(-300, 300),
-				400,
-				math.random(-300, 300)
-			)
-			star.Parent = workspace
-			local light = Instance.new("PointLight")
-			light.Brightness = 5
-			light.Range = 20
-			light.Color = Color3.fromRGB(255, 255, 200)
-			light.Parent = star
+			star.Anchored = true
+			star.CanCollide = false
+			star.CFrame = CFrame.new(startPosition)
+			star.Parent = folder
 
-			local bodyVelocity = Instance.new("BodyVelocity")
-			bodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-			bodyVelocity.Velocity = Vector3.new(0, -50, 0)
-			bodyVelocity.Parent = star
-
+			self:_AttachPointLight(star, 5, 20, star.Color)
+			self:_CreateTweenMover(star, startPosition + Vector3.new(0, -260, 0), 3.5)
 			Debris:AddItem(star, 8)
-
 			task.wait(0.5)
 		end
 	end)
 end
+
 function WeatherModule:CreateEnchantedMist()
-	local mist = Instance.new("Part")
-	mist.Anchored = true
-	mist.CanCollide = false
-	mist.Transparency = 1
-	mist.Size = Vector3.new(500, 50, 500)
-	mist.CFrame = CFrame.new(0, 10, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
-	emitter.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(150, 200, 255)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200, 150, 255)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 255, 200))
+	self:_CreateParticleField({
+		Name = 'EnchantedMistEmitter',
+		Position = Vector3.new(0, 10, 0),
+		Size = Vector3.new(WEATHER_BOUNDS.Horizontal, 50, WEATHER_BOUNDS.Horizontal),
+		Texture = 'rbxasset://textures/particles/smoke_main.dds',
+		Color = {
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(150, 200, 255)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200, 150, 255)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 255, 200)),
+		},
+		SizeSequence = NumberSequence.new(20),
+		Transparency = NumberSequence.new(0.7),
+		Lifetime = NumberRange.new(10, 15),
+		Rate = 50,
+		Speed = NumberRange.new(2, 5),
+		SpreadAngle = Vector2.new(180, 180),
+		LightEmission = 0.5,
 	})
-	emitter.Size = NumberSequence.new(20)
-	emitter.Transparency = NumberSequence.new(0.7)
-	emitter.Lifetime = NumberRange.new(10, 15)
-	emitter.Rate = 50
-	emitter.Speed = NumberRange.new(2, 5)
-	emitter.SpreadAngle = Vector2.new(180, 180)
-	emitter.LightEmission = 0.5
-	emitter.Parent = mist
-
-	mist.Parent = workspace
-	table.insert(self.activeEffects, mist)
 end
+
 function WeatherModule:CreateFirestorm()
-	local fire = Instance.new("Part")
-	fire.Anchored = true
-	fire.CanCollide = false
-	fire.Transparency = 1
-	fire.Size = Vector3.new(500, 1, 500)
-	fire.CFrame = CFrame.new(0, 200, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/fire_main.dds"
-	emitter.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 150, 0)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 50, 0))
+	self:_CreateParticleField({
+		Name = 'FirestormEmitter',
+		Texture = 'rbxasset://textures/particles/fire_main.dds',
+		Color = {
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 150, 0)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 50, 0)),
+		},
+		SizeSequence = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 2),
+			NumberSequenceKeypoint.new(1, 0),
+		}),
+		Transparency = NumberSequence.new(0.4),
+		Lifetime = NumberRange.new(3, 5),
+		Rate = 300,
+		Speed = NumberRange.new(60, 70),
+		SpreadAngle = Vector2.new(10, 10),
+		LightEmission = 1,
 	})
-	emitter.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 2),
-		NumberSequenceKeypoint.new(1, 0)
-	})
-	emitter.Transparency = NumberSequence.new(0.4)
-	emitter.Lifetime = NumberRange.new(3, 5)
-	emitter.Rate = 300
-	emitter.Speed = NumberRange.new(60, 70)
-	emitter.SpreadAngle = Vector2.new(10, 10)
-	emitter.EmissionDirection = Enum.NormalId.Bottom
-	emitter.LightEmission = 1
-	emitter.Parent = fire
-
-	fire.Parent = workspace
-	table.insert(self.activeEffects, fire)
 end
+
 function WeatherModule:CreateAcidRain(count)
-	local rain = Instance.new("Part")
-	rain.Anchored = true
-	rain.CanCollide = false
-	rain.Transparency = 1
-	rain.Size = Vector3.new(500, 1, 500)
-	rain.CFrame = CFrame.new(0, 200, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
-	emitter.Color = ColorSequence.new(Color3.fromRGB(100, 200, 50))
-	emitter.Size = NumberSequence.new(0.4)
-	emitter.Transparency = NumberSequence.new(0.4)
-	emitter.Lifetime = NumberRange.new(3, 5)
-	emitter.Rate = count
-	emitter.Speed = NumberRange.new(50, 60)
-	emitter.SpreadAngle = Vector2.new(5, 5)
-	emitter.EmissionDirection = Enum.NormalId.Bottom
-	emitter.LightEmission = 0.5
-	emitter.Parent = rain
-
-	rain.Parent = workspace
-	table.insert(self.activeEffects, rain)
+	self:_CreateParticleField({
+		Name = 'AcidRainEmitter',
+		Texture = 'rbxasset://textures/particles/smoke_main.dds',
+		Color = Color3.fromRGB(100, 200, 50),
+		SizeSequence = NumberSequence.new(0.4),
+		Transparency = NumberSequence.new(0.4),
+		Lifetime = NumberRange.new(3, 5),
+		Rate = count,
+		Speed = NumberRange.new(50, 60),
+		SpreadAngle = Vector2.new(5, 5),
+		LightEmission = 0.5,
+	})
 end
+
 function WeatherModule:CreateSandstorm(count)
-	local sand = Instance.new("Part")
-	sand.Anchored = true
-	sand.CanCollide = false
-	sand.Transparency = 1
-	sand.Size = Vector3.new(500, 100, 500)
-	sand.CFrame = CFrame.new(0, 50, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
-	emitter.Color = ColorSequence.new(Color3.fromRGB(200, 170, 120))
-	emitter.Size = NumberSequence.new(5)
-	emitter.Transparency = NumberSequence.new(0.6)
-	emitter.Lifetime = NumberRange.new(8, 12)
-	emitter.Rate = count
-	emitter.Speed = NumberRange.new(30, 40)
-	emitter.SpreadAngle = Vector2.new(180, 180)
-	emitter.Drag = 2
-	emitter.Parent = sand
-
-	sand.Parent = workspace
-	table.insert(self.activeEffects, sand)
+	self:_CreateParticleField({
+		Name = 'SandstormEmitter',
+		Position = Vector3.new(0, 50, 0),
+		Size = Vector3.new(WEATHER_BOUNDS.Horizontal, 100, WEATHER_BOUNDS.Horizontal),
+		Texture = 'rbxasset://textures/particles/smoke_main.dds',
+		Color = Color3.fromRGB(200, 170, 120),
+		SizeSequence = NumberSequence.new(5),
+		Transparency = NumberSequence.new(0.6),
+		Lifetime = NumberRange.new(8, 12),
+		Rate = count,
+		Speed = NumberRange.new(30, 40),
+		SpreadAngle = Vector2.new(180, 180),
+		Drag = 2,
+	})
 end
+
 function WeatherModule:CreateTornado()
-	local tornado = Instance.new("Part")
+	local tornado = Instance.new('Part')
 	tornado.Anchored = true
 	tornado.CanCollide = false
 	tornado.Material = Enum.Material.SmoothPlastic
@@ -1026,155 +1129,120 @@ function WeatherModule:CreateTornado()
 	tornado.Size = Vector3.new(30, 200, 30)
 	tornado.Shape = Enum.PartType.Cylinder
 	tornado.Transparency = 0.5
-	tornado.CFrame = CFrame.new(math.random(-200, 200), 100, math.random(-200, 200)) * CFrame.Angles(0, 0, math.rad(90))
+	tornado.CFrame = CFrame.new(randomFloat(-200, 200), 100, randomFloat(-200, 200)) * CFrame.Angles(0, 0, math.rad(90))
 	tornado.Parent = workspace
+	self:_TrackEffect(tornado)
 
+	local token = self:_CreateCleanupToken()
+	local origin = tornado.Position
+	local rotation = 0
 	task.spawn(function()
-		while tornado.Parent do
-			tornado.CFrame = tornado.CFrame * CFrame.Angles(0, 0, math.rad(5))
+		while token.Active and tornado.Parent do
+			rotation += math.rad(8)
+			local sway = Vector3.new(math.cos(rotation) * 6, math.sin(rotation * 0.5) * 4, math.sin(rotation) * 6)
+			tornado.CFrame = CFrame.new(origin + sway) * CFrame.Angles(0, 0, math.rad(90) + rotation)
 			task.wait(0.05)
 		end
 	end)
-
-	table.insert(self.activeEffects, tornado)
 end
+
 function WeatherModule:CreateVoidStorm()
-	local void = Instance.new("Part")
-	void.Anchored = true
-	void.CanCollide = false
-	void.Transparency = 1
-	void.Size = Vector3.new(500, 1, 500)
-	void.CFrame = CFrame.new(0, 200, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
-	emitter.Color = ColorSequence.new(Color3.fromRGB(20, 0, 40))
-	emitter.Size = NumberSequence.new(8)
-	emitter.Transparency = NumberSequence.new(0.5)
-	emitter.Lifetime = NumberRange.new(5, 8)
-	emitter.Rate = 200
-	emitter.Speed = NumberRange.new(20, 30)
-	emitter.SpreadAngle = Vector2.new(180, 180)
-	emitter.Parent = void
-
-	void.Parent = workspace
-	table.insert(self.activeEffects, void)
+	self:_CreateParticleField({
+		Name = 'VoidStormEmitter',
+		Texture = 'rbxasset://textures/particles/smoke_main.dds',
+		Color = Color3.fromRGB(20, 0, 40),
+		SizeSequence = NumberSequence.new(8),
+		Transparency = NumberSequence.new(0.5),
+		Lifetime = NumberRange.new(5, 8),
+		Rate = 200,
+		Speed = NumberRange.new(20, 30),
+		SpreadAngle = Vector2.new(180, 180),
+	})
 end
+
 function WeatherModule:CreateCherryBlossoms(count)
-	local blossoms = Instance.new("Part")
-	blossoms.Anchored = true
-	blossoms.CanCollide = false
-	blossoms.Transparency = 1
-	blossoms.Size = Vector3.new(500, 1, 500)
-	blossoms.CFrame = CFrame.new(0, 100, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	emitter.Color = ColorSequence.new(Color3.fromRGB(255, 180, 200))
-	emitter.Size = NumberSequence.new(0.8)
-	emitter.Transparency = NumberSequence.new(0.3)
-	emitter.Lifetime = NumberRange.new(10, 15)
-	emitter.Rate = count
-	emitter.Speed = NumberRange.new(5, 10)
-	emitter.SpreadAngle = Vector2.new(30, 30)
-	emitter.EmissionDirection = Enum.NormalId.Bottom
-	emitter.Rotation = NumberRange.new(0, 360)
-	emitter.RotSpeed = NumberRange.new(-50, 50)
-	emitter.Parent = blossoms
-
-	blossoms.Parent = workspace
-	table.insert(self.activeEffects, blossoms)
+	self:_CreateParticleField({
+		Name = 'CherryBlossomsEmitter',
+		Position = Vector3.new(0, 100, 0),
+		Texture = 'rbxasset://textures/particles/sparkles_main.dds',
+		Color = Color3.fromRGB(255, 180, 200),
+		SizeSequence = NumberSequence.new(0.8),
+		Transparency = NumberSequence.new(0.3),
+		Lifetime = NumberRange.new(10, 15),
+		Rate = count,
+		Speed = NumberRange.new(5, 10),
+		SpreadAngle = Vector2.new(30, 30),
+		Rotation = NumberRange.new(0, 360),
+		RotSpeed = NumberRange.new(-50, 50),
+	})
 end
+
 function WeatherModule:CreateFallingLeaves(count)
-	local leaves = Instance.new("Part")
-	leaves.Anchored = true
-	leaves.CanCollide = false
-	leaves.Transparency = 1
-	leaves.Size = Vector3.new(500, 1, 500)
-	leaves.CFrame = CFrame.new(0, 100, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	emitter.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(200, 100, 50)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(220, 150, 60)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 80, 40))
+	self:_CreateParticleField({
+		Name = 'FallingLeavesEmitter',
+		Position = Vector3.new(0, 100, 0),
+		Texture = 'rbxasset://textures/particles/sparkles_main.dds',
+		Color = {
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(200, 100, 50)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(220, 150, 60)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 80, 40)),
+		},
+		SizeSequence = NumberSequence.new(1),
+		Transparency = NumberSequence.new(0.2),
+		Lifetime = NumberRange.new(12, 18),
+		Rate = count,
+		Speed = NumberRange.new(3, 8),
+		SpreadAngle = Vector2.new(40, 40),
+		Rotation = NumberRange.new(0, 360),
+		RotSpeed = NumberRange.new(-40, 40),
 	})
-	emitter.Size = NumberSequence.new(1)
-	emitter.Transparency = NumberSequence.new(0.2)
-	emitter.Lifetime = NumberRange.new(12, 18)
-	emitter.Rate = count
-	emitter.Speed = NumberRange.new(3, 8)
-	emitter.SpreadAngle = Vector2.new(40, 40)
-	emitter.EmissionDirection = Enum.NormalId.Bottom
-	emitter.Rotation = NumberRange.new(0, 360)
-	emitter.RotSpeed = NumberRange.new(-40, 40)
-	emitter.Parent = leaves
-
-	leaves.Parent = workspace
-	table.insert(self.activeEffects, leaves)
 end
+
 function WeatherModule:CreateFireflies(count)
-	task.spawn(function()
-		while self.currentWeather == "Fireflies" do
-			local firefly = Instance.new("Part")
-			firefly.Shape = Enum.PartType.Ball
-			firefly.Material = Enum.Material.Neon
-			firefly.Color = Color3.fromRGB(255, 255, 150)
-			firefly.Size = Vector3.new(0.3, 0.3, 0.3)
-			firefly.CFrame = CFrame.new(
-				math.random(-200, 200),
-				math.random(5, 30),
-				math.random(-200, 200)
-			)
-			firefly.Parent = workspace
-			local light = Instance.new("PointLight")
-			light.Brightness = 2
-			light.Range = 10
-			light.Color = Color3.fromRGB(255, 255, 150)
-			light.Parent = firefly
+	local folder = self:_CreateEffectFolder('Fireflies')
 
-			
-			local bodyVelocity = Instance.new("BodyVelocity")
-			bodyVelocity.MaxForce = Vector3.new(1e4, 1e4, 1e4)
-			bodyVelocity.Velocity = Vector3.new(math.random(-5, 5), math.random(-2, 2), math.random(-5, 5))
-			bodyVelocity.Parent = firefly
-
-			Debris:AddItem(firefly, 30)
-
-			task.wait(0.3)
-		end
-	end)
+	for _ = 1, count do
+		self:_SpawnAnimatedOrb(folder, {
+			Color = Color3.fromRGB(255, 255, 150),
+			Size = Vector3.new(0.3, 0.3, 0.3),
+			Position = randomPointInRadius(220, randomFloat(5, 30)),
+			HorizontalRadius = randomFloat(1, 5),
+			HorizontalSpeed = randomFloat(0.8, 1.8),
+			VerticalAmplitude = randomFloat(0.4, 1.5),
+			VerticalSpeed = randomFloat(1, 2.2),
+			Lifetime = 30,
+			Light = {
+				Brightness = 2,
+				Range = 10,
+			},
+		})
+	end
 end
+
 function WeatherModule:CreateRainbowRain(count)
-	local rain = Instance.new("Part")
-	rain.Anchored = true
-	rain.CanCollide = false
-	rain.Transparency = 1
-	rain.Size = Vector3.new(500, 1, 500)
-	rain.CFrame = CFrame.new(0, 200, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	emitter.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
-		ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 127, 0)),
-		ColorSequenceKeypoint.new(0.4, Color3.fromRGB(255, 255, 0)),
-		ColorSequenceKeypoint.new(0.6, Color3.fromRGB(0, 255, 0)),
-		ColorSequenceKeypoint.new(0.8, Color3.fromRGB(0, 0, 255)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(139, 0, 255))
+	self:_CreateParticleField({
+		Name = 'RainbowRainEmitter',
+		Texture = 'rbxasset://textures/particles/sparkles_main.dds',
+		Color = {
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+			ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 127, 0)),
+			ColorSequenceKeypoint.new(0.4, Color3.fromRGB(255, 255, 0)),
+			ColorSequenceKeypoint.new(0.6, Color3.fromRGB(0, 255, 0)),
+			ColorSequenceKeypoint.new(0.8, Color3.fromRGB(0, 0, 255)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(139, 0, 255)),
+		},
+		SizeSequence = NumberSequence.new(0.5),
+		Transparency = NumberSequence.new(0.3),
+		Lifetime = NumberRange.new(4, 6),
+		Rate = count,
+		Speed = NumberRange.new(50, 60),
+		SpreadAngle = Vector2.new(5, 5),
+		LightEmission = 1,
 	})
-	emitter.Size = NumberSequence.new(0.5)
-	emitter.Transparency = NumberSequence.new(0.3)
-	emitter.Lifetime = NumberRange.new(4, 6)
-	emitter.Rate = count
-	emitter.Speed = NumberRange.new(50, 60)
-	emitter.SpreadAngle = Vector2.new(5, 5)
-	emitter.EmissionDirection = Enum.NormalId.Bottom
-	emitter.LightEmission = 1
-	emitter.Parent = rain
-
-	rain.Parent = workspace
-	table.insert(self.activeEffects, rain)
 end
+
 function WeatherModule:CreateRainbow()
-	local rainbow = Instance.new("Part")
+	local rainbow = Instance.new('Part')
 	rainbow.Anchored = true
 	rainbow.CanCollide = false
 	rainbow.Material = Enum.Material.Neon
@@ -1183,77 +1251,61 @@ function WeatherModule:CreateRainbow()
 	rainbow.CFrame = CFrame.new(0, 150, -200) * CFrame.Angles(0, 0, math.rad(90))
 	rainbow.Transparency = 0.3
 	rainbow.Parent = workspace
-
-	task.spawn(function()
-		local hue = 0
-		while rainbow.Parent do
-			hue = (hue + 0.01) % 1
-			rainbow.Color = Color3.fromHSV(hue, 1, 1)
-			task.wait(0.1)
-		end
-	end)
-
-	table.insert(self.activeEffects, rainbow)
+	self:_TrackEffect(rainbow)
+	self:_StartColorCycle(rainbow, 0.01, 1, 1)
 end
+
 function WeatherModule:CreateSkyLanterns(count)
+	local folder = self:_CreateEffectFolder('SkyLanterns')
+	local token = self:_CreateCleanupToken()
+
 	task.spawn(function()
-		for i = 1, count do
-			local lantern = Instance.new("Part")
+		for _ = 1, count do
+			if not token.Active then
+				break
+			end
+
+			local startPosition = Vector3.new(randomFloat(-300, 300), 10, randomFloat(-300, 300))
+			local lantern = Instance.new('Part')
 			lantern.Material = Enum.Material.Neon
 			lantern.Color = Color3.fromRGB(255, 200, 100)
 			lantern.Size = Vector3.new(2, 3, 2)
-			lantern.CFrame = CFrame.new(
-				math.random(-300, 300),
-				10,
-				math.random(-300, 300)
-			)
-			lantern.Parent = workspace
-			local light = Instance.new("PointLight")
-			light.Brightness = 3
-			light.Range = 25
-			light.Color = Color3.fromRGB(255, 200, 100)
-			light.Parent = lantern
+			lantern.Anchored = true
+			lantern.CanCollide = false
+			lantern.CFrame = CFrame.new(startPosition)
+			lantern.Parent = folder
 
-			
-			local bodyVelocity = Instance.new("BodyVelocity")
-			bodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-			bodyVelocity.Velocity = Vector3.new(math.random(-2, 2), 8, math.random(-2, 2))
-			bodyVelocity.Parent = lantern
+			self:_AttachPointLight(lantern, 3, 25, lantern.Color)
 
+			local riseOffset = Vector3.new(randomFloat(-20, 20), randomFloat(120, 180), randomFloat(-20, 20))
+			self:_CreateTweenMover(lantern, startPosition + riseOffset, randomFloat(14, 20))
 			Debris:AddItem(lantern, 60)
-
 			task.wait(2)
 		end
 	end)
 end
-function WeatherModule:CreateCosmicStorm()
-	local cosmic = Instance.new("Part")
-	cosmic.Anchored = true
-	cosmic.CanCollide = false
-	cosmic.Transparency = 1
-	cosmic.Size = Vector3.new(500, 1, 500)
-	cosmic.CFrame = CFrame.new(0, 200, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	emitter.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 50, 200)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 100, 255)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 150, 255))
-	})
-	emitter.Size = NumberSequence.new(1.5)
-	emitter.Transparency = NumberSequence.new(0.3)
-	emitter.Lifetime = NumberRange.new(5, 8)
-	emitter.Rate = 300
-	emitter.Speed = NumberRange.new(40, 60)
-	emitter.SpreadAngle = Vector2.new(180, 180)
-	emitter.LightEmission = 1
-	emitter.Parent = cosmic
 
-	cosmic.Parent = workspace
-	table.insert(self.activeEffects, cosmic)
+function WeatherModule:CreateCosmicStorm()
+	self:_CreateParticleField({
+		Name = 'CosmicStormEmitter',
+		Texture = 'rbxasset://textures/particles/sparkles_main.dds',
+		Color = {
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(100, 50, 200)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(150, 100, 255)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 150, 255)),
+		},
+		SizeSequence = NumberSequence.new(1.5),
+		Transparency = NumberSequence.new(0.3),
+		Lifetime = NumberRange.new(5, 8),
+		Rate = 300,
+		Speed = NumberRange.new(40, 60),
+		SpreadAngle = Vector2.new(180, 180),
+		LightEmission = 1,
+	})
 end
+
 function WeatherModule:CreateDimensionalRift()
-	local rift = Instance.new("Part")
+	local rift = Instance.new('Part')
 	rift.Anchored = true
 	rift.CanCollide = false
 	rift.Material = Enum.Material.Neon
@@ -1262,291 +1314,237 @@ function WeatherModule:CreateDimensionalRift()
 	rift.CFrame = CFrame.new(0, 50, 0)
 	rift.Transparency = 0.3
 	rift.Parent = workspace
-	
-	task.spawn(function()
-		while rift.Parent do
-			TweenService:Create(
-				rift,
-				TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-				{Transparency = 0.7, Size = Vector3.new(60, 110, 5)}
-			):Play()
-			task.wait(2)
-		end
-	end)
+	self:_TrackEffect(rift)
 
-	table.insert(self.activeEffects, rift)
+	TweenService:Create(
+		rift,
+		TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+		{ Transparency = 0.7, Size = Vector3.new(60, 110, 5) }
+	):Play()
 end
+
 function WeatherModule:CreateTimeFracture()
-	
-	local blur = Instance.new("BlurEffect")
+	local blur = Instance.new('BlurEffect')
 	blur.Size = 10
 	blur.Parent = Lighting
+	self:_TrackEffect(blur)
+
 	TweenService:Create(
 		blur,
 		TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-		{Size = 20}
+		{ Size = 20 }
 	):Play()
-
-	table.insert(self.activeEffects, blur)
 end
+
 function WeatherModule:CreateGravityStorm()
-	
-	task.spawn(function()
-		while self.currentWeather == "GravityStorm" do
-			local debris = Instance.new("Part")
-			debris.Material = Enum.Material.Rock
-			debris.Color = Color3.fromRGB(100, 100, 100)
-			debris.Size = Vector3.new(math.random(2, 5), math.random(2, 5), math.random(2, 5))
-			debris.CFrame = CFrame.new(
-				math.random(-200, 200),
-				10,
-				math.random(-200, 200)
-			)
-			debris.Parent = workspace
-			
-			local bodyVelocity = Instance.new("BodyVelocity")
-			bodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-			bodyVelocity.Velocity = Vector3.new(0, math.random(-10, 10), 0)
-			bodyVelocity.Parent = debris
+	local folder = self:_CreateEffectFolder('GravityStorm')
 
-			Debris:AddItem(debris, 20)
+	for index = 1, 16 do
+		local angle = (index / 16) * math.pi * 2
+		local rock = Instance.new('Part')
+		rock.Material = Enum.Material.Rock
+		rock.Color = Color3.fromRGB(100, 100, 100)
+		rock.Size = Vector3.new(randomFloat(2, 5), randomFloat(2, 5), randomFloat(2, 5))
+		rock.Anchored = true
+		rock.CanCollide = false
+		rock.Parent = folder
 
-			task.wait(1)
-		end
-	end)
+		local token = self:_CreateCleanupToken()
+		local radius = randomFloat(30, 90)
+		local speed = randomFloat(0.4, 1.2)
+		local baseHeight = randomFloat(10, 50)
+
+		task.spawn(function()
+			local elapsed = 0
+			while token.Active and rock.Parent and self.currentWeather == 'GravityStorm' do
+				elapsed += 0.05
+				local orbit = angle + elapsed * speed
+				rock.CFrame = CFrame.new(
+					math.cos(orbit) * radius,
+					baseHeight + math.sin(elapsed * 2 + angle) * 12,
+					math.sin(orbit) * radius
+				)
+				task.wait(0.05)
+			end
+		end)
+	end
 end
+
 function WeatherModule:CreatePollenStorm(count)
-	local pollen = Instance.new("Part")
-	pollen.Anchored = true
-	pollen.CanCollide = false
-	pollen.Transparency = 1
-	pollen.Size = Vector3.new(500, 1, 500)
-	pollen.CFrame = CFrame.new(0, 100, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	emitter.Color = ColorSequence.new(Color3.fromRGB(255, 255, 150))
-	emitter.Size = NumberSequence.new(0.3)
-	emitter.Transparency = NumberSequence.new(0.4)
-	emitter.Lifetime = NumberRange.new(10, 15)
-	emitter.Rate = count
-	emitter.Speed = NumberRange.new(5, 10)
-	emitter.SpreadAngle = Vector2.new(180, 180)
-	emitter.LightEmission = 0.5
-	emitter.Parent = pollen
-
-	pollen.Parent = workspace
-	table.insert(self.activeEffects, pollen)
+	self:_CreateParticleField({
+		Name = 'PollenStormEmitter',
+		Position = Vector3.new(0, 100, 0),
+		Texture = 'rbxasset://textures/particles/sparkles_main.dds',
+		Color = Color3.fromRGB(255, 255, 150),
+		SizeSequence = NumberSequence.new(0.3),
+		Transparency = NumberSequence.new(0.4),
+		Lifetime = NumberRange.new(10, 15),
+		Rate = count,
+		Speed = NumberRange.new(5, 10),
+		SpreadAngle = Vector2.new(180, 180),
+		LightEmission = 0.5,
+	})
 end
+
 function WeatherModule:CreateBioluminescentSpores(count)
-	task.spawn(function()
-		while self.currentWeather == "BioluminescentSpores" do
-			local spore = Instance.new("Part")
-			spore.Shape = Enum.PartType.Ball
-			spore.Material = Enum.Material.Neon
-			spore.Color = Color3.fromHSV(math.random(), 0.8, 1)
-			spore.Size = Vector3.new(0.5, 0.5, 0.5)
-			spore.CFrame = CFrame.new(
-				math.random(-200, 200),
-				math.random(5, 40),
-				math.random(-200, 200)
-			)
-			spore.Parent = workspace
-			local light = Instance.new("PointLight")
-			light.Brightness = 3
-			light.Range = 15
-			light.Color = spore.Color
-			light.Parent = spore
+	local folder = self:_CreateEffectFolder('BioluminescentSpores')
 
-			
-			local bodyVelocity = Instance.new("BodyVelocity")
-			bodyVelocity.MaxForce = Vector3.new(1e4, 1e4, 1e4)
-			bodyVelocity.Velocity = Vector3.new(math.random(-3, 3), math.random(-1, 2), math.random(-3, 3))
-			bodyVelocity.Parent = spore
+	for _ = 1, count do
+		local part = self:_SpawnAnimatedOrb(folder, {
+			Color = Color3.fromHSV(math.random(), 0.8, 1),
+			Size = Vector3.new(0.5, 0.5, 0.5),
+			Position = randomPointInRadius(220, randomFloat(5, 40)),
+			HorizontalRadius = randomFloat(2, 6),
+			HorizontalSpeed = randomFloat(0.3, 1),
+			VerticalAmplitude = randomFloat(0.4, 1.2),
+			VerticalSpeed = randomFloat(0.8, 1.5),
+			Lifetime = 30,
+			Light = {
+				Brightness = 3,
+				Range = 15,
+			},
+		})
 
-			Debris:AddItem(spore, 30)
-
-			task.wait(0.5)
-		end
-	end)
+		self:_StartColorCycle(part, 0.01, 0.8, 1)
+	end
 end
+
 function WeatherModule:CreateSeedRain(count)
-	local seeds = Instance.new("Part")
-	seeds.Anchored = true
-	seeds.CanCollide = false
-	seeds.Transparency = 1
-	seeds.Size = Vector3.new(500, 1, 500)
-	seeds.CFrame = CFrame.new(0, 150, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	emitter.Color = ColorSequence.new(Color3.fromRGB(139, 90, 60))
-	emitter.Size = NumberSequence.new(0.6)
-	emitter.Transparency = NumberSequence.new(0.2)
-	emitter.Lifetime = NumberRange.new(8, 12)
-	emitter.Rate = count
-	emitter.Speed = NumberRange.new(15, 20)
-	emitter.SpreadAngle = Vector2.new(20, 20)
-	emitter.EmissionDirection = Enum.NormalId.Bottom
-	emitter.Rotation = NumberRange.new(0, 360)
-	emitter.RotSpeed = NumberRange.new(-100, 100)
-	emitter.Parent = seeds
-
-	seeds.Parent = workspace
-	table.insert(self.activeEffects, seeds)
+	self:_CreateParticleField({
+		Name = 'SeedRainEmitter',
+		Position = Vector3.new(0, 150, 0),
+		Texture = 'rbxasset://textures/particles/sparkles_main.dds',
+		Color = Color3.fromRGB(139, 90, 60),
+		SizeSequence = NumberSequence.new(0.6),
+		Transparency = NumberSequence.new(0.2),
+		Lifetime = NumberRange.new(8, 12),
+		Rate = count,
+		Speed = NumberRange.new(15, 20),
+		SpreadAngle = Vector2.new(20, 20),
+		Rotation = NumberRange.new(0, 360),
+		RotSpeed = NumberRange.new(-100, 100),
+	})
 end
+
 function WeatherModule:CreatePrismaticButterflies(count)
-	task.spawn(function()
-		for i = 1, count do
-			local butterfly = Instance.new("Part")
-			butterfly.Material = Enum.Material.Neon
-			butterfly.Color = Color3.fromHSV(math.random(), 1, 1)
-			butterfly.Size = Vector3.new(1, 0.1, 1.5)
-			butterfly.CFrame = CFrame.new(
-				math.random(-200, 200),
-				math.random(5, 30),
-				math.random(-200, 200)
-			)
-			butterfly.Parent = workspace
-		
-			local bodyVelocity = Instance.new("BodyVelocity")
-			bodyVelocity.MaxForce = Vector3.new(1e4, 1e4, 1e4)
-			bodyVelocity.Velocity = Vector3.new(math.random(-8, 8), math.random(-3, 3), math.random(-8, 8))
-			bodyVelocity.Parent = butterfly
+	local folder = self:_CreateEffectFolder('PrismaticButterflies')
 
-			task.spawn(function()
-				local hue = math.random()
-				while butterfly.Parent do
-					hue = (hue + 0.01) % 1
-					butterfly.Color = Color3.fromHSV(hue, 1, 1)
-					task.wait(0.1)
-				end
-			end)
+	for _ = 1, count do
+		local butterfly = self:_SpawnAnimatedOrb(folder, {
+			Color = Color3.fromHSV(math.random(), 1, 1),
+			Size = Vector3.new(1, 0.1, 1.5),
+			Position = randomPointInRadius(220, randomFloat(5, 30)),
+			HorizontalRadius = randomFloat(3, 10),
+			HorizontalSpeed = randomFloat(1, 2.5),
+			VerticalAmplitude = randomFloat(0.5, 2),
+			VerticalSpeed = randomFloat(1.5, 3),
+			Lifetime = 60,
+		})
 
-			Debris:AddItem(butterfly, 60)
-
-			task.wait(0.5)
-		end
-	end)
+		self:_StartColorCycle(butterfly, 0.01, 1, 1)
+	end
 end
+
 function WeatherModule:CreateLightningRain()
 	self:CreateRain(300, 50)
 	self:CreateLightningStorm(150, 180)
 end
+
 function WeatherModule:CreateFrostWave()
-	local frost = Instance.new("Part")
-	frost.Anchored = true
-	frost.CanCollide = false
-	frost.Transparency = 1
-	frost.Size = Vector3.new(500, 1, 500)
-	frost.CFrame = CFrame.new(0, 150, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-	emitter.Color = ColorSequence.new(Color3.fromRGB(200, 230, 255))
-	emitter.Size = NumberSequence.new(0.8)
-	emitter.Transparency = NumberSequence.new(0.3)
-	emitter.Lifetime = NumberRange.new(5, 8)
-	emitter.Rate = 400
-	emitter.Speed = NumberRange.new(30, 40)
-	emitter.SpreadAngle = Vector2.new(180, 180)
-	emitter.LightEmission = 0.8
-	emitter.Parent = frost
-
-	frost.Parent = workspace
-	table.insert(self.activeEffects, frost)
-end
-function WeatherModule:CreateEmberStorm(count)
-	local embers = Instance.new("Part")
-	embers.Anchored = true
-	embers.CanCollide = false
-	embers.SContinueTransparency = 1
-	embers.Size = Vector3.new(500, 1, 500)
-	embers.CFrame = CFrame.new(0, 150, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/fire_main.dds"
-	emitter.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 150, 50)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 50, 0))
+	self:_CreateParticleField({
+		Name = 'FrostWaveEmitter',
+		Position = Vector3.new(0, 150, 0),
+		Texture = 'rbxasset://textures/particles/sparkles_main.dds',
+		Color = Color3.fromRGB(200, 230, 255),
+		SizeSequence = NumberSequence.new(0.8),
+		Transparency = NumberSequence.new(0.3),
+		Lifetime = NumberRange.new(5, 8),
+		Rate = 400,
+		Speed = NumberRange.new(30, 40),
+		SpreadAngle = Vector2.new(180, 180),
+		LightEmission = 0.8,
 	})
-	emitter.Size = NumberSequence.new(0.5)
-	emitter.Transparency = NumberSequence.new(0.3)
-	emitter.Lifetime = NumberRange.new(6, 10)
-	emitter.Rate = count
-	emitter.Speed = NumberRange.new(20, 30)
-	emitter.SpreadAngle = Vector2.new(180, 180)
-	emitter.LightEmission = 1
-	emitter.Parent = embers
-
-	embers.Parent = workspace
-	table.insert(self.activeEffects, embers)
 end
+
+function WeatherModule:CreateEmberStorm(count)
+	self:_CreateParticleField({
+		Name = 'EmberStormEmitter',
+		Position = Vector3.new(0, 150, 0),
+		Texture = 'rbxasset://textures/particles/fire_main.dds',
+		Color = {
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 150, 50)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 50, 0)),
+		},
+		SizeSequence = NumberSequence.new(0.5),
+		Transparency = NumberSequence.new(0.3),
+		Lifetime = NumberRange.new(6, 10),
+		Rate = count,
+		Speed = NumberRange.new(20, 30),
+		SpreadAngle = Vector2.new(180, 180),
+		LightEmission = 1,
+	})
+end
+
 function WeatherModule:CreateWind(speed)
-	
-	local wind = Instance.new("Part")
-	wind.Anchored = true
-	wind.CanCollide = false
-	wind.Transparency = 1
-	wind.Size = Vector3.new(500, 100, 500)
-	wind.CFrame = CFrame.new(0, 50, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
-	emitter.Color = ColorSequence.new(Color3.fromRGB(200, 200, 200))
-	emitter.Size = NumberSequence.new(3)
-	emitter.Transparency = NumberSequence.new(0.8)
-	emitter.Lifetime = NumberRange.new(3, 5)
-	emitter.Rate = 100
-	emitter.Speed = NumberRange.new(speed, speed + 10)
-	emitter.SpreadAngle = Vector2.new(10, 90)
-	emitter.EmissionDirection = Enum.NormalId.Right
-	emitter.Parent = wind
-
-	wind.Parent = workspace
-	table.insert(self.activeEffects, wind)
+	self:_CreateParticleField({
+		Name = 'WindEmitter',
+		Position = Vector3.new(0, 50, 0),
+		Size = Vector3.new(WEATHER_BOUNDS.Horizontal, 100, WEATHER_BOUNDS.Horizontal),
+		Texture = 'rbxasset://textures/particles/smoke_main.dds',
+		Color = Color3.fromRGB(200, 200, 200),
+		SizeSequence = NumberSequence.new(3),
+		Transparency = NumberSequence.new(0.8),
+		Lifetime = NumberRange.new(3, 5),
+		Rate = 100,
+		Speed = NumberRange.new(speed, speed + 10),
+		SpreadAngle = Vector2.new(10, 90),
+		EmissionDirection = Enum.NormalId.Right,
+	})
 end
+
 function WeatherModule:CreateFogParticles()
-	local fog = Instance.new("Part")
-	fog.Anchored = true
-	fog.CanCollide = false
-	fog.Transparency = 1
-	fog.Size = Vector3.new(500, 50, 500)
-	fog.CFrame = CFrame.new(0, 25, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
-	emitter.Color = ColorSequence.new(Color3.fromRGB(200, 200, 210))
-	emitter.Size = NumberSequence.new(30)
-	emitter.Transparency = NumberSequence.new(0.8)
-	emitter.Lifetime = NumberRange.new(15, 20)
-	emitter.Rate = 50
-	emitter.Speed = NumberRange.new(1, 3)
-	emitter.SpreadAngle = Vector2.new(180, 180)
-	emitter.Parent = fog
-
-	fog.Parent = workspace
-	table.insert(self.activeEffects, fog)
+	self:_CreateParticleField({
+		Name = 'FogEmitter',
+		Position = Vector3.new(0, 25, 0),
+		Size = Vector3.new(WEATHER_BOUNDS.Horizontal, 50, WEATHER_BOUNDS.Horizontal),
+		Texture = 'rbxasset://textures/particles/smoke_main.dds',
+		Color = Color3.fromRGB(200, 200, 210),
+		SizeSequence = NumberSequence.new(30),
+		Transparency = NumberSequence.new(0.8),
+		Lifetime = NumberRange.new(15, 20),
+		Rate = 50,
+		Speed = NumberRange.new(1, 3),
+		SpreadAngle = Vector2.new(180, 180),
+	})
 end
+
 function WeatherModule:CreateRedFog()
-	local fog = Instance.new("Part")
-	fog.Anchored = true
-	fog.CanCollide = false
-	fog.Transparency = 1
-	fog.Size = Vector3.new(500, 50, 500)
-	fog.CFrame = CFrame.new(0, 25, 0)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
-	emitter.Color = ColorSequence.new(Color3.fromRGB(150, 50, 50))
-	emitter.Size = NumberSequence.new(30)
-	emitter.Transparency = NumberSequence.new(0.7)
-	emitter.Lifetime = NumberRange.new(15, 20)
-	emitter.Rate = 60
-	emitter.Speed = NumberRange.new(1, 3)
-	emitter.SpreadAngle = Vector2.new(180, 180)
-	emitter.Parent = fog
-
-	fog.Parent = workspace
-	table.insert(self.activeEffects, fog)
+	self:_CreateParticleField({
+		Name = 'RedFogEmitter',
+		Position = Vector3.new(0, 25, 0),
+		Size = Vector3.new(WEATHER_BOUNDS.Horizontal, 50, WEATHER_BOUNDS.Horizontal),
+		Texture = 'rbxasset://textures/particles/smoke_main.dds',
+		Color = Color3.fromRGB(150, 50, 50),
+		SizeSequence = NumberSequence.new(30),
+		Transparency = NumberSequence.new(0.7),
+		Lifetime = NumberRange.new(15, 20),
+		Rate = 60,
+		Speed = NumberRange.new(1, 3),
+		SpreadAngle = Vector2.new(180, 180),
+	})
 end
+
 function WeatherModule:CreateHeatDistortion()
-	local blur = Instance.new("BlurEffect")
+	local blur = Instance.new('BlurEffect')
 	blur.Size = 5
 	blur.Parent = Lighting
-	table.insert(self.activeEffects, blur)
+	self:_TrackEffect(blur)
+
+	TweenService:Create(
+		blur,
+		TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+		{ Size = 9 }
+	):Play()
 end
+
 return WeatherModule

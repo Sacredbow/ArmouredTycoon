@@ -1,6 +1,5 @@
 local Players = game:GetService("Players")
 local ReturnRequest = game:GetService("ReplicatedStorage").Remotes:WaitForChild("ReturnRequest")
-local ServerScriptService = game:GetService("ServerScriptService")
 
 local FriendService = {}
 FriendService.__index = FriendService
@@ -14,7 +13,9 @@ function FriendService.new(playerService)
 end
 
 function FriendService:CheckFriendBoost(player: Player)
-	if not player or not player.Parent then return end
+	if not player or not player.Parent then 
+		return
+	end
 
 	local friendsInGame = {}
 
@@ -43,12 +44,6 @@ function FriendService:CheckFriendBoost(player: Player)
 	
 		self.PlayerService:SetFriendBoost(player, true)
 		ReturnRequest:FireClient(player, "Player1", TextCalc)
-		local BindableCheck : BindableEvent = ServerScriptService.Classes.Tycoon:WaitForChild("FriendService")
-BindableCheck.Event:Connect(function(arg)
-	if arg == "Multiplier" then
-				self.PlayerService:SetFriendBoost(player, false)
-	end
-end)
 	else
 		
 		self.PlayerService:SetFriendBoost(player, false)
@@ -60,6 +55,14 @@ function FriendService:UpdateAllPlayers()
 	for _, player in ipairs(Players:GetPlayers()) do
 		self:CheckFriendBoost(player)
 	end
+end
+
+function FriendService:GetFriendCount(player: Player): number
+	return self.ActiveBoosts[player] or 0
+end
+
+function FriendService:GetBoostMultiplier(player: Player): number
+	return 1 + (self:GetFriendCount(player) * 0.10)
 end
 
 function FriendService:OnPlayerLeaving(leavingPlayer: Player)
@@ -88,11 +91,6 @@ function FriendService:OnPlayerLeaving(leavingPlayer: Player)
 					
 						
 					else
-						
-						local BindableCheck : BindableEvent = ServerScriptService.Classes.Tycoon:WaitForChild("FriendService")
-						BindableCheck:Fire("Disconnected")
-						
-						
 						self.PlayerService:SetFriendBoost(player, false)
 						ReturnRequest:FireClient(player, "Player1Disconnected", 0)
 					end

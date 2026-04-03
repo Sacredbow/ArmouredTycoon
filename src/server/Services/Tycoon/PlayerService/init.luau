@@ -16,6 +16,7 @@ function PlayerService.new()
 	self.PlayerSpawns = workspace:WaitForChild("PlayerSpawns")
 
 	local friendService = FriendService.new(self)
+	self.FriendService = friendService
 	friendService:Init()
 	return self
 end
@@ -123,7 +124,7 @@ function PlayerService:SetX2(player: Player, value: boolean)
 	if value then
 		self.PlayerStates[player]:SetState("X2")
 	else
-		self.PlayerStates[player]:RemoveState(2)
+		self.PlayerStates[player]:RemoveState("X2")
 	end
 end
 
@@ -151,6 +152,14 @@ function PlayerService:SetFriendBoost(player: Player, value: boolean)
 	else
 		self.PlayerStates[player]:RemoveState("FriendBoost")
 	end
+end
+
+function PlayerService:GetFriendBoostMultiplier(player: Player): number
+	if not self.FriendService then
+		return 1
+	end
+
+	return self.FriendService:GetBoostMultiplier(player)
 end
 
 -- Rocket
