@@ -10,17 +10,45 @@ local ProfileManager = {}
 -- Store profiles from the Profile Store.
 
 ProfileManager.Profiles = {}
+
+local function getStatisticValue(player: Player, folderName: string, statName: string): IntValue?
+	local folder = player:FindFirstChild(folderName)
+	if not folder then
+		return nil
+	end
+
+	local stat = folder:FindFirstChild(statName)
+	if stat and stat:IsA("IntValue") then
+		return stat
+	end
+
+	return nil
+end
+
 -- Adds Cash to the catorgized player.
-function ProfileManager.AddCash(player, amount)
+function ProfileManager.AddCash(player: Player, amount: number)
 	local profile = ProfileManager.Profiles[player]
 	if not profile then return end
 	profile.Data.Cash += amount
-	local leaderstats = player:FindFirstChild("leaderstats")
-	if leaderstats then
-		leaderstats.Cash.Value = profile.Data.Cash
-		
+	local cashStat = getStatisticValue(player, "leaderstats", "Cash")
+	if cashStat then
+		cashStat.Value = profile.Data.Cash
 	end
 end
+
+function ProfileManager.SetCash(player: Player, amount: number)
+	local profile = ProfileManager.Profiles[player]
+	if not profile then
+		return
+	end
+
+	profile.Data.Cash = amount
+	local cashStat = getStatisticValue(player, "leaderstats", "Cash")
+	if cashStat then
+		cashStat.Value = amount
+	end
+end
+
 -- Adds Emerald to the catorgized player.
 function ProfileManager.AddEmerald(player : Player, amount : number)
 	local profile = ProfileManager.Profiles[player]
@@ -29,10 +57,9 @@ function ProfileManager.AddEmerald(player : Player, amount : number)
 	end
 
 	profile.Data.Emerald += amount
-	local leaderstats = player:FindFirstChild("leaderstats")
-	if leaderstats then
-		leaderstats.Emerald.Value = profile.Data.Emerald
-        
+	local emeraldStat = getStatisticValue(player, "leaderstats", "Emerald")
+	if emeraldStat then
+		emeraldStat.Value = profile.Data.Emerald
 	end
 end
 
@@ -45,10 +72,9 @@ function ProfileManager.AddKills(player : Player, amount : number)
 	end
 
 	profile.Data.Kills += amount
-	local leaderstats = player:FindFirstChild("leaderstats")
-	if leaderstats then
-		leaderstats.Kills.Value = profile.Data.Kills
-    
+	local killsStat = getStatisticValue(player, "leaderstats", "Kills")
+	if killsStat then
+		killsStat.Value = profile.Data.Kills
 	end
 end
 
@@ -60,10 +86,9 @@ function ProfileManager.AddRebirths(player : Player, amount : number)
 	end
 
 	profile.Data.Rebirths += amount
-	local leaderstats = player:FindFirstChild("leaderstats")
-	if leaderstats then
-		leaderstats.Rebirths.Value = profile.Data.Rebirths
-
+	local rebirthsStat = getStatisticValue(player, "Statistics", "Rebirths")
+	if rebirthsStat then
+		rebirthsStat.Value = profile.Data.Rebirths
 	end
 end
 

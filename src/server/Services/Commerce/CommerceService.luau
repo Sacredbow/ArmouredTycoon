@@ -446,9 +446,7 @@ end
 		local tycoon = data.tycoon
 		local button = data.button
 
-		tycoon:_SpawnButtonItems(button)
-		tycoon:_UnlockNextButtons(button)
-		button:Destroy()
+		tycoon:_ApplyPurchasedButton(button)
 
 		self.PendingPurchases[player.UserId] = nil
 

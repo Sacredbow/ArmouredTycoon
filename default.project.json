@@ -23,10 +23,15 @@
     },
 
     "ServerScriptService": {
+
+          "AI": {
+        "$path": "src/server/AI"
+      },
  
         "Bootstrap": {
         "$path": "src/server/Bootstrap"
       },
+
 
 
         "Classes": {
@@ -62,7 +67,7 @@
 
     "StarterPlayer": {
       "StarterPlayerScripts": {
-      
+        "$path": "src/client/StarterPlayerScripts"
       }
   
     },

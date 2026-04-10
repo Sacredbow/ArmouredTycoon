@@ -9,6 +9,8 @@ local StateManager = require(ServerScriptService.Utilities.StateManager)
 local PlayerService = {}
 PlayerService.__index = PlayerService
 
+local TELEPORT_GRACE_DURATION = 2
+
 function PlayerService.new()
 	local self = setmetatable({}, PlayerService)
 	self.PlayerStates = {} :: {[Player]: typeof(StateManager.new(nil :: any))}
@@ -59,13 +61,18 @@ end
 function PlayerService:_OnCharacterAdded(player: Player, character: Model)
 	local hasTycoon = player:FindFirstChild("hasTycoon")
 	if hasTycoon and (hasTycoon :: BoolValue).Value then return end
-	self:_TeleportToSpawn(character)
+	self:_TeleportToSpawn(player, character)
 	self:_ApplySpawnHighlight(character)
 end
 
-function PlayerService:_TeleportToSpawn(character: Model)
+function PlayerService:AllowServerTeleport(player: Player, duration: number?)
+	player:SetAttribute("AntiCheatTeleportGraceUntil", os.clock() + (duration or TELEPORT_GRACE_DURATION))
+end
+
+function PlayerService:_TeleportToSpawn(player: Player, character: Model)
 	local spawns = self.PlayerSpawns:GetChildren()
 	if #spawns == 0 then return end
+	self:AllowServerTeleport(player)
 	character:PivotTo(spawns[math.random(1, #spawns)].CFrame)
 end
 

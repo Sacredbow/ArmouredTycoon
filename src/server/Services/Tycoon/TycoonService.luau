@@ -1,12 +1,34 @@
-
 local Players = game:GetService("Players")
 local ServerScriptService = game:GetService("ServerScriptService")
+local DataTemplate = require(ServerScriptService.DataManager.DataTemplate)
+local ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 local TycoonClass = require(ServerScriptService.Classes.Tycoon)
 local RagdollModule = require(ServerScriptService.Modules.RagdollModule)
 local CollisionModule = require(ServerScriptService.Modules.CollisionManager)
 
 local TycoonService = {}
 TycoonService.__index = TycoonService
+
+type ConstructionData = {
+	PurchasedButtons: { string },
+}
+
+local function clearSavedConstruction(player: Player)
+	local profile = ProfileManager.Profiles[player]
+	if not profile then
+		return
+	end
+
+	local constructionData = profile.Data.TycoonConstruction
+	if type(constructionData) ~= "table" then
+		profile.Data.TycoonConstruction = {
+			PurchasedButtons = {},
+		}
+		return
+	end
+
+	(constructionData :: ConstructionData).PurchasedButtons = {}
+end
 
 function TycoonService.new(playerService, purchaseService)
 	local self = setmetatable({}, TycoonService)
@@ -64,8 +86,22 @@ function TycoonService:_OnPlayerRemoving(player)
 end
 
 
-function TycoonService:Rebirth(player)
+function TycoonService:Rebirth(player: Player, rebirthAmount: number?)
 	local tycoon = self.TycoonsByOwner[player]
+	local amountToAward = rebirthAmount or 1
+
+	ProfileManager.AddRebirths(player, amountToAward)
+	ProfileManager.SetCash(player, DataTemplate.Cash)
+
+	if not tycoon then
+		clearSavedConstruction(player)
+		warn(`[TycoonService] Rebirth applied for {player.Name} without an active tycoon`)
+		return
+	end
+
+	tycoon:_ClearSavedConstruction(player)
+	tycoon:Cleanup()
+	self.TycoonsByOwner[player] = nil
 end
 
 

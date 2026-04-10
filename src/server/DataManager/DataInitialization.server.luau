@@ -11,7 +11,7 @@ local Remotes = ReplicatedStorage.Remotes.CharacterStats
 
 local function IsStudio()
 	-- Returns if the player is in studio.
-	return RunService:IsStudio() and "Test7" or "Live"
+	return RunService:IsStudio() and "Test7" or "Game"
 end
 
 

@@ -1,161 +1,315 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
+
 local Remotes = ReplicatedStorage.Remotes
 local SystemMessageRemote = Remotes.Interface:WaitForChild("TextChatService")
 local KickPlayer = Remotes.Interface:WaitForChild("KickPlayer")
 local LoggingEvent = ServerScriptService.Services.External.LogService:WaitForChild("Logging")
-local MaxSpeed = 36
-local MaxJumpHeight = 20
-local ViolationDecayTime = 400
 
-
-
-
+local Config = require(script.Config)
 local ServerSettings = require(script.ServerSettings)
 
+local function createCharacterRayParams(character: Model): RaycastParams
+	local rayParams = RaycastParams.new()
+	rayParams.FilterDescendantsInstances = { character }
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	return rayParams
+end
 
-Players.PlayerAdded:Connect(function(Player)
-	local function Registry(Character)
-		local Humanoid = Character:WaitForChild("Humanoid")
-		local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-		local LastPosition = HumanoidRootPart.Position
-		local LastInputTime = os.clock()
-		local Violations = 0
-		local LastViolationTime = 0
-		
-		local TickCount = 0
+local function getHorizontalSpeed(lastPosition: Vector3, currentPosition: Vector3, deltaTime: number): number
+	local horizontalDelta = Vector3.new(
+		currentPosition.X - lastPosition.X,
+		0,
+		currentPosition.Z - lastPosition.Z
+	)
 
-		local function AddViolation(player : Player, reason : string)
-			if ServerSettings[player.Name] then
-				
-				return
+	return horizontalDelta.Magnitude / deltaTime
+end
+
+local function getHorizontalDistance(fromPosition: Vector3, toPosition: Vector3): number
+	local horizontalDelta = Vector3.new(
+		toPosition.X - fromPosition.X,
+		0,
+		toPosition.Z - fromPosition.Z
+	)
+
+	return horizontalDelta.Magnitude
+end
+
+local function getHeightAboveGround(humanoidRootPart: BasePart, character: Model): number
+	local rayOrigin = humanoidRootPart.Position
+	local rayDirection = Vector3.new(0, -300, 0)
+	local result = workspace:Raycast(rayOrigin, rayDirection, createCharacterRayParams(character))
+	if result then
+		return rayOrigin.Y - result.Position.Y
+	end
+
+	return 0
+end
+
+local function checkNoclip(lastPosition: Vector3, currentPosition: Vector3, character: Model): boolean
+	local direction = currentPosition - lastPosition
+	local distance = direction.Magnitude
+	if distance < Config.Noclip.MinDistance then
+		return false
+	end
+
+	local unitDirection = direction.Unit
+	local result = workspace:Raycast(lastPosition, unitDirection * distance, createCharacterRayParams(character))
+	if not result or not result.Instance.CanCollide then
+		return false
+	end
+
+	local hitToCurrent = currentPosition - result.Position
+	if hitToCurrent.Magnitude <= Config.Noclip.SurfaceTolerance then
+		return false
+	end
+
+	if hitToCurrent:Dot(unitDirection) <= Config.Noclip.ForwardTolerance then
+		return false
+	end
+
+	local normalAlignment = math.abs(result.Normal:Dot(unitDirection))
+	if normalAlignment < Config.Noclip.RequiredNormalAlignment then
+		return false
+	end
+
+	return true
+end
+
+local function checkTeleport(lastPosition: Vector3, currentPosition: Vector3): boolean
+	local horizontalDistance = getHorizontalDistance(lastPosition, currentPosition)
+	local verticalDistance = math.abs(currentPosition.Y - lastPosition.Y)
+
+	if horizontalDistance < Config.Teleport.MinDistance then
+		return false
+	end
+
+	if verticalDistance > Config.Teleport.MaxVerticalDistance then
+		return false
+	end
+
+	return true
+end
+
+local function copyPositionHistory(history)
+	local copiedHistory = {}
+	for index, sample in ipairs(history) do
+		copiedHistory[index] = {
+			Position = sample.Position,
+			Time = sample.Time,
+		}
+	end
+
+	return copiedHistory
+end
+
+local function isServerTeleportAllowed(player: Player, now: number): boolean
+	local graceUntil = player:GetAttribute("AntiCheatTeleportGraceUntil")
+	return type(graceUntil) == "number" and now <= graceUntil
+end
+
+local function resetCharacterToPosition(character: Model, humanoidRootPart: BasePart, targetPosition: Vector3)
+	local targetCFrame = CFrame.new(targetPosition) * (humanoidRootPart.CFrame - humanoidRootPart.Position)
+	character:PivotTo(targetCFrame)
+
+	if Config.Teleport.ResetVelocity then
+		humanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+		humanoidRootPart.AssemblyAngularVelocity = Vector3.zero
+	end
+end
+
+Players.PlayerAdded:Connect(function(player)
+	local function Registry(character)
+		local humanoid = character:WaitForChild("Humanoid")
+		local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+		local lastPosition = humanoidRootPart.Position
+		local lastInputTime = os.clock()
+		local violations = 0
+		local lastViolationTime = 0
+		local noclipStrikes = 0
+		local teleportStrikes = 0
+		local positionHistory = {}
+		local tickCount = 0
+
+		local function recordPositionSample(position: Vector3, sampleTime: number)
+			table.insert(positionHistory, {
+				Position = position,
+				Time = math.round(sampleTime * 100) / 100,
+			})
+
+			if #positionHistory > 6 then
+				table.remove(positionHistory, 1)
 			end
-			Violations += 1
-			LastViolationTime = os.clock()
-			print("Violation:", Violations)
-			if Violations >= 4 then
-				LoggingEvent:Fire(player, reason)
-				Player:Kick("You were caught by SentraGuard™: Anomalous Behaviour Detected.")
-				SystemMessageRemote:FireAllClients("[Game]: <b><font color='#ff4444'>".. Player.Name.." was kicked by the Anti-Cheat, Agumentation of Character properties.</font></b>")
-				return true 
-			end
-			return false
 		end
 
+		local function buildEvidence(currentPosition: Vector3, speed: number?, heightAboveGround: number?)
+			local humanoidState = "Unknown"
+			local success, stateName = pcall(function()
+				return humanoid:GetState().Name
+			end)
+			if success then
+				humanoidState = stateName
+			end
 
-		
-		
-		local function CheckNoclip(lastPos, currentPos, character)
-			local direction = currentPos - lastPos
-			local distance = direction.Magnitude
-			if distance < 0.1 then return false end -- didn't move, skip
+			return {
+				CurrentPosition = currentPosition,
+				LastPosition = lastPosition,
+				Speed = speed,
+				HeightAboveGround = heightAboveGround,
+				TeleportDistance = getHorizontalDistance(lastPosition, currentPosition),
+				VerticalDelta = math.abs(currentPosition.Y - lastPosition.Y),
+				Violations = violations + 1,
+				NoclipStrikes = noclipStrikes,
+				TeleportStrikes = teleportStrikes,
+				HumanoidState = humanoidState,
+				PositionHistory = copyPositionHistory(positionHistory),
+			}
+		end
 
-			local rayParams = RaycastParams.new()
-			rayParams.FilterDescendantsInstances = {character}
-			rayParams.FilterType = Enum.RaycastFilterType.Exclude
+		local function AddViolation(targetPlayer: Player, reason: string, evidence)
+			if ServerSettings[targetPlayer.Name] then
+				return false
+			end
 
-			local result = workspace:Raycast(lastPos, direction.Unit * distance, rayParams)
-			if result and result.Instance.CanCollide then
-				-- They passed THROUGH a solid part between frames
+			violations += 1
+			lastViolationTime = os.clock()
+			print("Violation:", violations)
+
+			if violations >= 4 then
+				LoggingEvent:Fire(targetPlayer, reason, evidence)
+				targetPlayer:Kick("You were caught by SentraGuard: Anomalous Behaviour Detected.")
+				SystemMessageRemote:FireAllClients(
+					"[Game]: <b><font color='#ff4444'>" .. targetPlayer.Name
+						.. " was kicked by the Anti-Cheat, Agumentation of Character properties.</font></b>"
+				)
 				return true
 			end
-			return false
-		end
 
-		local function GetHeightAboveGround()
-			local rayOrigin = HumanoidRootPart.Position
-			local rayDirection = Vector3.new(0, -300, 0)
-			local raycastParams = RaycastParams.new()
-			raycastParams.FilterDescendantsInstances = {Character}
-			raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-			local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-			if result then
-				return rayOrigin.Y - result.Position.Y
-			end
-			return 0
+			return false
 		end
 
 		task.spawn(function()
-			while Character.Parent do
+			while character.Parent do
 				task.wait(0.5)
 
-				local Now = os.clock()
-				local CurrentPosition = HumanoidRootPart.Position
-				local Delta = Now - LastInputTime
-				if Delta <= 0 then continue end
-
-
-				if Now - LastViolationTime > ViolationDecayTime then
-					Violations = math.max(0, Violations - 1)
+				local now = os.clock()
+				local currentPosition = humanoidRootPart.Position
+				local delta = now - lastInputTime
+				if delta <= 0 then
+					continue
 				end
 
+				recordPositionSample(currentPosition, now)
 
-				local horizontalDelta = Vector3.new(
-					CurrentPosition.X - LastPosition.X,
-					0,
-					CurrentPosition.Z - LastPosition.Z
-				)
-				local speed = horizontalDelta.Magnitude / Delta
+				if now - lastViolationTime > Config.ViolationDecayTime then
+					violations = math.max(0, violations - 1)
+				end
 
-				if speed > MaxSpeed then
-					if AddViolation(Player, "Anomalous Behaviour Detected: Speed Exploits") then return end
-					--Character:PivotTo(CFrame.new(LastPosition))
+				if isServerTeleportAllowed(player, now) then
+					lastPosition = currentPosition
+					lastInputTime = now
+					teleportStrikes = 0
+					noclipStrikes = 0
+					continue
+				end
+
+				local speed = getHorizontalSpeed(lastPosition, currentPosition, delta)
+
+				if checkTeleport(lastPosition, currentPosition) then
+					teleportStrikes += 1
+					if teleportStrikes >= Config.Teleport.RequiredStrikes then
+						local evidence = buildEvidence(currentPosition, speed, nil)
+						resetCharacterToPosition(character, humanoidRootPart, lastPosition)
+						teleportStrikes = 0
+
+						if AddViolation(player, "Anomalous Behaviour Detected: Teleport Exploits", evidence) then
+							return
+						end
+
+						task.wait(0.1)
+						lastPosition = humanoidRootPart.Position
+						lastInputTime = os.clock()
+						task.wait(1)
+						continue
+					end
+				else
+					teleportStrikes = 0
+				end
+
+				if speed > Config.MaxSpeed then
+					local evidence = buildEvidence(currentPosition, speed, nil)
+					if AddViolation(player, "Anomalous Behaviour Detected: Speed Exploits", evidence) then
+						return
+					end
+
 					task.wait(0.1)
-					LastPosition = HumanoidRootPart.Position
-					LastInputTime = os.clock()
+					lastPosition = humanoidRootPart.Position
+					lastInputTime = os.clock()
 					task.wait(3)
 					continue
 				end
 
-
-				if Humanoid.FloorMaterial == Enum.Material.Air then
-					local heightAboveGround = GetHeightAboveGround()
-					if heightAboveGround > MaxJumpHeight then
+				if humanoid.FloorMaterial == Enum.Material.Air then
+					local heightAboveGround = getHeightAboveGround(humanoidRootPart, character)
+					if heightAboveGround > Config.MaxJumpHeight then
 						print("Jump violation, height:", heightAboveGround)
-						if AddViolation(Player, "Anomalous Behaviour Detected: Jump Exploits") then return end
-						--Character:PivotTo(CFrame.new(LastPosition))
-						task.wait(0.1)
-						LastPosition = HumanoidRootPart.Position
-						LastInputTime = os.clock()
-						task.wait(3)
-						continue
-					end
-				end
-				
-				
-				TickCount += 1
-				if TickCount % 2 == 0 then
-					if CheckNoclip(LastPosition, CurrentPosition, Character) then
-						if AddViolation(Player, "Anomalous Behaviour Detected: Noclip Exploits") then return end
-						task.wait(0.1)
-						LastPosition = HumanoidRootPart.Position
-						LastInputTime = os.clock()
-						task.wait(3)
-						continue
-					end
-				end
-			
+						local evidence = buildEvidence(currentPosition, speed, heightAboveGround)
+						if AddViolation(player, "Anomalous Behaviour Detected: Jump Exploits", evidence) then
+							return
+						end
 
-				LastPosition = CurrentPosition
-				LastInputTime = Now
+						task.wait(0.1)
+						lastPosition = humanoidRootPart.Position
+						lastInputTime = os.clock()
+						task.wait(3)
+						continue
+					end
+				end
+
+				tickCount += 1
+				if tickCount % Config.Noclip.CheckIntervalTicks == 0 then
+					if checkNoclip(lastPosition, currentPosition, character) then
+						noclipStrikes += 1
+						if noclipStrikes < Config.Noclip.RequiredStrikes then
+							lastPosition = currentPosition
+							lastInputTime = now
+							continue
+						end
+
+						local evidence = buildEvidence(currentPosition, speed, nil)
+						noclipStrikes = 0
+						if AddViolation(player, "Anomalous Behaviour Detected: Noclip Exploits", evidence) then
+							return
+						end
+
+						task.wait(0.1)
+						lastPosition = humanoidRootPart.Position
+						lastInputTime = os.clock()
+						task.wait(3)
+						continue
+					end
+
+					noclipStrikes = 0
+				end
+
+				lastPosition = currentPosition
+				lastInputTime = now
 			end
 		end)
 	end
 
-	Player.CharacterAdded:Connect(function(Character)
-
+	player.CharacterAdded:Connect(function(character)
 		task.wait(10)
-
-		Registry(Character)
+		Registry(character)
 	end)
-
 end)
-
 
 KickPlayer.OnServerEvent:Connect(function(player)
 	player:Kick("Anomalous Behaviour Detected.")
-	SystemMessageRemote:FireAllClients("[Game]: <b><font color='#ff4444'>".. player.Name.." was kicked by the Anti-Cheat, Agumentation of Character properties.</font></b>")
+	SystemMessageRemote:FireAllClients(
+		"[Game]: <b><font color='#ff4444'>" .. player.Name
+			.. " was kicked by the Anti-Cheat, Agumentation of Character properties.</font></b>"
+	)
 end)
-
-

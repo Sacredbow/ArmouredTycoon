@@ -23,8 +23,25 @@ local BuildSystem = require(script.Systems.BuildSystem)
 local CollectorSystem = require(script.Systems.CollectorSystem)
 local ProductionSystem = require(script.Systems.ProductionSystem)
 local ElectricitySystem = require(script.Systems.ElectricitySystem)
+local PersistenceSystem = require(script.Systems.PersistenceSystem)
 
 local VisualEffects = GamePackage["Visual Effects"]
+type StagePalette = {
+	Primary: Color3,
+	Secondary: Color3,
+	Accent: Color3,
+}
+
+local TYCOON_STAGE_PALETTES: {[string]: StagePalette} = {
+	Tycoon1 = ColorConfiguration.White,
+	Tycoon2 = ColorConfiguration.Blue,
+	Tycoon3 = ColorConfiguration.Black,
+	Tycoon4 = ColorConfiguration.Green,
+	Tycoon5 = ColorConfiguration.Grey,
+	Tycoon6 = ColorConfiguration.Red,
+	Tycoon7 = ColorConfiguration.Yellow,
+	Tycoon8 = ColorConfiguration.Purple,
+}
 
 
 local Tycoon = {}
@@ -45,6 +62,9 @@ ElectricitySystem(Tycoon, {
 	CollectionService = CollectionService,
 	ReplicatedStorage = ReplicatedStorage,
 	ReturnRequest = ReturnRequest,
+})
+PersistenceSystem(Tycoon, {
+	ProfileManager = ProfileManager,
 })
 
 
@@ -94,6 +114,8 @@ function Tycoon.new(tycoonModel, playerService, purchaseService, ragdollModule, 
 	self.MovedItems = {}
 	self.ActiveDropperLoops = {}
 	self.AppliedUpgraders = {}
+	self.PurchasedButtonLookup = {}
+	self.PurchasedButtonOrder = {}
 
 
 	
@@ -141,7 +163,7 @@ function Tycoon:Init()
 	self:_SetupUpgraders()
 	self:_SetupElectricity()
 	self:_SetupLasers()
-	self:_SetupGate()
+	--self:_SetupGate()
 	self:_SetupArmour()
 	self:_SetupGuns()
 	self:SetupCollsion()
@@ -153,19 +175,27 @@ function Tycoon:Init()
 end
 
 function Tycoon:_ApplyStageColors()
-	local palette = ColorConfiguration.White
+	local palette: StagePalette? = TYCOON_STAGE_PALETTES[self.Model.Name]
 	if not palette then
+		warn(`[Tycoon] No stage palette configured for "{self.Model.Name}"`)
 		return
 	end
 
+	local colorByTag: {[string]: Color3} = {
+		Primary = palette.Primary,
+		Secondary = palette.Secondary,
+		Accent = palette.Accent,
+	}
+
 	for _, descendant in ipairs(self.Stages:GetDescendants()) do
-		if descendant:IsA("BasePart") then
-			if CollectionService:HasTag(descendant, "Primary") then
-				descendant.Color = palette.Primary
-			elseif CollectionService:HasTag(descendant, "Secondary") then
-				descendant.Color = palette.Secondary
-			elseif CollectionService:HasTag(descendant, "Accent") then
-				descendant.Color = palette.Accent
+		if not descendant:IsA("BasePart") then
+			continue
+		end
+
+		for tagName, color in pairs(colorByTag) do
+			if CollectionService:HasTag(descendant, tagName) then
+				descendant.Color = color
+				break
 			end
 		end
 	end
@@ -225,11 +255,13 @@ function Tycoon:_ClaimTycoon(player)
 	if spawn then
 	
 		self.CharacterAddedConn = player.CharacterAdded:Connect(function(char)
+			self.PlayerService:AllowServerTeleport(player)
 			char:PivotTo(spawn.CFrame)
 		end)
 	end
 
 	self.PurchaseService:OnTycoonClaimed(player, self)
+	self:_RestoreSavedConstruction(player)
 end
 
 function Tycoon:_AssignTeam(player)
@@ -309,37 +341,24 @@ end
 	end
 
 
-		local price = button:FindFirstChild("Price")
+	local price = button:FindFirstChild("Price")
 	local gamepass = button:FindFirstChild("Gamepass")
-
-		if  ButtonType.Value == "Rebirth" then
-			local Rebirths = profile.Data.Rebirths
-			if Rebirths >= price.Value then
-
-	local ActivationClone = self.Activation:Clone()
-	ActivationClone.Parent = self.MainItems
-	local ParticleEmitter : ParticleEmitter = ActivationClone.Activation1
-
-ActivationClone.CFrame = button.CFrame * CFrame.new(0, 1.65, 0)
-
-
-		button:Destroy()
-	ParticleEmitter:Emit(1)
-
-	task.delay(3, function()
-				ActivationClone:Destroy()
-	end)
-				
+	
+	if ButtonType.Value == "Rebirth" then
+		local rebirths = profile.Data.Rebirths
 		
+		if price and rebirths >= price.Value then
+			self:_ApplyPurchasedButton(button, {
+				sound = self.Audios.Miscellaneous.RebirthButton,
+			})
+			warn(`Correct Rebirth: {rebirths}`)
 		else
+			warn(`Incorrect Rebirth: {rebirths}`)
 			ReturnRequest:FireClient(self.OwnerValue.Value, "Not Enough Rebirths")
+		end
 
-	return
+		return
 end
-		
-end
-
-
 
 	if gamepass then
 		self.PurchaseService:PromptGamepass(player, button, self)
@@ -347,30 +366,12 @@ end
 	end
 
 	
-	
-	
 	if price then
 		local cash = profile.Data.Cash
 		if cash >= price.Value then
 			
 			ProfileManager.AddCash(player, -price.Value)
-			self:_SpawnButtonItems(button)
-			self:_UnlockNextButtons(button)
-			local ActivationClone = self.Activation:Clone()
-			ActivationClone.Parent = self.MainItems
-			local ParticleEmitter : ParticleEmitter = ActivationClone.Activation1
-
-ActivationClone.CFrame = button.CFrame * CFrame.new(0, 1.65, 0)
-
-
-			button:Destroy()
-	ParticleEmitter:Emit(1)
-		
-			task.delay(3, function()
-				ActivationClone:Destroy()
-			end)
-			
-			
+			self:_ApplyPurchasedButton(button)
 		else
 			ReturnRequest:FireClient(self.OwnerValue.Value, "Not Enough Cash")
 
@@ -400,8 +401,6 @@ function Tycoon:SetupCollsion()
 	end
 end
 
-
-
 function Tycoon:ReloadConfiguration()
 	if self.ReloadConfigurationConnected then
 		return
@@ -425,6 +424,9 @@ end
 
 function Tycoon:Cleanup()
 	local previousOwner = self.OwnerValue.Value
+	if previousOwner then
+		self:_SaveConstruction(previousOwner)
+	end
 
 	local door = self.MainItems.OwnerDoor.Door
 	local titleLabel = self.MainItems.OwnerDoor.Title.SurfaceGui.TextLabel
@@ -459,6 +461,7 @@ function Tycoon:Cleanup()
 	self.x2Upgraders = {}
 	self.x3Upgraders = {}
 	self.AppliedUpgraders = {}
+	self:_ResetConstructionTracking()
 
 	local stage4 = self.Stages:FindFirstChild("Stage4")
 	if stage4 then
@@ -622,45 +625,45 @@ function Tycoon:_SetupLasers()
 end
 
 
-function Tycoon:_SetupGate()
-	local gate = self.Stages.Stage4.Fences.Gate
-	local lever = self.Stages.Stage4.Fences.Leaver
-	local prompt = lever.Prompt.ProximityPrompt
+--function Tycoon:_SetupGate()
+--	local gate = self.Stages.Stage4.Fences.Gate
+--	local lever = self.Stages.Stage4.Fences.Leaver
+--	local prompt = lever.Prompt.ProximityPrompt
 
-	local isOpen = false
-	local debounce = false
+--	local isOpen = false
+--	local debounce = false
 
-	prompt.Triggered:Connect(function()
-		if debounce then return end
-		debounce = true
-		prompt.Enabled = false
+--	prompt.Triggered:Connect(function()
+--		if debounce then return end
+--		debounce = true
+--		prompt.Enabled = false
 
-		local startGate = gate:GetPivot()
-		local startLever = lever:GetPivot()
-		local targetGate = isOpen and startGate * CFrame.new(-45, 0, 0) or startGate * CFrame.new(45, 0, 0)
-		local targetLever = isOpen and startLever * CFrame.Angles(math.rad(90), 0, 0) or startLever * CFrame.Angles(math.rad(-90), 0, 0)
+--		local startGate = gate:GetPivot()
+--		local startLever = lever:GetPivot()
+--		local targetGate = isOpen and startGate * CFrame.new(-45, 0, 0) or startGate * CFrame.new(45, 0, 0)
+--		local targetLever = isOpen and startLever * CFrame.Angles(math.rad(90), 0, 0) or startLever * CFrame.Angles(math.rad(-90), 0, 0)
 
 
-		task.spawn(function()
-			local duration = 2
-			local elapsed = 0
-			while elapsed < duration do
-				local dt = task.wait()
-				elapsed = math.min(elapsed + dt, duration)
-				local alpha = elapsed / duration
-				gate:PivotTo(startGate:Lerp(targetGate, alpha))
-				lever:PivotTo(startLever:Lerp(targetLever, alpha))
-			end
-		end)
+--		task.spawn(function()
+--			local duration = 2
+--			local elapsed = 0
+--			while elapsed < duration do
+--				local dt = task.wait()
+--				elapsed = math.min(elapsed + dt, duration)
+--				local alpha = elapsed / duration
+--				gate:PivotTo(startGate:Lerp(targetGate, alpha))
+--				lever:PivotTo(startLever:Lerp(targetLever, alpha))
+--			end
+--		end)
 
-		isOpen = not isOpen
-		prompt.ActionText = isOpen and "Close Gate" or "Open Gate"
+--		isOpen = not isOpen
+--		prompt.ActionText = isOpen and "Close Gate" or "Open Gate"
 
-		task.wait(4)
-		debounce = false
-		prompt.Enabled = true
-	end)
-end
+--		task.wait(4)
+--		debounce = false
+--		prompt.Enabled = true
+--	end)
+--end
 
 
 function Tycoon:_SetupArmour()

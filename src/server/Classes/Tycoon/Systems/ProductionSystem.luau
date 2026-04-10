@@ -72,7 +72,10 @@ return function(Tycoon, dependencies)
 
 	function Tycoon:_FadeInPart(dropper, steps, stepTime)
 		for _, descendant in ipairs(dropper:GetDescendants()) do
-			if descendant:IsA("ParticleEmitter") and not CollectionService:HasTag(descendant, "Power") then
+			if descendant:IsA("ParticleEmitter")
+				and not CollectionService:HasTag(descendant, "Power")
+				and not CollectionService:HasTag(descendant, "SelfEnabling")
+			then
 				descendant.Enabled = true
 			end
 		end
@@ -97,7 +100,7 @@ return function(Tycoon, dependencies)
 			descendant.Transparency = 0.45
 		end
 
-		if descendant:IsA("ParticleEmitter") then
+		if descendant:IsA("ParticleEmitter") and not CollectionService:HasTag(descendant, "SelfEnabling") then
 			descendant.Enabled = true
 		end
 
@@ -111,7 +114,7 @@ return function(Tycoon, dependencies)
 
 		if descendant:IsA("ProximityPrompt") then
 			if CollectionService:HasTag(descendant, "SelfEnabling") then
-				return false
+				return true
 			end
 
 			descendant.Enabled = true
@@ -156,17 +159,38 @@ return function(Tycoon, dependencies)
 	end
 
 	function Tycoon:_FadeInModel(dropper, steps, stepTime)
+		local renderableCount = 0
+		for _, descendant in ipairs(dropper:GetDescendants()) do
+			if isRenderablePart(descendant) then
+				renderableCount += 1
+			end
+		end
+
+		if renderableCount == 0 then
+			warn(`[Tycoon] Model "{dropper.Name}" has no renderable BaseParts to fade in`)
+		end
+
 		for index = 1, steps do
 			local progress = index / steps
 
 			for _, descendant in ipairs(dropper:GetDescendants()) do
-				local shouldContinue = self:_ApplyFadeStep(descendant, progress)
-				if shouldContinue == false then
-					return
-				end
+				self:_ApplyFadeStep(descendant, progress)
 			end
 
 			task.wait(stepTime)
+		end
+
+		if renderableCount > 0 then
+			local visibleParts = 0
+			for _, descendant in ipairs(dropper:GetDescendants()) do
+				if isRenderablePart(descendant) and descendant.Transparency < 1 then
+					visibleParts += 1
+				end
+			end
+
+			if visibleParts == 0 then
+				warn(`[Tycoon] Model "{dropper.Name}" faded in but still has 0 visible BaseParts`)
+			end
 		end
 	end
 

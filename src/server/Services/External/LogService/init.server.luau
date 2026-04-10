@@ -1,112 +1,330 @@
-local HTTPService = game:GetService("HttpService")
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
+local Config = require(script.Config)
 
-local LoggingEvent =  Instance.new("BindableEvent")
+local LoggingEvent = Instance.new("BindableEvent")
 LoggingEvent.Name = "Logging"
 LoggingEvent.Parent = script
 
-
-
-
 local requestQueue = {}
 local isProcessing = false
-local RATE_LIMIT_DELAY = 2
 
-local WebhookURL = "https://discord.com/api/webhooks/1459542770975903955/TyPlc_-S13AkDSpb2lPDjDynLfTsWmab0KQtnl3aD6enhvYMTGgLBa5Dqb9aso0q1KQ3"
+local function getRetryDelaySeconds(responseHeaders)
+	if type(responseHeaders) ~= "table" then
+		return Config.DefaultRetryDelay
+	end
+
+	local retryAfter = responseHeaders["Retry-After"] or responseHeaders["retry-after"]
+	local retryNumber = tonumber(retryAfter)
+	if retryNumber then
+		if retryNumber > 30 then
+			return retryNumber / 1000
+		end
+
+		return retryNumber
+	end
+
+	return Config.DefaultRetryDelay
+end
+
 local function ProcessQueue()
-	if isProcessing then return end
+	if isProcessing then
+		return
+	end
+
 	isProcessing = true
 
 	while #requestQueue > 0 do
 		local requestData = table.remove(requestQueue, 1)
-		local success, errorMessage = pcall(function()
-			HTTPService:PostAsync(
-				requestData.url,
-				HTTPService:JSONEncode(requestData.data)
-			)
+		local success, response = pcall(function()
+			return HttpService:RequestAsync({
+				Url = requestData.url,
+				Method = "POST",
+				Headers = {
+					["Content-Type"] = "application/json",
+				},
+				Body = HttpService:JSONEncode(requestData.data),
+			})
 		end)
 
 		if not success then
-			warn(errorMessage)
+			warn(response)
+		elseif not response.Success then
+			if response.StatusCode == 429 then
+				local retries = requestData.retries or 0
+				if retries < Config.MaxRetries then
+					local retryDelay = getRetryDelaySeconds(response.Headers)
+					task.wait(retryDelay)
+					table.insert(requestQueue, 1, {
+						url = requestData.url,
+						data = requestData.data,
+						retries = retries + 1,
+					})
+					continue
+				end
+			end
+
+			warn(string.format("[LogService] Webhook request failed with status %s: %s", tostring(response.StatusCode), tostring(response.StatusMessage)))
 		end
 
-	
-
-		task.wait(RATE_LIMIT_DELAY)
+		task.wait(Config.RateLimitDelay)
 	end
 
 	isProcessing = false
 end
 
-local function EnqueueRequest(url, data, snap)
-	table.insert(requestQueue, { url = url, data = data, snap = snap })
+local function EnqueueRequest(url, data)
+	table.insert(requestQueue, { url = url, data = data, retries = 0 })
 	ProcessQueue()
 end
 
+local function formatVector3(vector)
+	if typeof(vector) ~= "Vector3" then
+		return "N/A"
+	end
+
+	return string.format("(%.2f, %.2f, %.2f)", vector.X, vector.Y, vector.Z)
+end
+
+local function formatHistory(history)
+	if type(history) ~= "table" or #history == 0 then
+		return "No samples"
+	end
+
+	local lines = {}
+	for index, sample in ipairs(history) do
+		lines[index] = string.format(
+			"%d. %s @ %s",
+			index,
+			formatVector3(sample.Position),
+			tostring(sample.Time or "?")
+		)
+	end
+
+	return table.concat(lines, "\n")
+end
+
+local function addField(fields, name, value, inline)
+	if value == nil or value == "" then
+		return
+	end
+
+	table.insert(fields, {
+		name = tostring(name),
+		value = tostring(value),
+		inline = inline == true,
+	})
+end
+
+local function getServerUptime()
+	return math.floor(workspace.DistributedGameTime)
+end
+
+local function getOwnedTycoonName(player)
+	local tycoonsFolder = workspace:FindFirstChild("Tycoons")
+	if not tycoonsFolder then
+		return nil
+	end
+
+	for _, tycoonModel in ipairs(tycoonsFolder:GetChildren()) do
+		local values = tycoonModel:FindFirstChild("Values")
+		local ownerValue = values and values:FindFirstChild("OwnerValue")
+		if ownerValue and ownerValue:IsA("ObjectValue") and ownerValue.Value == player then
+			return tycoonModel.Name
+		end
+	end
+
+	return nil
+end
+
+local function getReasonPresentation(reason)
+	local presentations = {
+		["Teleport Exploits"] = {
+			Title = "Anti-Cheat Enforcement • Teleport",
+			Color = 15158332,
+		},
+		["Speed Exploits"] = {
+			Title = "Anti-Cheat Enforcement • Speed",
+			Color = 16098851,
+		},
+		["Jump Exploits"] = {
+			Title = "Anti-Cheat Enforcement • Jump",
+			Color = 16763904,
+		},
+		["Noclip Exploits"] = {
+			Title = "Anti-Cheat Enforcement • Noclip",
+			Color = 10038562,
+		},
+	}
+
+	for keyword, presentation in pairs(presentations) do
+		if string.find(reason, keyword, 1, true) then
+			return presentation
+		end
+	end
+
+	return {
+		Title = "Anti-Cheat Enforcement",
+		Color = 16711680,
+	}
+end
+
+local function formatEvidenceJson(evidence)
+	if type(evidence) ~= "table" then
+		return nil
+	end
+
+	local success, encoded = pcall(function()
+		return HttpService:JSONEncode(evidence)
+	end)
+	if not success then
+		return nil
+	end
+
+	if #encoded > 900 then
+		encoded = string.sub(encoded, 1, 897) .. "..."
+	end
+
+	return "```json\n" .. encoded .. "\n```"
+end
 
 local function SnapshotPlayer(player)
-	if not player then return nil end
+	if not player then
+		return nil
+	end
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChild("Humanoid")
+	local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+
 	return {
 		Name = player.Name,
+		DisplayName = player.DisplayName,
 		UserId = player.UserId,
-		AccountAge = player.AccountAge
+		AccountAge = player.AccountAge,
+		Team = player.Team and player.Team.Name or "None",
+		HasTycoon = (player:FindFirstChild("hasTycoon") and player.hasTycoon.Value) and "Yes" or "No",
+		TycoonName = getOwnedTycoonName(player) or "None",
+		Position = humanoidRootPart and humanoidRootPart.Position or nil,
+		Health = humanoid and humanoid.Health or nil,
+		FloorMaterial = humanoid and tostring(humanoid.FloorMaterial) or "Unknown",
+		PlaceId = game.PlaceId,
+		JobId = game.JobId,
+		PrivateServerId = game.PrivateServerId,
+		ServerUptime = getServerUptime(),
+		PlayerCount = #Players:GetPlayers(),
+		IsStudio = RunService:IsStudio(),
 	}
 end
 
+local function Embed(kickedPlayer, reason, evidence)
+	if not kickedPlayer then
+		return
+	end
 
-local function Embed(KickedPlayer, Reason)
-	if not KickedPlayer then return end
-	Reason = tostring(Reason or "Unknown")
-	local snap = SnapshotPlayer(KickedPlayer)
+	reason = tostring(reason or "Unknown")
+	local snap = SnapshotPlayer(kickedPlayer)
+	if not snap then
+		return
+	end
+	local incidentId = HttpService:GenerateGUID(false)
+	local presentation = getReasonPresentation(reason)
+
+	local fields = {
+		{
+			name = "Incident",
+			value = "`" .. incidentId .. "`",
+			inline = false,
+		},
+		{
+			name = "Player",
+			value = snap.Name .. " (`" .. snap.UserId .. "`)",
+			inline = false,
+		},
+		{
+			name = "Profile",
+			value = "[View Profile](https://www.roblox.com/users/" .. snap.UserId .. "/profile)",
+			inline = true,
+		},
+		{
+			name = "Display Name",
+			value = snap.DisplayName,
+			inline = true,
+		},
+		{
+			name = "Account Age",
+			value = tostring(snap.AccountAge) .. " days",
+			inline = true,
+		},
+		{
+			name = "Reason",
+			value = reason,
+			inline = false,
+		},
+	}
+
+	addField(fields, "Team", snap.Team, true)
+	addField(fields, "Has Tycoon", snap.HasTycoon, true)
+	addField(fields, "Tycoon", snap.TycoonName, true)
+	addField(fields, "Position", formatVector3(snap.Position), true)
+	addField(fields, "Health", snap.Health, true)
+	addField(fields, "Floor Material", snap.FloorMaterial, true)
+	addField(
+		fields,
+		"Server Context",
+		string.format(
+			"Place: `%s`\nJob: `%s`\nPrivate Server: `%s`\nUptime: `%ss`\nPlayers: `%d`\nStudio: `%s`",
+			tostring(snap.PlaceId),
+			snap.JobId ~= "" and snap.JobId or "No JobId",
+			snap.PrivateServerId ~= "" and snap.PrivateServerId or "None",
+			snap.ServerUptime,
+			snap.PlayerCount,
+			tostring(snap.IsStudio)
+		),
+		false
+	)
+
+	if type(evidence) == "table" then
+		addField(fields, "Current Position", formatVector3(evidence.CurrentPosition), true)
+		addField(fields, "Last Valid Position", formatVector3(evidence.LastPosition), true)
+		addField(fields, "Speed", evidence.Speed and string.format("%.2f", evidence.Speed), true)
+		addField(fields, "Height Above Ground", evidence.HeightAboveGround and string.format("%.2f", evidence.HeightAboveGround), true)
+		addField(fields, "Teleport Distance", evidence.TeleportDistance and string.format("%.2f", evidence.TeleportDistance), true)
+		addField(fields, "Vertical Delta", evidence.VerticalDelta and string.format("%.2f", evidence.VerticalDelta), true)
+		addField(fields, "Violations", evidence.Violations, true)
+		addField(fields, "Noclip Strikes", evidence.NoclipStrikes, true)
+		addField(fields, "Teleport Strikes", evidence.TeleportStrikes, true)
+		addField(fields, "Humanoid State", evidence.HumanoidState, true)
+		addField(fields, "Movement History", formatHistory(evidence.PositionHistory), false)
+		addField(fields, "Raw Evidence", formatEvidenceJson(evidence), false)
+	end
 
 	local embed = {
-		title = " Anti-Cheat Enforcement",
-		description = "**SentraGuard™ detected Anomalous Behaviour from a player.**",
+		title = presentation.Title,
+		description = "**SentraGuard detected anomalous behaviour from a player.**",
 		type = "rich",
-		color = 16711680, 
+		color = presentation.Color,
 		thumbnail = {
-			url = "https://www.roblox.com/headshot-thumbnail/image?userId=" 
-				.. snap.UserId .. "&width=420&height=420&format=png"
+			url = "https://www.roblox.com/headshot-thumbnail/image?userId="
+				.. snap.UserId .. "&width=420&height=420&format=png",
 		},
-		fields = {
-			{
-				name = "👤 Player",
-				value = snap.Name .. " (`" .. snap.UserId .. "`)",
-				inline = false
-			},
-			{
-				name = "📄 Profile",
-				value = "[View Profile](https://www.roblox.com/users/" .. snap.UserId .. "/profile)",
-				inline = true
-			},
-			{
-				name = "📆 Account Age",
-				value = tostring(snap.AccountAge) .. " days",
-				inline = true
-			},
-			{
-				name = "⚠️ Reason",
-				value = Reason,
-				inline = false
-			}
-		},
+		fields = fields,
 		footer = {
-			text = "SentraGuard™ • Automated Log"
+			text = "SentraGuard • Automated Log • " .. incidentId,
 		},
-		timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+		timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
 	}
 
-	local Data = {
+	local data = {
 		content = nil,
-		embeds = { embed }
+		embeds = { embed },
 	}
 
-	EnqueueRequest(WebhookURL, Data, snap)
+	EnqueueRequest(Config.WebhookURL, data)
 end
 
-
-LoggingEvent.Event:Connect(function(KickedPlayer, Reason)
-	Embed(KickedPlayer, Reason)
+LoggingEvent.Event:Connect(function(kickedPlayer, reason, evidence)
+	Embed(kickedPlayer, reason, evidence)
 end)
-
-

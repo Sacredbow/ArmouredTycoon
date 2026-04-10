@@ -120,8 +120,10 @@ function RocketModuleClass.new(Rocket: Model, Player: Player, playerService: IPl
 	self.Audios = Audios
 	
 	
-	self.Impact    = assertInstance(Rocket:FindFirstChild("Impact"),    "BasePart", "Impact")    :: BasePart
-	self.Explosion = assertInstance(Rocket:FindFirstChild("Explosion"), "BasePart", "Explosion") :: BasePart
+	--self.Impact    = assertInstance(Rocket:FindFirstChild("Impact"),    "BasePart", "Impact")    :: BasePart
+	self.Imapct = ReplicatedStorage.Assets.Rocket.Impact
+	--self.Explosion = assertInstance(Rocket:FindFirstChild("Explosion"), "BasePart", "Explosion") :: BasePart
+	self.Explosion = ReplicatedStorage.Assets.Explosion
 	self.Phase3    = self.OuterRocket:FindFirstChild("Phase3")    :: BasePart
 
 	local Nozzle = assertInstance(Rocket:FindFirstChild("Nozzle"), "MeshPart", "Nozzle") :: MeshPart

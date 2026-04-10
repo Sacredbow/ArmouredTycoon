@@ -24,6 +24,15 @@ local function captureItemState(item)
 		state.Enabled = item.Enabled
 	elseif item:IsA("PointLight") then
 		state.Brightness = item.Brightness
+
+	elseif item:IsA("Beam") then
+		state.Enabled = item.Enabled
+
+	elseif item:IsA("Sound") then
+		state.Playing = item.IsPlaying
+
+	
+	
 	end
 
 	for _, child in ipairs(item:GetChildren()) do
@@ -183,12 +192,27 @@ return function(Tycoon)
 			end
 		end
 
+		warn(`[Tycoon] Template not found for "{itemName}" in tycoon "{self.Model.Name}"`)
 		return nil
 	end
 
 	function Tycoon:_SpawnItem(item)
 		if not item then
+			warn(`[Tycoon] Attempted to spawn a nil item in tycoon "{self.Model.Name}"`)
 			return
+		end
+
+		if item:IsA("Model") then
+			local basePartCount = 0
+			for _, descendant in ipairs(item:GetDescendants()) do
+				if descendant:IsA("BasePart") then
+					basePartCount += 1
+				end
+			end
+
+			warn(`[Tycoon] Spawning model "{item.Name}" with {basePartCount} BaseParts in tycoon "{self.Model.Name}"`)
+		else
+			warn(`[Tycoon] Spawning instance "{item.Name}" ({item.ClassName}) in tycoon "{self.Model.Name}"`)
 		end
 
 		self:_CacheMovedItem(item)
