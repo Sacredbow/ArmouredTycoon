@@ -15,6 +15,9 @@ local Services     = ServerScriptService:FindFirstChild("Services")
 local NuclearFrame = ServerStorage.UI:FindFirstChild("NuclearFrame")       :: Frame
 local RocketFunc   = ReplicatedStorage.Remotes:FindFirstChild("ReturnRequest") :: RemoteEvent
 
+local Remotes = ReplicatedStorage.Remotes
+local SystemMessageRemote = Remotes.Interface:WaitForChild("TextChatService")
+
 
 type IPlayerService = {
 	HasActivated: (self: IPlayerService, player: Player) -> boolean,
@@ -121,9 +124,9 @@ function RocketModuleClass.new(Rocket: Model, Player: Player, playerService: IPl
 	
 	
 	--self.Impact    = assertInstance(Rocket:FindFirstChild("Impact"),    "BasePart", "Impact")    :: BasePart
-	self.Imapct = ReplicatedStorage.Assets.Rocket.Impact
+	self.Impact = ReplicatedStorage.Assets.Rocket.Impact
 	--self.Explosion = assertInstance(Rocket:FindFirstChild("Explosion"), "BasePart", "Explosion") :: BasePart
-	self.Explosion = ReplicatedStorage.Assets.Explosion
+	self.Explosion = ReplicatedStorage.Assets.Rocket.Explosion
 	self.Phase3    = self.OuterRocket:FindFirstChild("Phase3")    :: BasePart
 
 	local Nozzle = assertInstance(Rocket:FindFirstChild("Nozzle"), "MeshPart", "Nozzle") :: MeshPart
@@ -175,6 +178,8 @@ end
 
 
 function RocketModuleClass:StartRocket()
+	
+
 	local self = self :: RocketModule
 	self.Rocket.PrimaryPart = self.OuterRocket
 	
@@ -450,7 +455,8 @@ self.Shockwave:Play()
 	end)
 -- Janitor
 
-	task.delay(0, self.OuterRocket.Destroy, self.OuterRocket)
+	 self.OuterRocket:Destroy()
+	 self.Rocket:Destroy()
 
 
 end
@@ -491,6 +497,9 @@ function RocketModuleClass:Init()
 			warn("[RocketModule] Tycoon not found:", argument)
 			return
 		end
+		
+local OppositePlayerValues  = Tycoon:FindFirstChild("Values") :: Folder
+local OppositePlayer = OppositePlayerValues:FindFirstChild("OwnerValue") :: ObjectValue
 
 		local MainItems = Tycoon:FindFirstChild("MainItems") :: Folder?
 		if not MainItems then
@@ -508,9 +517,33 @@ function RocketModuleClass:Init()
 			warn("[RocketModule] Target is not a BasePart in:", argument)
 			return
 		end
-
+		
 		self.Target = RawTarget :: BasePart
+		
+		
+		local FoundPlayer = OppositePlayer.Value
+		
+		if FoundPlayer == nil then
+			return -- unclaimed
+		end
+
+		if FoundPlayer == self.Player then
+			return -- can't target self
+		end
+		
+		
+		
 		self:StartRocket()
+
+		
+		
+		
+		
+	
+		SystemMessageRemote:FireAllClients(
+			"[Game]: <b><font color='#0000FF'>" .. player.Name
+				.. " has launched a Nuclear Missile on "..FoundPlayer.Name.."'s Tycoon".."</font></b>"
+		)
 	end)
 end
 

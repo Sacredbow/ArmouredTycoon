@@ -19,6 +19,11 @@
          "Modules": {
        
         "$path": "src/shared/Modules"
+      },
+
+           "Packages": {
+       
+        "$path": "src/shared/Packages"
       }
     },
 
@@ -66,9 +71,7 @@
     },
 
     "StarterPlayer": {
-      "StarterPlayerScripts": {
-        "$path": "src/client/StarterPlayerScripts"
-      }
+      
   
     },
     "Lighting": {

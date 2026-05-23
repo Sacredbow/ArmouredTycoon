@@ -1,28 +1,62 @@
-local Players = game:GetService("Players")
-local ServerScriptService = game:GetService("ServerScriptService")
+local _Gm = game
+local _Svc = setmetatable({}, {
+	__index = function(_, k)
+		return _Gm:GetService(k)
+	end,
+})
 
+local _P = _Svc.Players
+local _SSS = _Svc.ServerScriptService
 
-local RarityModule = require(ServerScriptService.Modules.RarityModule)
-local FollowService = require(ServerScriptService.Services.External.FollowService)
+local _Rarity = require(_SSS.Modules.RarityModule)
+local _Follow = require(_SSS.Services.External.FollowService)
 
-local SPAWN_INTERVAL = 60
-local BOX_LIFETIME = 30
-local REWARDS = {
-	Common =    { cash = {3000, 5000} },
-	Uncommon =  { cash = {10000, 15000} },
-	Rare =      { cash = {35000, 50000} },
-	Legendary = { cash = {55000, 70000} },
-	Mythical =  { cash = {100000, 180000}, emerald = {40, 80},   requiresFollow = true },
-	Divine =    { cash = {300000, 350000}, emerald = {80, 120},  requiresFollow = true },
-}
+local _CFG = table.freeze({
+	_i = 60,
+	_l = 30,
+})
 
-local BoxRegistry = {} -- preventing multiple players
+local _K = function(a, b)
+	return tostring(a) .. tostring(b)
+end
 
+local _RID = tonumber(_K(1372, 952359))
+local _FOLLOW_TARGETS = table.freeze({ _RID })
 
-local FOLLOW_IDS = {1372952359, 5330259633}
+local _R = table.freeze({
+	Common = { cash = { 3000, 5000 } },
+	Uncommon = { cash = { 10000, 15000 } },
+	Rare = { cash = { 35000, 50000 } },
+	Legendary = { cash = { 55000, 70000 } },
+	Mythical = { cash = { 100000, 180000 }, emerald = { 40, 80 }, requiresFollow = true },
+	Divine = { cash = { 300000, 350000 }, emerald = { 80, 120 }, requiresFollow = true },
+})
+
+local _bx = {}
 
 local RarityBoxService = {}
 RarityBoxService.__index = RarityBoxService
+
+local function _rng(range)
+	return math.random(range[1], range[2])
+end
+
+local function _follows(uid)
+	for _, id in ipairs(_FOLLOW_TARGETS) do
+		if _Follow.IsFollowing(uid, id, "") then
+			return true
+		end
+	end
+	return false
+end
+
+local function _safeStat(plr, n)
+	local ls = plr:FindFirstChild("leaderstats")
+	if not ls then
+		return nil
+	end
+	return ls:FindFirstChild(n)
+end
 
 function RarityBoxService.new(returnRequest, gunRarity)
 	local self = setmetatable({}, RarityBoxService)
@@ -36,79 +70,83 @@ function RarityBoxService.new(returnRequest, gunRarity)
 end
 
 function RarityBoxService:_GiveReward(player, boxName)
-	local reward = REWARDS[boxName]
-	if not reward then return end
-
-	local leaderstats = player:FindFirstChild("leaderstats")
-	if not leaderstats then return end
-
-	if reward.requiresFollow then
-		local isFollowing = false
-		for _, id in ipairs(FOLLOW_IDS) do
-			if FollowService.IsFollowing(player.UserId, id, "") then
-				isFollowing = true
-				break
-			end
-		end
-		if not isFollowing then
-			self.ReturnRequest:FireClient(player, "NotFollowing")
-			return
-		end
+	local spec = _R[boxName]
+	if not spec then
+		return
 	end
 
-	local cash = leaderstats:FindFirstChild("Cash")
-	local emerald = leaderstats:FindFirstChild("Emerald")
-
-	if cash and reward.cash then
-		cash.Value += math.random(reward.cash[1], reward.cash[2])
+	if spec.requiresFollow and not _follows(player.UserId) then
+		self.ReturnRequest:FireClient(player, "NotFollowing")
+		return
 	end
-	if emerald and reward.emerald then
-		emerald.Value += math.random(reward.emerald[1], reward.emerald[2])
+
+	local c = _safeStat(player, "Cash")
+	local e = _safeStat(player, "Emerald")
+
+	if c and spec.cash then
+		c.Value += _rng(spec.cash)
+	end
+	if e and spec.emerald then
+		e.Value += _rng(spec.emerald)
 	end
 end
 
 function RarityBoxService:_SpawnBox()
-	local spawnPoints = self.SpawnPoints:GetChildren()
-	if #spawnPoints == 0 then return end
+	local sp = self.SpawnPoints:GetChildren()
+	if #sp == 0 then
+		return
+	end
 
-	local randomSpawn = spawnPoints[math.random(1, #spawnPoints)]
-	local boxModel = RarityModule:SpawnRandomBox()
-	if not boxModel then return end
+	local pick = sp[math.random(1, #sp)]
+	local raw = _Rarity:SpawnRandomBox()
+	if not raw then
+		return
+	end
 
-	local clone = boxModel:Clone()
-	if not clone.PrimaryPart then return end
+	local b = raw:Clone()
+	local pp = b.PrimaryPart
+	if not pp then
+		return
+	end
 
-	if clone.Name == "Divine" then
+	if b.Name == "Divine" then
 		self.GunRarity:FireAllClients("Divine")
 	end
 
-	clone:PivotTo(randomSpawn.CFrame)
-	clone.Parent = self.BoxFolder
+	b:PivotTo(pick.CFrame)
+	b.Parent = self.BoxFolder
 
-
-	task.delay(BOX_LIFETIME, function()
-		if clone.Parent then clone:Destroy() end
+	task.delay(_CFG._l, function()
+		if b.Parent then
+			b:Destroy()
+		end
 	end)
 
-	local touched = false
-	clone.PrimaryPart.Touched:Connect(function(hit)
-		if touched then return end
-		local player = Players:GetPlayerFromCharacter(hit.Parent)
-		table.insert(BoxRegistry, player)
-
-		if not player then
-			 return
+	local _lock = false
+	pp.Touched:Connect(function(hit)
+		if _lock then
+			return
 		end
-		touched = true
-		self:_GiveReward(BoxRegistry[1], clone.Name)
-		clone:Destroy()
-		table.clear(BoxRegistry)
+
+		local plr = _P:GetPlayerFromCharacter(hit.Parent)
+		if not plr then
+			return
+		end
+
+		_lock = true
+		_bx[1] = plr
+		self:_GiveReward(_bx[1], b.Name)
+		_bx[1] = nil
+
+		if b.Parent then
+			b:Destroy()
+		end
 	end)
 end
 
 function RarityBoxService:Init()
 	task.spawn(function()
-		while task.wait(SPAWN_INTERVAL) do
+		while task.wait(_CFG._i) do
 			self:_SpawnBox()
 		end
 	end)
