@@ -1,0 +1,16 @@
+[package]
+name = "aliboily/goal"
+version = "1.5.0"
+realm = "shared"
+license = "MIT"
+description = "A universal Goal-Oriented Action Planning (GOAP) and HTN system for Roblox"
+authors = ["aliboily"]
+registry = "https://github.com/UpliftGames/wally-index"
+
+exclude = ["**"]
+include = ["src", "src/*", "docs", "docs/*", "default.project.json", "wally.toml", "README.md"]
+
+[dependencies]
+
+[dev-dependencies]
+TestEZ = "roblox/testez@0.4.1"

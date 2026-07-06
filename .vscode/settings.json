@@ -1,0 +1,182 @@
+{
+  "workbench.colorTheme": "Abyss",
+
+  "workbench.colorCustomizations": {
+    "activityBar.background": "#2A2D33",
+    "activityBar.foreground": "#ECEFF4",
+    "activityBar.inactiveForeground": "#9DA3AD",
+    "activityBarBadge.background": "#A86A3A",
+    "activityBarBadge.foreground": "#FFF4EA",
+
+    "sideBar.background": "#24272D",
+    "sideBar.foreground": "#D6D9DF",
+    "sideBar.border": "#373B44",
+    "sideBarSectionHeader.background": "#2E323A",
+    "sideBarSectionHeader.foreground": "#F0F2F5",
+
+    "editorGroupHeader.tabsBackground": "#202329",
+    "editorGroupHeader.tabsBorder": "#343842",
+    "tab.activeBackground": "#30343D",
+    "tab.activeForeground": "#F4F5F7",
+    "tab.inactiveBackground": "#252931",
+    "tab.inactiveForeground": "#AEB4BE",
+    "tab.border": "#353A44",
+    "tab.activeBorderTop": "#B87946",
+
+    "titleBar.activeBackground": "#2D3037",
+    "titleBar.activeForeground": "#F1F3F6",
+    "titleBar.inactiveBackground": "#24272D",
+    "titleBar.inactiveForeground": "#A9AFBA",
+
+    "statusBar.background": "#2F333B",
+    "statusBar.foreground": "#ECEFF4",
+    "statusBar.noFolderBackground": "#2F333B",
+    "statusBar.debuggingBackground": "#5A4A3C",
+    "statusBarItem.remoteBackground": "#3D424C",
+
+    "panel.background": "#23262C",
+    "panel.border": "#3A3F49",
+    "panelTitle.activeForeground": "#F0F2F5",
+    "panelTitle.inactiveForeground": "#A9AFBA",
+    "panelTitle.activeBorder": "#B87946",
+
+    "terminal.background": "#202329",
+    "terminal.foreground": "#D8DBE2",
+
+    "breadcrumb.background": "#202329",
+    "breadcrumb.foreground": "#AEB4BE",
+    "breadcrumb.focusForeground": "#F1F3F6",
+
+    "list.activeSelectionBackground": "#3A3F49",
+    "list.activeSelectionForeground": "#FFFFFF",
+    "list.inactiveSelectionBackground": "#30343C",
+    "list.hoverBackground": "#343941",
+    "list.focusOutline": "#B87946",
+
+    "quickInput.background": "#2B2F37",
+    "quickInput.foreground": "#E2E5EA",
+    "quickInputList.focusBackground": "#3A3F49",
+
+    "input.background": "#2D3138",
+    "input.foreground": "#ECEFF4",
+    "input.border": "#464B55",
+    "focusBorder": "#B87946",
+
+    "button.background": "#4A4F59",
+    "button.foreground": "#F4F5F7",
+    "button.hoverBackground": "#5A606B",
+
+    "editor.background": "#1F2228",
+    "editor.foreground": "#D8DBE2",
+    "editorLineNumber.foreground": "#626977",
+    "editorLineNumber.activeForeground": "#C7CBD3",
+    "editorGutter.background": "#1F2228",
+    "editor.lineHighlightBackground": "#292D34",
+    "editor.selectionBackground": "#4A4F59",
+    "editor.selectionHighlightBackground": "#3A3F49",
+    "editor.inactiveSelectionBackground": "#333842",
+    "editor.wordHighlightBackground": "#343941",
+    "editor.wordHighlightStrongBackground": "#404650",
+    "editorCursor.foreground": "#D9DCE2",
+    "editorWhitespace.foreground": "#3D424B",
+    "editorIndentGuide.background1": "#343942",
+    "editorIndentGuide.activeBackground1": "#626977",
+    "editorBracketMatch.background": "#30343C",
+    "editorBracketMatch.border": "#9DA3AD"
+  },
+
+  "[lua]": {
+    "editor.defaultFormatter": "JohnnyMorganz.stylua",
+    "editor.formatOnSave": true
+  },
+
+  "[luau]": {
+    "editor.defaultFormatter": "JohnnyMorganz.stylua",
+    "editor.formatOnSave": true
+  },
+
+  "luau-lsp.languageMode": "roblox",
+  "luau-lsp.completion.autocompleteEnd": true,
+  "luau-lsp.sourcemap.enabled": true,
+  "luau-lsp.completion.imports.enabled": true,
+
+  "editor.bracketPairColorization.independentColorPoolPerBracketType": true,
+
+  "launch": {
+    "configurations": [],
+    "compounds": []
+  },
+
+  "workbench.editor.customLabels.patterns": {
+    "**/init.lua": "${dirname} (${filename}.${extname})",
+    "**/init.luau": "${dirname} (${filename}.${extname})"
+  },
+
+  "editor.tokenColorCustomizations": {
+    "textMateRules": [
+      {
+        "scope": ["source.luau"],
+        "settings": {
+          "foreground": "#FFE0A3",
+          "fontStyle": "bold"
+        }
+      },
+      {
+        "scope": ["keyword", "storage.modifier.local.luau", "storage.type"],
+        "settings": {
+          "foreground": "#FF8A3D",
+          "fontStyle": "bold"
+        }
+      },
+      {
+        "scope": ["entity.name.function", "support.function"],
+        "settings": {
+          "foreground": "#FFC15A",
+          "fontStyle": "bold"
+        }
+      },
+      {
+        "scope": ["constant.numeric", "constant.language"],
+        "settings": {
+          "foreground": "#FFB347",
+          "fontStyle": "bold"
+        }
+      },
+      {
+        "scope": ["string"],
+        "settings": {
+          "foreground": "#73E7B7",
+          "fontStyle": "bold"
+        }
+      },
+      {
+        "scope": ["comment"],
+        "settings": {
+          "foreground": "#72798C",
+          "fontStyle": "bold"
+        }
+      },
+      {
+        "scope": ["support.class", "constant.language.global.luau", "entity.name.type"],
+        "settings": {
+          "foreground": "#7FB7FF",
+          "fontStyle": "bold"
+        }
+      },
+      {
+        "scope": ["variable", "variable.other.readwrite.luau", "variable.parameter"],
+        "settings": {
+          "foreground": "#E8D2AA",
+          "fontStyle": "bold"
+        }
+      },
+      {
+        "scope": ["variable.language.self.luau"],
+        "settings": {
+          "foreground": "#FF6F61",
+          "fontStyle": "bold"
+        }
+      }
+    ]
+  }
+}
