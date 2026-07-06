@@ -3,7 +3,7 @@
 --[[
 	WeaponAnimator
 
-	Procedural first-person pose blender. The legacy ACS animation modules still
+	Procedural first-person pose blender. The ACS animation modules still
 	control authored reload/equip motions, but this animator layers continuous feel
 	on top: idle breathing, movement bob, camera sway, and recoil.
 

@@ -1,9 +1,9 @@
---!nonstrict
+--!strict
 
 --[[
 	Main.luau
 
-	Client-side ACS orchestration script. This file still owns the legacy equip
+	Client-side ACS orchestration script. This file still owns the current equip
 	lifecycle, render loop, weapon input, ray casting, and server event calls.
 	The surrounding modules now handle smaller responsibilities, but this remains
 	the integration layer that keeps old ACS weapons working while the framework is
@@ -13,12 +13,12 @@
 		Core/    runtime helpers, feature flags, input binding, tool classification
 		Combat/  attachments, recoil, hit-region mapping
 		Actions/ firing/reload/jam/stance/fall-damage rules
-		UI/      legacy SE_GUI adapter and React-readable Player attributes
-		WeaponAnimation/ procedural pose layers and legacy animation runner
+		UI/      SE_GUI adapter and React-readable Player attributes
+		WeaponAnimation/ procedural pose layers and ACS animation runner
 
 	Important rule for future edits:
 		Do not move networking/damage behavior casually. Server events here are
-		part of the old ACS contract and should be wrapped first, then replaced.
+		part of the ACS contract and should be wrapped first, then replaced.
 ]]
 
 local Main = {}
@@ -30,7 +30,6 @@ local User 			= game:GetService("UserInputService")
 local CAS 			= game:GetService("ContextActionService")
 local Run 			= game:GetService("RunService")
 local TS 			= game:GetService('TweenService')
-local PhysicsService= game:GetService("PhysicsService")
 local PlayersService= game:GetService("Players")
 
 local function destroyLater(instance, lifetime)
@@ -47,7 +46,6 @@ local Engine 		= RS:WaitForChild("ACS_Engine")
 local Evt 			= Engine:WaitForChild("Events")
 local Mods 			= Engine:WaitForChild("Modules")
 local HUDs 			= Engine:WaitForChild("HUD")
-local Essential 	= Engine:WaitForChild("Essential")
 local ArmModel 		= Engine:WaitForChild("ArmModel")
 local GunModels 	= Engine:WaitForChild("GunModels")
 local AttModels 	= Engine:WaitForChild("AttModels")
@@ -78,8 +76,8 @@ local AttachmentController = require(CombatModules:WaitForChild("AttachmentContr
 local HitResolver = require(CombatModules:WaitForChild("HitResolver"))
 local RecoilController = require(CombatModules:WaitForChild("RecoilController"))
 
--- UI remains legacy HUD plus React-readable weapon state while the full HUD redesign is paused.
-local LegacyWeaponHud = require(UIModules:WaitForChild("LegacyWeaponHud"))
+-- UI remains SE_GUI adapter plus React-readable weapon state while the full HUD redesign is paused.
+local WeaponHudAdapter = require(UIModules:WaitForChild("WeaponHudAdapter"))
 local StatusEffectsGui = require(UIModules:WaitForChild("StatusEffectsGui"))
 local WeaponUIState = require(UIModules:WaitForChild("WeaponUIState"))
 
@@ -92,7 +90,6 @@ local ReloadController = require(ActionModules:WaitForChild("ReloadController"))
 local ShootingController = require(ActionModules:WaitForChild("ShootingController"))
 local StanceController = require(ActionModules:WaitForChild("StanceController"))
 local WeaponAnimator = require(WeaponAnimationModules:WaitForChild("WeaponAnimator"))
-local WeaponPose = require(WeaponAnimationModules:WaitForChild("Pose"))
 local ECS = require(RS.ECS)
 local ProjectileVisuals = require(RS.Modules:WaitForChild("ProjectileVisuals"))
 
@@ -126,7 +123,7 @@ local Ammo
 local StoredAmmo
 
 -- Runtime weapon state. These values are reset on equip/unequip and are still
--- shared by legacy callbacks, render-step code, and the smaller controller modules.
+-- shared by existing callbacks, render-step code, and the smaller controller modules.
 local WeaponInHand, WeaponTool, WeaponData, AnimData
 local ProceduralWeaponAnimator
 local ViewModel, AnimPart, LArm, RArm, LArmWeld, RArmWeld, GunWeld
@@ -162,23 +159,17 @@ local FlashHider 	= false
 
 local UnderBarrelAtt= nil
 
-local LaserAtt 		= false
 local LaserActive	= false
 local IRmode		= false
 local IREnable		= false
-local LaserDist 	= 0
-local Laser 		= nil
 local Pointer 		= nil
 
-local TorchAtt 		= false
-local TorchActive 	= false
 
 local BipodAtt 		= false
 local CanBipod 		= false
 local BipodActive 	= false
 
 local GRDebounce 	= false
-local CookGrenade 	= false
 local CheckingMag	= false
 
 local ToolEquip 	= false
@@ -190,7 +181,7 @@ local NearZ 		= CFrame.new(0,0,-.5)
 
 local ModTable = AttachmentModifiers.createDefault()
 
--- Viewmodel pose state. The procedural animator and legacy ACS CFrame math both
+-- Viewmodel pose state. The procedural animator and ACS CFrame math both
 -- feed these values before the render loop applies them to the camera-attached rig.
 local maincf 		= CFrame.new() --weapon offset of camera
 local guncf  		= CFrame.new() --weapon offset of camera
@@ -213,13 +204,11 @@ local ModStorageFolder 	= plr.PlayerGui:FindFirstChild('ModStorage') or Instance
 ModStorageFolder.Parent = plr.PlayerGui
 ModStorageFolder.Name 	= 'ModStorage'
 
--- Only forward-declare functions that are called before their definitions.
--- Main.start is still huge, so declaring every legacy function as a local pushes
--- Luau over the 200-local register limit.
-local ADS, Firemode, Jammed, Reload, Shoot, RunCheck
-local Stand, Crouch, IdleAnim, SprintAnim, PumpAnim
+-- Keep helper functions on one local table. This avoids global function writes
+-- without adding dozens of locals to an already large ACS orchestration scope.
+local ACSActions = {}
 
-function RAND(Min, Max, Accuracy)
+function ACSActions.RAND(Min, Max, Accuracy)
 	return Runtime.randomRange(Min, Max, Accuracy)
 end
 
@@ -528,14 +517,14 @@ local function enterThirdPersonCombatFocus()
 	end
 
 	aimming = true
-	ADS(aimming)
+	ACSActions.ADS(aimming)
 end
 
-function handleAction(actionName, inputState, inputObject)
+function ACSActions.handleAction(actionName, inputState, _inputObject)
 
 	if actionName == "Fire" and inputState == Enum.UserInputState.Begin and AnimDebounce then
 		enterThirdPersonCombatFocus()
-		Shoot()
+		ACSActions.Shoot()
 
 	elseif actionName == "Fire" and inputState == Enum.UserInputState.End then
 		mouse1down = false
@@ -543,9 +532,9 @@ function handleAction(actionName, inputState, inputObject)
 
 	if actionName == "Reload" and inputState == Enum.UserInputState.Begin and AnimDebounce and not CheckingMag and not reloading then
 		if WeaponData.Jammed then
-			Jammed()
+			ACSActions.Jammed()
 		else
-			Reload()
+			ACSActions.Reload()
 		end
 	end
 
@@ -554,13 +543,13 @@ function handleAction(actionName, inputState, inputObject)
 	end
 
 	if actionName == "CycleFiremode" and inputState == Enum.UserInputState.Begin and WeaponData and WeaponData.FireModes.ChangeFiremode then
-		Firemode()
+		ACSActions.Firemode()
 	end
 
 	if actionName == "ADS" and inputState == Enum.UserInputState.Begin and AnimDebounce then
 		if WeaponData and WeaponData.canAim and GunStance > -2 and not runKeyDown and not CheckingMag then
 			aimming = not aimming
-			ADS(aimming)
+			ACSActions.ADS(aimming)
 		end
 	end
 
@@ -569,13 +558,13 @@ function handleAction(actionName, inputState, inputObject)
 			--Proned = false
 			Stances = 1
 			CameraY = -1
-			Crouch()
+			ACSActions.Crouch()
 
 
 		elseif Stances == 1 then		
 			Stances = 0
 			CameraY = 0
-			Stand()
+			ACSActions.Stand()
 		end	
 	end
 
@@ -583,7 +572,7 @@ function handleAction(actionName, inputState, inputObject)
 		if Stances == 0 then
 			Stances = 1
 			CameraY = -1
-			Crouch()
+			ACSActions.Crouch()
 		elseif Stances == 1 then	
 			Stances = 2
 			CameraX = 0
@@ -601,7 +590,7 @@ function handleAction(actionName, inputState, inputObject)
 		
 
 		if Stances == 0 then
-			Stand()
+			ACSActions.Stand()
 		end
 	end
 
@@ -630,7 +619,7 @@ function handleAction(actionName, inputState, inputObject)
 	if actionName == "Run" and inputState == Enum.UserInputState.Begin and running and not hostScript.Parent:GetAttribute("Injured") then
 		mouse1down = false		
 		runKeyDown 	= true
-		Stand()
+		ACSActions.Stand()
 		Stances = 0
 		Virar = 0
 		CameraX = 0
@@ -641,31 +630,31 @@ function handleAction(actionName, inputState, inputObject)
 
 		if aimming then
 			aimming = false
-			ADS(aimming)
+			ACSActions.ADS(aimming)
 		end
 
 		if not CheckingMag and not reloading and WeaponData and WeaponData.Type ~= "Grenade" and (GunStance == 0 or GunStance == 2 or GunStance == 3) then
 			GunStance = 3
 			Evt.GunStance:FireServer(GunStance,AnimData)
-			SprintAnim()
+			ACSActions.SprintAnim()
 		end
 
 	elseif actionName == "Run" and inputState == Enum.UserInputState.End and runKeyDown then
 		runKeyDown 	= false
-		Stand()
+		ACSActions.Stand()
 		if not CheckingMag and not reloading and WeaponData and WeaponData.Type ~= "Grenade" and (GunStance == 0 or GunStance == 2 or GunStance == 3) then
 			GunStance = 0
 			Evt.GunStance:FireServer(GunStance,AnimData)
-			IdleAnim()
+			ACSActions.IdleAnim()
 		end
 	end
 end
 
-function resetMods()
+function ACSActions.resetMods()
 	AttachmentController.resetModifiers(ModTable)
 end
 
-function loadAttachment(weapon)
+function ACSActions.loadAttachment(weapon)
 	-- AttachmentController performs the actual cloning/welding/modifier math.
 	-- Main keeps only the few runtime flags used by HUD, recoil, and utility code.
 	local attachments = AttachmentController.load(weapon, WeaponData, ModTable, AttModels, AttModules, Ultil)
@@ -673,28 +662,28 @@ function loadAttachment(weapon)
 	UnderBarrelAtt = attachments.underBarrel
 	Suppressor = attachments.suppressor
 	FlashHider = attachments.flashHider
-	LaserAtt = attachments.laser
-	TorchAtt = attachments.torch
 	IREnable = IREnable or attachments.infrared
 	BipodAtt = attachments.bipod
 
 	if FeatureFlags.WeaponUtilitiesEnabled and BipodAtt then
-		CAS:BindAction("ToggleBipod", handleAction, true, Enum.KeyCode.B)
+		CAS:BindAction("ToggleBipod", ACSActions.handleAction, true, Enum.KeyCode.B)
 	end
 end
 
-function ADS(aimming)
-	-- ADS still uses legacy ACS stance replication, but third-person camera mode
+function ACSActions.ADS(isAiming)
+	-- ADS still uses ACS stance replication, but third-person camera mode
 	-- prevents FOV snapping into a full first-person scope unless the weapon needs it.
-	if not WeaponData or not WeaponInHand then return; end;
-	plr:SetAttribute("ACS_Aiming", aimming)
-	if aimming then
+	if not WeaponData or not WeaponInHand then
+		return
+	end
+	plr:SetAttribute("ACS_Aiming", isAiming)
+	if isAiming then
 
 		if SafeMode then
 			SafeMode = false
 			GunStance = 0
-			IdleAnim()
-			UpdateGui()
+			ACSActions.IdleAnim()
+			ACSActions.UpdateGui()
 		end
 
 		game:GetService('UserInputService').MouseDeltaSensitivity = (Sens/100)
@@ -714,15 +703,15 @@ function ADS(aimming)
 	updateThirdPersonCrosshair()
 end
 
-function Firemode()
+function ACSActions.Firemode()
 	-- FiremodeController owns the mode transition; Main handles sound and HUD.
 	WeaponInHand.Handle.SafetyClick:Play()
 	mouse1down = false
 	FiremodeController.cycle(WeaponData)
-	UpdateGui()
+	ACSActions.UpdateGui()
 end
 
-function setup(Tool)
+function ACSActions.setup(Tool)
 	-- Full weapon equip pipeline:
 	-- 1. read tool config/animations
 	-- 2. clone weapon and first-person arms
@@ -735,7 +724,10 @@ function setup(Tool)
 	local ToolCheck 		= Tool
 	local GunModelCheck 	= GunModels:FindFirstChild(Tool.Name)
 
-	if not ToolCheck or not GunModelCheck then warn("Tool Or Gun Model Doesn't Exist") return; end;
+	if not ToolCheck or not GunModelCheck then
+		warn("Tool Or Gun Model Doesn't Exist")
+		return
+	end
 
 	ToolEquip = true
 	User.MouseIconEnabled 	= false
@@ -774,7 +766,8 @@ function setup(Tool)
 		Shirt.Parent = ViewModel
 	end
 
-	AnimPart = Instance.new("Part",ViewModel)
+	AnimPart = Instance.new("Part")
+	AnimPart.Parent = ViewModel
 	-- AnimPart is the invisible root that follows the camera. Arm/gun welds attach
 	-- to it, which is the classic ACS first-person viewmodel pattern.
 	AnimPart.Size = Vector3.new(0.1,0.1,0.1)
@@ -784,17 +777,20 @@ function setup(Tool)
 
 	ViewModel.PrimaryPart = AnimPart
 
-	LArmWeld = Instance.new("Motor6D",AnimPart)
+	LArmWeld = Instance.new("Motor6D")
+	LArmWeld.Parent = AnimPart
 	-- The arm welds are animated by CFrame changes from weapon animation modules
 	-- and procedural pose layers, not by Roblox Humanoid animation tracks.
 	LArmWeld.Name = "LeftArm"
 	LArmWeld.Part0 = AnimPart
 
-	RArmWeld = Instance.new("Motor6D",AnimPart)
+	RArmWeld = Instance.new("Motor6D")
+	RArmWeld.Parent = AnimPart
 	RArmWeld.Name = "RightArm"
 	RArmWeld.Part0 = AnimPart
 
-	GunWeld = Instance.new("Motor6D",AnimPart)
+	GunWeld = Instance.new("Motor6D")
+	GunWeld.Parent = AnimPart
 	GunWeld.Name = "Handle"
 
 	--setup arms to camera
@@ -827,12 +823,12 @@ function setup(Tool)
 	IREnable 				= WeaponData.InfraRed
 
 
-	CAS:BindAction("Fire", handleAction, true, Enum.UserInputType.MouseButton1, Enum.KeyCode.ButtonR2)
+	CAS:BindAction("Fire", ACSActions.handleAction, true, Enum.UserInputType.MouseButton1, Enum.KeyCode.ButtonR2)
 	-- Weapon-specific actions are bound only while equipped so normal character
 	-- controls remain clean when no ACS weapon is active.
-	CAS:BindAction("ADS", handleAction, true, Enum.UserInputType.MouseButton2, Enum.KeyCode.ButtonL2) 
-	CAS:BindAction("Reload", handleAction, true, Enum.KeyCode.R, Enum.KeyCode.ButtonB)
-	CAS:BindAction("CycleFiremode", handleAction, false, Enum.KeyCode.V)
+	CAS:BindAction("ADS", ACSActions.handleAction, true, Enum.UserInputType.MouseButton2, Enum.KeyCode.ButtonL2) 
+	CAS:BindAction("Reload", ACSActions.handleAction, true, Enum.KeyCode.R, Enum.KeyCode.ButtonB)
+	CAS:BindAction("CycleFiremode", ACSActions.handleAction, false, Enum.KeyCode.V)
 	
 	CAS:SetPosition("Reload", UDim2.new(0.8, 0, 0.2, 0))  -- adjust position as needed
 
@@ -842,7 +838,7 @@ function setup(Tool)
 	
 	
 	
-	loadAttachment(WeaponInHand)
+	ACSActions.loadAttachment(WeaponInHand)
 
 	-- Spread/recoil start at the weapon minimums, after attachment multipliers
 	-- have had a chance to adjust the modifier table.
@@ -853,19 +849,11 @@ function setup(Tool)
 	StoredAmmo = WeaponData.StoredAmmo
 	CurAimpart = WeaponInHand:FindFirstChild("AimPart")
 
-	for index, Key in pairs(WeaponInHand:GetDescendants()) do
-		if Key:IsA("BasePart") and Key.Name == "FlashPoint" then
-			TorchAtt = true
-		end
-		if Key:IsA("BasePart") and Key.Name == "LaserPoint" then
-			LaserAtt = true
-		end
-	end
 
-	LegacyWeaponHud.setVisible(SE_GUI, WeaponData.EnableHUD == true)
-	UpdateGui()
+	WeaponHudAdapter.setVisible(SE_GUI, WeaponData.EnableHUD == true)
+	ACSActions.UpdateGui()
 
-	for index, key in pairs(WeaponInHand:GetChildren()) do
+	for _, key in pairs(WeaponInHand:GetChildren()) do
 		if key:IsA('BasePart') and key.Name ~= 'Handle' then
 
 			if key.Name ~= "Bolt" and key.Name ~= 'Lid' and key.Name ~= "Slide" then
@@ -886,19 +874,19 @@ function setup(Tool)
 		end
 	end;
 
-	for L_213_forvar1, L_214_forvar2 in pairs(WeaponInHand:GetChildren()) do
-		if L_214_forvar2:IsA('BasePart') then
-			L_214_forvar2.Anchored = false
-			L_214_forvar2.CanCollide = false
+	for _, weaponChild in pairs(WeaponInHand:GetChildren()) do
+		if weaponChild:IsA('BasePart') then
+			weaponChild.Anchored = false
+			weaponChild.CanCollide = false
 		end
 	end;
 
 	if WeaponInHand:FindFirstChild("Nodes") then
-		for L_213_forvar1, L_214_forvar2 in pairs(WeaponInHand.Nodes:GetChildren()) do
-			if L_214_forvar2:IsA('BasePart') then
-				Ultil.Weld(WeaponInHand:WaitForChild("Handle"), L_214_forvar2)
-				L_214_forvar2.Anchored = false
-				L_214_forvar2.CanCollide = false
+		for _, nodePart in pairs(WeaponInHand.Nodes:GetChildren()) do
+			if nodePart:IsA('BasePart') then
+				Ultil.Weld(WeaponInHand:WaitForChild("Handle"), nodePart)
+				nodePart.Anchored = false
+				nodePart.CanCollide = false
 			end
 		end;
 	end
@@ -912,14 +900,14 @@ function setup(Tool)
 	if Ammo <= 0 and WeaponData.Type == "Gun" then
 		WeaponInHand.Handle.Slide.C0 = WeaponData.SlideEx:inverse()
 	end
-	EquipAnim()
+	ACSActions.EquipAnim()
 	if WeaponData and WeaponData.Type ~= "Grenade" then
-		RunCheck()
+		ACSActions.RunCheck()
 	end
 
 end
 
-function unset()
+function ACSActions.unset()
 	ToolEquip = false
 	plr:SetAttribute("ACS_Aiming", false)
 	Evt.Equip:FireServer(WeaponTool,2)
@@ -964,14 +952,10 @@ function unset()
 		AnimData		= nil
 		ProceduralWeaponAnimator = nil
 		UnderBarrelAtt 	= nil
-		LaserAtt 		= false
 		LaserActive		= false
 		IRmode			= false
-		TorchAtt 		= false
-		TorchActive 	= false
 		BipodAtt 		= false
 		BipodActive 	= false
-		LaserDist 		= 0
 		Pointer 		= nil
 		BSpread 		= nil
 		RecoilPower 	= nil
@@ -982,14 +966,13 @@ function unset()
 		SafeMode		= false
 		CheckingMag		= false
 		GRDebounce 		= false
-		CookGrenade 	= false
 		GunStance 		= 0
-		resetMods()
+		ACSActions.resetMods()
 		generateBullet 	= 1
 		AimPartMode 	= 1
 
-		LegacyWeaponHud.setVisible(SE_GUI, false)
-		LegacyWeaponHud.hideGrenadeForce(SE_GUI)
+		WeaponHudAdapter.setVisible(SE_GUI, false)
+		WeaponHudAdapter.hideGrenadeForce(SE_GUI)
 		BipodCF = CFrame.new()
 		if gameRules.ReplicatedLaser then
 			Evt.SVLaser:FireServer(nil,2,nil,false,WeaponTool)
@@ -998,7 +981,7 @@ function unset()
 end
 
 local HalfStep = false
-function HeadMovement()
+function ACSActions.HeadMovement()
 	-- Sends first-person/third-person neck rotation to the server at half-rate.
 	-- This keeps other players seeing where the character is looking without
 	-- firing a remote every single rendered frame.
@@ -1024,12 +1007,12 @@ function HeadMovement()
 	end
 end
 
-function renderCam()			
+function ACSActions.renderCam()			
 	-- Camera recoil spring is applied last so it affects every camera mode.
 	cam.CFrame = cam.CFrame*CFrame.Angles(cameraspring.p.x,cameraspring.p.y,cameraspring.p.z)
 end
 
-function Recoil()
+function ACSActions.Recoil()
 	-- Split recoil into two layers: procedural weapon pose recoil and camera
 	-- spring recoil. This gives kick without making ADS sway uncontrollable.
 	if ProceduralWeaponAnimator then
@@ -1045,20 +1028,20 @@ function Recoil()
 		CameraSpring = cameraspring,
 		RecoilSpring = RecoilSpring,
 		RecoilCFrame = recoilcf,
-		RandomRange = RAND,
+		RandomRange = ACSActions.RAND,
 		Schedule = function(duration, callback)
 			schedule(duration, callback, "ACS:RecoilRecover")
 		end,
 	})
 end
 
-function CheckForHumanoid(hitPart)
+function ACSActions.CheckForHumanoid(hitPart)
 	local result = HitResolver.findHumanoid(hitPart)
 	return result.found, result.humanoid
 end
 
-function CastRay(Bullet, Origin)
-	-- Legacy physical projectile tracker. The invisible bullet moves through the
+function ACSActions.CastRay(Bullet, Origin)
+	-- ACS physical projectile tracker. The invisible bullet moves through the
 	-- world and each heartbeat raycasts between the previous/current positions.
 	-- This preserves ACS whizz/suppression/hit behavior while visual tracers can
 	-- be handled by ProjectileVisuals.
@@ -1119,7 +1102,7 @@ function CastRay(Bullet, Origin)
 			if Hit2 and hitParent and (hitParent:IsA('Accessory') or hitParent:IsA('Hat')) then
 				for _,players in pairs(game.Players:GetPlayers()) do
 					if players.Character then
-						for i, hats in pairs(players.Character:GetChildren()) do
+						for _, hats in pairs(players.Character:GetChildren()) do
 							if hats:IsA("Accessory") then
 								table.insert(Ignore_Model, hats)
 							end
@@ -1155,7 +1138,7 @@ function CastRay(Bullet, Origin)
 				Debounce = true
 				cleanup()
 
-				local FoundHuman,VitimaHuman = CheckForHumanoid(raycastResult.Instance)
+				local FoundHuman,VitimaHuman = ACSActions.CheckForHumanoid(raycastResult.Instance)
 				-- Local hit effects play immediately, then the server replicates the
 				-- same impact for other clients.
 				HitMod.HitEffect(Ignore_Model, raycastResult.Position, raycastResult.Instance , raycastResult.Normal, raycastResult.Material, WeaponData)
@@ -1184,7 +1167,7 @@ function CastRay(Bullet, Origin)
 end
 
 local Tracers = 0
-function TracerCalculation()
+function ACSActions.TracerCalculation()
 	-- Tracer settings support both random-chance tracers and deterministic
 	-- "every X shots" tracers.
 	if not WeaponData.Tracer and not WeaponData.BulletFlare then return false; end;
@@ -1202,7 +1185,7 @@ function TracerCalculation()
 	return false;
 end;
 
-function CreateBullet()
+function ACSActions.CreateBullet()
 	-- Creates the invisible simulated bullet and optional visual tracer. Damage is
 	-- still resolved by CastRay after the projectile moves.
 
@@ -1227,21 +1210,21 @@ function CreateBullet()
 
 	if aimming and WeaponData.Bullets <= 1 then
 		balaspread = CFrame.Angles(
-			math.rad(RAND(-BSpread - (charspeed/1) * WalkMul, BSpread + (charspeed/1) * WalkMul) / (10 * WeaponData.AimSpreadReduction)),
-			math.rad(RAND(-BSpread - (charspeed/1) * WalkMul, BSpread + (charspeed/1) * WalkMul) / (10 * WeaponData.AimSpreadReduction)),
-			math.rad(RAND(-BSpread - (charspeed/1) * WalkMul, BSpread + (charspeed/1) * WalkMul) / (10 * WeaponData.AimSpreadReduction))
+			math.rad(ACSActions.RAND(-BSpread - (charspeed/1) * WalkMul, BSpread + (charspeed/1) * WalkMul) / (10 * WeaponData.AimSpreadReduction)),
+			math.rad(ACSActions.RAND(-BSpread - (charspeed/1) * WalkMul, BSpread + (charspeed/1) * WalkMul) / (10 * WeaponData.AimSpreadReduction)),
+			math.rad(ACSActions.RAND(-BSpread - (charspeed/1) * WalkMul, BSpread + (charspeed/1) * WalkMul) / (10 * WeaponData.AimSpreadReduction))
 		)
 	else
 		balaspread = CFrame.Angles(
-			math.rad(RAND(-BSpread - (charspeed/1) * WalkMul, BSpread + (charspeed/1) * WalkMul) / 10),
-			math.rad(RAND(-BSpread - (charspeed/1) * WalkMul, BSpread + (charspeed/1) * WalkMul) / 10),
-			math.rad(RAND(-BSpread - (charspeed/1) * WalkMul, BSpread + (charspeed/1) * WalkMul) / 10)
+			math.rad(ACSActions.RAND(-BSpread - (charspeed/1) * WalkMul, BSpread + (charspeed/1) * WalkMul) / 10),
+			math.rad(ACSActions.RAND(-BSpread - (charspeed/1) * WalkMul, BSpread + (charspeed/1) * WalkMul) / 10),
+			math.rad(ACSActions.RAND(-BSpread - (charspeed/1) * WalkMul, BSpread + (charspeed/1) * WalkMul) / 10)
 		)
 	end
 
 	Direction = balaspread * Direction
 
-	local Visivel = TracerCalculation()
+	local Visivel = ACSActions.TracerCalculation()
 
 	if Visivel then
 		-- Server bullet replication is kept for other clients; local ProjectileVisuals
@@ -1268,13 +1251,11 @@ function CreateBullet()
 
 	destroyLater(Bullet, 5)
 
-	CastRay(Bullet, Origin)
+	ACSActions.CastRay(Bullet, Origin)
 end
 
 
-function meleeCast()
-
-	local recast
+function ACSActions.meleeCast()
 	-- Set an origin and directional vector
 	local rayOrigin 	= cam.CFrame.Position
 	local rayDirection 	= cam.CFrame.LookVector * WeaponData.BladeRange
@@ -1293,33 +1274,33 @@ function meleeCast()
 		if Hit2 and Hit2.Parent:IsA('Accessory') then
 			for _,players in pairs(game.Players:GetPlayers()) do
 				if not players.Character then continue; end;
-				for i, hats in pairs(players.Character:GetChildren()) do
+				for _, hats in pairs(players.Character:GetChildren()) do
 					if not hats:IsA("Accessory") then continue; end;
 					table.insert(Ignore_Model, hats)
 				end
 			end
-			return meleeCast()
+			return ACSActions.meleeCast()
 		end
 
 		if Hit2 and Hit2.Name == "Ignorable" or Hit2.Name == "Glass" or Hit2.Name == "Ignore" or Hit2.Parent.Name == "Top" or Hit2.Parent.Name == "Helmet" or Hit2.Parent.Name == "Up" or Hit2.Parent.Name == "Down" or Hit2.Parent.Name == "Face" or Hit2.Parent.Name == "Olho" or Hit2.Parent.Name == "Headset" or Hit2.Parent.Name == "Numero" or Hit2.Parent.Name == "Vest" or Hit2.Parent.Name == "Chest" or Hit2.Parent.Name == "Waist" or Hit2.Parent.Name == "Back" or Hit2.Parent.Name == "Belt" or Hit2.Parent.Name == "Leg1" or Hit2.Parent.Name == "Leg2" or Hit2.Parent.Name == "Arm1"  or Hit2.Parent.Name == "Arm2" then
 			table.insert(Ignore_Model, Hit2)
-			return meleeCast()
+			return ACSActions.meleeCast()
 		end
 
 		if Hit2 and Hit2.Parent.Name == "Top" or Hit2.Parent.Name == "Helmet" or Hit2.Parent.Name == "Up" or Hit2.Parent.Name == "Down" or Hit2.Parent.Name == "Face" or Hit2.Parent.Name == "Olho" or Hit2.Parent.Name == "Headset" or Hit2.Parent.Name == "Numero" or Hit2.Parent.Name == "Vest" or Hit2.Parent.Name == "Chest" or Hit2.Parent.Name == "Waist" or Hit2.Parent.Name == "Back" or Hit2.Parent.Name == "Belt" or Hit2.Parent.Name == "Leg1" or Hit2.Parent.Name == "Leg2" or Hit2.Parent.Name == "Arm1"  or Hit2.Parent.Name == "Arm2" then
 			table.insert(Ignore_Model, Hit2.Parent)
-			return meleeCast()
+			return ACSActions.meleeCast()
 		end
 
 		if Hit2 and (Hit2.Transparency >= 1 or Hit2.CanCollide == false) and Hit2.Name ~= 'Head' and Hit2.Name ~= 'Right Arm' and Hit2.Name ~= 'Left Arm' and Hit2.Name ~= 'Right Leg' and Hit2.Name ~= 'Left Leg' and Hit2.Name ~= "UpperTorso" and Hit2.Name ~= "LowerTorso" and Hit2.Name ~= "RightUpperArm" and Hit2.Name ~= "RightLowerArm" and Hit2.Name ~= "RightHand" and Hit2.Name ~= "LeftUpperArm" and Hit2.Name ~= "LeftLowerArm" and Hit2.Name ~= "LeftHand" and Hit2.Name ~= "RightUpperLeg" and Hit2.Name ~= "RightLowerLeg" and Hit2.Name ~= "RightFoot" and Hit2.Name ~= "LeftUpperLeg" and Hit2.Name ~= "LeftLowerLeg" and Hit2.Name ~= "LeftFoot" and Hit2.Name ~= 'Armor' and Hit2.Name ~= 'EShield' then
 			table.insert(Ignore_Model, Hit2)
-			return meleeCast()
+			return ACSActions.meleeCast()
 		end
 	end
 
 
 	if not raycastResult then return; end;
-	local FoundHuman,VitimaHuman = CheckForHumanoid(raycastResult.Instance)
+	local FoundHuman,VitimaHuman = ACSActions.CheckForHumanoid(raycastResult.Instance)
 	HitMod.HitEffect(Ignore_Model, raycastResult.Position, raycastResult.Instance , raycastResult.Normal, raycastResult.Material, WeaponData)
 	Evt.HitEffect:FireServer(raycastResult.Position, raycastResult.Instance , raycastResult.Normal, raycastResult.Material, WeaponData)
 
@@ -1345,49 +1326,49 @@ function meleeCast()
 	end;		
 end;
 
-function UpdateGui()
+function ACSActions.UpdateGui()
 	-- Update both bridges: Player attributes for React, and SE_GUI for the current
-	-- legacy weapon HUD.
+	-- weapon HUD adapter.
 	if WeaponData then
 		WeaponData.AmmoInGun = Ammo
 		WeaponData.StoredAmmo = StoredAmmo
 		WeaponUIState.publishHud(plr, WeaponData, Ammo, StoredAmmo, SafeMode)
 		updateThirdPersonCrosshair()
-		LegacyWeaponHud.update(SE_GUI, WeaponData, Ammo, StoredAmmo, SafeMode, Suppressor, BipodAtt, Sens)
+		WeaponHudAdapter.update(SE_GUI, WeaponData, Ammo, StoredAmmo, SafeMode, Suppressor, BipodAtt, Sens)
 	end
 end
 
-function Grenade()
+function ACSActions.Grenade()
 	-- Grenades are feature-flagged off for now, but the old function remains as a
 	-- placeholder until the dedicated grenade rewrite lands.
 	if GRDebounce then return; end;
 	GRDebounce = true;
-	GrenadeReady()
+	ACSActions.GrenadeReady()
 end
 
-function TossGrenade()
+function ACSActions.TossGrenade()
 	if not WeaponTool or not WeaponData or not GRDebounce then return; end;
 	local SKP_02 = SKP_01.."-"..plr.UserId
-	GrenadeThrow()
+	ACSActions.GrenadeThrow()
 	if not WeaponTool or not WeaponData then return; end;
 	Evt.Grenade:FireServer(WeaponTool,WeaponData,cam.CFrame,cam.CFrame.LookVector,Power,SKP_02)
-	unset()
+	ACSActions.unset()
 end
 
-function GrenadeMode()
+function ACSActions.GrenadeMode()
 	if Power >= 150 then
 		Power = 100
-		LegacyWeaponHud.setGrenadeForceText(SE_GUI, "Mid Throw")
+		WeaponHudAdapter.setGrenadeForceText(SE_GUI, "Mid Throw")
 	elseif Power >= 100 then
 		Power = 50
-		LegacyWeaponHud.setGrenadeForceText(SE_GUI, "Low Throw")
+		WeaponHudAdapter.setGrenadeForceText(SE_GUI, "Low Throw")
 	elseif Power >= 50 then
 		Power = 150
-		LegacyWeaponHud.setGrenadeForceText(SE_GUI, "High Throw")
+		WeaponHudAdapter.setGrenadeForceText(SE_GUI, "High Throw")
 	end
 end
 
-function JamChance()
+function ACSActions.JamChance()
 	-- JamController only decides the roll; Main still owns the click sound and
 	-- weapon data mutation.
 	if JamController.roll(WeaponData, { ammo = Ammo }, math.random) then
@@ -1395,23 +1376,23 @@ function JamChance()
 	end
 end
 
-function Jammed()
+function ACSActions.Jammed()
 	if not JamController.canClear(WeaponData) then return; end;
 	mouse1down = false
 	reloading = true
 	SafeMode = false
 	GunStance = 0
 	Evt.GunStance:FireServer(GunStance,AnimData)
-	UpdateGui()
+	ACSActions.UpdateGui()
 
-	JammedAnim()
+	ACSActions.JammedAnim()
 	WeaponData.Jammed = false
-	UpdateGui()
+	ACSActions.UpdateGui()
 	reloading = false
-	RunCheck()
+	ACSActions.RunCheck()
 end
 
-function Reload()
+function ACSActions.Reload()
 	-- Reload timing/animation remains here because weapon animation modules yield
 	-- internally. Ammo math itself is delegated to ReloadController.
 	if ReloadController.canReload(WeaponData, { ammo = Ammo, storedAmmo = StoredAmmo }) then
@@ -1421,47 +1402,47 @@ function Reload()
 		SafeMode = false
 		GunStance = 0
 		Evt.GunStance:FireServer(GunStance,AnimData)
-		UpdateGui()
+		ACSActions.UpdateGui()
 
 		if WeaponData.ShellInsert then
 			if Ammo > 0 then
-				for i = 1,WeaponData.Ammo - Ammo do
+				for _ = 1,WeaponData.Ammo - Ammo do
 					if StoredAmmo > 0 and Ammo < WeaponData.Ammo then
 						if CancelReload then
 							break
 						end
-						ReloadAnim()
+						ACSActions.ReloadAnim()
 						local nextAmmo = ReloadController.insertOne({ ammo = Ammo, storedAmmo = StoredAmmo })
 						Ammo = nextAmmo.ammo
 						StoredAmmo = nextAmmo.storedAmmo
-						UpdateGui()
+						ACSActions.UpdateGui()
 					end
 				end
 			else
-				TacticalReloadAnim()
+				ACSActions.TacticalReloadAnim()
 				local firstInsert = ReloadController.insertOne({ ammo = Ammo, storedAmmo = StoredAmmo })
 				Ammo = firstInsert.ammo
 				StoredAmmo = firstInsert.storedAmmo
-				UpdateGui()
-				for i = 1,WeaponData.Ammo - Ammo do
+				ACSActions.UpdateGui()
+				for _ = 1,WeaponData.Ammo - Ammo do
 					if StoredAmmo > 0 and Ammo < WeaponData.Ammo then
 						if CancelReload then
 							break
 						end
-						ReloadAnim()
+						ACSActions.ReloadAnim()
 						local nextAmmo = ReloadController.insertOne({ ammo = Ammo, storedAmmo = StoredAmmo })
 						Ammo = nextAmmo.ammo
 						StoredAmmo = nextAmmo.storedAmmo
-						UpdateGui()
+						ACSActions.UpdateGui()
 					end
 				end
 
 			end
 		else
 			if Ammo > 0 then
-				ReloadAnim()
+				ACSActions.ReloadAnim()
 			else
-				TacticalReloadAnim()
+				ACSActions.TacticalReloadAnim()
 			end
 
 			local nextAmmo = ReloadController.finishMagazineReload(WeaponData, { ammo = Ammo, storedAmmo = StoredAmmo })
@@ -1470,12 +1451,12 @@ function Reload()
 		end
 		CancelReload = false
 		reloading = false
-		RunCheck()
-		UpdateGui()
+		ACSActions.RunCheck()
+		ACSActions.UpdateGui()
 	end
 end
 
-function GunFx()
+function ACSActions.GunFx()
 	-- FireEffectsController returns updated spread/recoil counters so Main can
 	-- keep using them for bullet spread and recoil recovery.
 	local nextState = FireEffectsController.apply(WeaponInHand, WeaponData, ModTable, Ammo, Suppressor, FlashHider, {
@@ -1491,7 +1472,7 @@ function GunFx()
 	LastSpreadUpdate = nextState.lastSpreadUpdate
 end
 
-function Shoot()
+function ACSActions.Shoot()
 	-- ShootingController controls sequencing, while these callbacks preserve the
 	-- old ACS side effects: remotes, bullet spawning, ammo decrement, jam rolls,
 	-- recoil, and HUD refresh.
@@ -1521,14 +1502,14 @@ function Shoot()
 		if not WeaponData then return; end;
 		Evt.Atirar:FireServer(WeaponTool,Suppressor,FlashHider)
 		for _ =  1, WeaponData.Bullets do
-			Thread:Spawn(CreateBullet)
+			Thread:Spawn(ACSActions.CreateBullet)
 		end
 		Ammo = Ammo - 1
 		shotState.ammo = Ammo
-		GunFx()
-		JamChance()
-		UpdateGui()
-		Thread:Spawn(Recoil)
+		ACSActions.GunFx()
+		ACSActions.JamChance()
+		ACSActions.UpdateGui()
+		Thread:Spawn(ACSActions.Recoil)
 	end
 
 	ShootingController.shoot(WeaponData, shotState, {
@@ -1542,22 +1523,22 @@ function Shoot()
 			if not WeaponData then return; end;
 			Evt.Atirar:FireServer(WeaponTool,Suppressor,FlashHider)
 			for _ =  1, WeaponData.Bullets do
-				Thread:Spawn(CreateBullet)
+				Thread:Spawn(ACSActions.CreateBullet)
 			end
 			Ammo = Ammo - 1
 			shotState.ammo = Ammo
-			GunFx()
-			UpdateGui()
-			Thread:Spawn(Recoil)
+			ACSActions.GunFx()
+			ACSActions.UpdateGui()
+			Thread:Spawn(ACSActions.Recoil)
 		end,
 		playEmptyClick = function()
 			WeaponInHand.Handle.Click:Play()
 		end,
-		pump = PumpAnim,
-		runCheck = RunCheck,
+		pump = ACSActions.PumpAnim,
+		runCheck = ACSActions.RunCheck,
 		melee = function()
-			meleeCast()
-			meleeAttack()
+			ACSActions.meleeCast()
+			ACSActions.meleeAttack()
 		end,
 		schedule = schedule,
 	})
@@ -1581,12 +1562,12 @@ end
 
 game:GetService("RunService"):BindToRenderStep("Camera Update", 200, CameraLeanController.Update)
 
-function RunCheck()
+function ACSActions.RunCheck()
 	if runKeyDown then
 		mouse1down = false
 		GunStance = 3
 		Evt.GunStance:FireServer(GunStance,AnimData)
-		SprintAnim()
+		ACSActions.SprintAnim()
 	else
 		if aimming then
 			GunStance = 2
@@ -1595,17 +1576,17 @@ function RunCheck()
 			GunStance = 0
 			Evt.GunStance:FireServer(GunStance,AnimData)
 		end
-		IdleAnim()
+		ACSActions.IdleAnim()
 	end
 end
 
-function Stand()
+function ACSActions.Stand()
 	Stance:FireServer(Stances,Virar)
 	tweenStanceCameraOffset()
 	StanceController.applyStand(getStanceContext(), Steady)
 end
 
-function Crouch()
+function ACSActions.Crouch()
 	Stance:FireServer(Stances,Virar)
 	tweenStanceCameraOffset()
 	StanceController.applyCrouch(getStanceContext())
@@ -1662,73 +1643,72 @@ local function playWeaponAnimation(animationName)
 	end)
 end
 
-function EquipAnim()
+function ACSActions.EquipAnim()
 	AnimDebounce = false
 	playWeaponAnimation("EquipAnim")
 	AnimDebounce = true
 end
 
-function IdleAnim()
+function ACSActions.IdleAnim()
 	playWeaponAnimation("IdleAnim")
 	AnimDebounce = true
 end
 
-function SprintAnim()
+function ACSActions.SprintAnim()
 	AnimDebounce = false
 	playWeaponAnimation("SprintAnim")
 end
 
-function HighReady()
+function ACSActions.HighReady()
 	playWeaponAnimation("HighReady")
 end
 
-function LowReady()
+function ACSActions.LowReady()
 	playWeaponAnimation("LowReady")
 end
 
-function Patrol()
+function ACSActions.Patrol()
 	playWeaponAnimation("Patrol")
 end
 
-function ReloadAnim()
+function ACSActions.ReloadAnim()
 	playWeaponAnimation("ReloadAnim")
 end
 
-function TacticalReloadAnim()
+function ACSActions.TacticalReloadAnim()
 	playWeaponAnimation("TacticalReloadAnim")
 end
 
-function JammedAnim()
+function ACSActions.JammedAnim()
 	playWeaponAnimation("JammedAnim")
 end
 
-function PumpAnim()
+function ACSActions.PumpAnim()
 	reloading = true
 	playWeaponAnimation("PumpAnim")
 	reloading = false
 end
 
-function meleeAttack()
+function ACSActions.meleeAttack()
 	playWeaponAnimation("meleeAttack")
 end
 
-function GrenadeReady()
+function ACSActions.GrenadeReady()
 	playWeaponAnimation("GrenadeReady")
 end
 
-function GrenadeThrow()
+function ACSActions.GrenadeThrow()
 	playWeaponAnimation("GrenadeThrow")
 end
 ----------//Animation Loader\\----------
 
 ----------//KeyBinds\\----------
-InputBindings.bindDefaultActions(CAS, handleAction)
---CAS:BindAction("LeanLeft", handleAction, false, Enum.KeyCode.Q)
---CAS:BindAction("LeanRight", handleAction, false, Enum.KeyCode.E)
+InputBindings.bindDefaultActions(CAS, ACSActions.handleAction)
+--CAS:BindAction("LeanLeft", ACSActions.handleAction, false, Enum.KeyCode.Q)
+--CAS:BindAction("LeanRight", ACSActions.handleAction, false, Enum.KeyCode.E)
 ----------//KeyBinds\\----------
 
 ----------//Gun System\\----------
-local L_199_ = nil
 char.ChildAdded:Connect(function(Tool)
 	local toolData = WeaponToolClassifier.readSettings(Tool)
 	if Tool:IsA('Tool') and Humanoid.Health > 0 and not ToolEquip and WeaponToolClassifier.canEquip(toolData, FeatureFlags) then
@@ -1738,16 +1718,15 @@ char.ChildAdded:Connect(function(Tool)
 		end
 
 		if L_370_ then
-			L_199_ = Tool
 			if not ToolEquip then
 				--pcall(function()
-				setup(Tool)
+				ACSActions.setup(Tool)
 				--end)
 
 			elseif ToolEquip then
 				pcall(function()
-					unset()
-					setup(Tool)
+					ACSActions.unset()
+					ACSActions.setup(Tool)
 				end)
 			end;
 		end;
@@ -1758,7 +1737,7 @@ end)
 char.ChildRemoved:Connect(function(Tool)
 	if Tool == WeaponTool then
 		if ToolEquip then
-			unset()
+			ACSActions.unset()
 		end
 	end
 end)
@@ -1783,22 +1762,22 @@ Humanoid.Swimming:Connect(function(speed)
 	end
 end)
 
-Humanoid.Died:Connect(function(speed)
+Humanoid.Died:Connect(function()
 	TS:Create(char.Humanoid, TweenInfo.new(1), {CameraOffset = Vector3.new(0,0,0)} ):Play()
 	ChangeStance = false
-	Stand()
+	ACSActions.Stand()
 	Stances = 0
 	Virar = 0
 	CameraX = 0
 	CameraY = 0
 	--Lean()
-	unset()
+	ACSActions.unset()
 end)
 
 Humanoid.Seated:Connect(function(IsSeated, Seat)
 
 	if IsSeated and Seat and (Seat:IsA("VehicleSeat")) then
-		unset()
+		ACSActions.unset()
 		Humanoid:UnequipTools()
 		plr.CameraMaxZoomDistance = gameRules.VehicleMaxZoom
 	else
@@ -1811,7 +1790,7 @@ Humanoid.Seated:Connect(function(IsSeated, Seat)
 		Virar = 0
 		CameraX = 0
 		CameraY = 0
-		Stand()
+		ACSActions.Stand()
 		--Lean()
 	else
 		Sentado = false
@@ -1834,14 +1813,14 @@ Humanoid.Changed:Connect(function(Property)
 	end
 end)
 
-Humanoid.StateChanged:Connect(function(Old,state)
+Humanoid.StateChanged:Connect(function(_oldState,state)
 	if state == Enum.HumanoidStateType.Swimming then
 		Swimming = true
 		Stances = 0
 		Virar = 0
 		CameraX = 0
 		CameraY = 0
-		Stand()
+		ACSActions.Stand()
 		--Lean()
 	else
 		Swimming = false
@@ -1858,27 +1837,27 @@ mouse.WheelBackward:Connect(function() -- fires when the wheel goes forwards
 		if GunStance == 0 then
 			SafeMode = true
 			GunStance = -1
-			UpdateGui()
+			ACSActions.UpdateGui()
 			Evt.GunStance:FireServer(GunStance,AnimData)
-			LowReady()
+			ACSActions.LowReady()
 		elseif GunStance == -1 then
 			SafeMode = true
 			GunStance = -2
-			UpdateGui()
+			ACSActions.UpdateGui()
 			Evt.GunStance:FireServer(GunStance,AnimData)
-			Patrol()
+			ACSActions.Patrol()
 		elseif GunStance == 1 then
 			SafeMode = false
 			GunStance = 0
-			UpdateGui()
+			ACSActions.UpdateGui()
 			Evt.GunStance:FireServer(GunStance,AnimData)
-			IdleAnim()
+			ACSActions.IdleAnim()
 		end
 	end
 
 	if ToolEquip and aimming and Sens > 5 then
 		Sens = Sens - 5
-		UpdateGui()
+		ACSActions.UpdateGui()
 		game:GetService('UserInputService').MouseDeltaSensitivity = (Sens/100)
 	end
 
@@ -1892,27 +1871,27 @@ mouse.WheelForward:Connect(function() -- fires when the wheel goes backwards
 		if GunStance == 0 then
 			SafeMode = true
 			GunStance = 1
-			UpdateGui()
+			ACSActions.UpdateGui()
 			Evt.GunStance:FireServer(GunStance,AnimData)
-			HighReady()
+			ACSActions.HighReady()
 		elseif GunStance == -1 then
 			SafeMode = false
 			GunStance = 0
-			UpdateGui()
+			ACSActions.UpdateGui()
 			Evt.GunStance:FireServer(GunStance,AnimData)
-			IdleAnim()
+			ACSActions.IdleAnim()
 		elseif GunStance == -2 then
 			SafeMode = true
 			GunStance = -1
-			UpdateGui()
+			ACSActions.UpdateGui()
 			Evt.GunStance:FireServer(GunStance,AnimData)
-			LowReady()
+			ACSActions.LowReady()
 		end
 	end
 
 	if ToolEquip and aimming and Sens < 100 then
 		Sens = Sens + 5
-		UpdateGui()
+		ACSActions.UpdateGui()
 		game:GetService('UserInputService').MouseDeltaSensitivity = (Sens/100)
 	end
 
@@ -1923,18 +1902,18 @@ hostScript.Parent:GetAttributeChangedSignal("Injured"):Connect(function()
 
 	if valor and runKeyDown then
 		runKeyDown 	= false
-		Stand()
+		ACSActions.Stand()
 		if not CheckingMag and not reloading and WeaponData and WeaponData.Type ~= "Grenade" and (GunStance == 0 or GunStance == 2 or GunStance == 3) then
 			GunStance = 0
 			Evt.GunStance:FireServer(GunStance,AnimData)
-			IdleAnim()
+			ACSActions.IdleAnim()
 		end
 	end
 
 	if Stances == 0 then
-		Stand()
+		ACSActions.Stand()
 	elseif Stances == 1 then
-		Crouch()
+		ACSActions.Crouch()
 	end
 
 end)
@@ -1945,7 +1924,7 @@ end)
 ACS_Client:GetAttributeChangedSignal("Collapsed"):Connect(function()
 	if not ACS_Client:GetAttribute("Collapsed") then return; end;
 	runKeyDown 	= true
-	Stand()
+	ACSActions.Stand()
 	Stances = 0
 	Virar = 0
 	CameraX = 0
@@ -1953,11 +1932,11 @@ ACS_Client:GetAttributeChangedSignal("Collapsed"):Connect(function()
 	--Lean()
 end)
 
-Run.RenderStepped:Connect(function(step)
+Run.RenderStepped:Connect(function(_deltaTime)
 	-- Render loop is the final pose compositor. By this point input, animations,
 	-- recoil, camera mode, and procedural layers have all updated their state.
-	HeadMovement()
-	renderCam()
+	ACSActions.HeadMovement()
+	ACSActions.renderCam()
 
 	if ViewModel and LArm and RArm and WeaponInHand then --Check if the weapon and arms are loaded
 		local thirdPersonCamera = isThirdPersonCamera()
@@ -1970,7 +1949,6 @@ Run.RenderStepped:Connect(function(step)
 		end
 
 		local swayVec = SwaySpring.p
-		local TSWAY = swayVec.z
 		local XSSWY = swayVec.X
 		local YSSWY = swayVec.Y
 		local Sway = CFrame.Angles(YSSWY,XSSWY,XSSWY)
@@ -2062,7 +2040,7 @@ Run.RenderStepped:Connect(function(step)
 			maincf = maincf:Lerp(AnimData.MainCFrame * recoilcf * Sway:inverse(), 0.2)
 		end
 
-		for index, Part in pairs(WeaponInHand:GetDescendants()) do
+		for _, Part in pairs(WeaponInHand:GetDescendants()) do
 			-- Scope/reticle UI is parallax-corrected by shifting the SurfaceGui
 			-- according to camera position relative to the sight mark.
 			if Part:IsA("BasePart") and Part.Name == "SightMark" then
@@ -2105,18 +2083,13 @@ Run.RenderStepped:Connect(function(step)
 				end
 			end
 
-			for index, Key in pairs(WeaponInHand:GetDescendants()) do
+			for _, Key in pairs(WeaponInHand:GetDescendants()) do
 				if Key:IsA("BasePart") and Key.Name == "LaserPoint" then
 					local laserResult = Runtime.raycast(Key.CFrame.Position, Key.CFrame.LookVector * 1000, Ignore_Model)
-					local Hit = laserResult and laserResult.Instance
 					local Pos = laserResult and laserResult.Position or (cam.CFrame.Position + Key.CFrame.LookVector * 2000)
 					local Normal = laserResult and laserResult.Normal or Key.CFrame.LookVector
 
-					if Hit then
-						Pointer.CFrame =  CFrame.new(Pos, Pos + Normal)
-					else
-						Pointer.CFrame =  CFrame.new(Pos, Pos + Normal)
-					end
+					Pointer.CFrame = CFrame.new(Pos, Pos + Normal)
 
 					if HalfStep and gameRules.ReplicatedLaser then
 						Evt.SVLaser:FireServer(Pos,1,Pointer.Color,IRmode,WeaponTool)
@@ -2142,7 +2115,7 @@ Evt.Refil.OnClientEvent:Connect(function(Tool, Infinite, Stored)
 			StoredAmmo = maxReserve
 		end
 		data.StoredAmmo = StoredAmmo
-		UpdateGui()
+		ACSActions.UpdateGui()
 		return
 	end
 
@@ -2151,7 +2124,7 @@ Evt.Refil.OnClientEvent:Connect(function(Tool, Infinite, Stored)
 	StoredAmmo = StoredAmmo + NewStored
 	data.StoredAmmo = StoredAmmo
 
-	UpdateGui()
+	ACSActions.UpdateGui()
 
 	if not Infinite then
 		Evt.Refil:FireServer(Stored, NewStored)
@@ -2163,4 +2136,5 @@ end)
 end
 
 return Main
+
 

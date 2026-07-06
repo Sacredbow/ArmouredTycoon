@@ -4,7 +4,7 @@
 	FeatureFlags
 
 	Central switches for ACS features that are being removed, paused, or rewritten.
-	This keeps legacy code paths easy to find without deleting useful future work.
+	This keeps compatibility paths easy to find without deleting useful future work.
 
 	Current direction:
 		- guns stay active

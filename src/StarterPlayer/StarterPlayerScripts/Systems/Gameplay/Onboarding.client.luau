@@ -66,7 +66,7 @@ end
 ---------------------------------------------------------------------------
 
 local activeBeams: { [string]: { att0: Attachment, att1: Attachment, beam: Beam } } = {}
-local doorBeamsEnabled = true
+local doorBeamsEnabled = false
 local claimedDoorKeys: { [string]: boolean } = {}
 
 local function allowButtonDirections(): boolean
@@ -250,7 +250,6 @@ local function setupTycoonBeams()
 		end
 	end
 end
-setupTycoonBeams()
 
 Player:GetAttributeChangedSignal("AllowButtonDirections"):Connect(function()
 	buttonDirectionsEnabled = allowButtonDirections()
@@ -294,6 +293,7 @@ TutorialSignal.OnClientEvent:Connect(function(message: any, rawTarget: any?)
 		markTycoonClaimed(target)
 		return
 	elseif newMessage == "TycoonAvailable" then
+		doorBeamsEnabled = true
 		local door = resolveSignalTarget(target)
 		if not door and typeof(target) == "string" then
 			door = getDoorFromTycoonName(target)

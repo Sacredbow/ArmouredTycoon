@@ -15,7 +15,7 @@
 		- return the updated counters back to Main
 
 	It does not create hit rays or subtract ammo. Those remain outside so bullet
-	networking, server damage, and legacy ACS callbacks stay in one known place.
+	networking, server damage, and ACS callbacks stay in one known place.
 ]]
 
 local TweenService = game:GetService("TweenService")
@@ -47,7 +47,7 @@ export type SpreadState = {
 }
 
 local function emit(parent: Instance, name: string, count: number)
-	-- Particle names follow legacy ACS models, so missing emitters are acceptable.
+	-- Particle names follow ACS weapon models, so missing emitters are acceptable.
 	local child = parent:FindFirstChild(name)
 	if child and child:IsA("ParticleEmitter") then
 		child:Emit(count)

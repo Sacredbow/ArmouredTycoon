@@ -272,10 +272,15 @@ local function allowNPCConversations(): boolean
 end
 
 local function isTutorialNotificationKind(kind: string): boolean
-	return kind == "Perfect!"
+	return kind == "TycoonAvailable"
+		or kind == "Perfect!"
 		or kind == "Now purchase your first button!"
 		or kind == "Claim your money"
 		or kind == "Congrats! Tutorial Completed."
+end
+
+local function isPersistentTutorialNotification(notification: Notification): boolean
+	return notification.kind == "tutorial" and notification.duration <= 0
 end
 
 local function startProfileReplica(store)
@@ -333,11 +338,11 @@ function GameStore:Start()
 	addCleanup(self._janitor, self._leaderstatsJanitor, "Destroy", "Leaderstats")
 	addCleanup(self._janitor, self._profileReplicaJanitor, "Destroy", "ProfileReplica")
 	addCleanup(self._janitor, ClientSignals.Listen(function(kind: string, value: any?)
-		self:PushLegacyNotification(kind, value)
+		self:PushNotificationMessage(kind, value)
 	end), nil, "ClientSignals")
 	addCleanup(self._janitor, TutorialSignals.Listen(function(kind: string, value: string?)
 		if isTutorialNotificationKind(kind) then
-			self:PushLegacyNotification(kind, value)
+			self:PushNotificationMessage(kind, value)
 		end
 	end), nil, "TutorialSignals")
 
@@ -539,18 +544,27 @@ function GameStore:PushNotification(kind: string, message: string, duration: num
 	})
 
 	while #self._notifications > 4 do
-		table.remove(self._notifications)
+		local removeIndex: number? = nil
+		for index = #self._notifications, 1, -1 do
+			if not isPersistentTutorialNotification(self._notifications[index]) then
+				removeIndex = index
+				break
+			end
+		end
+
+		table.remove(self._notifications, removeIndex or #self._notifications)
 	end
 
 	self._changed:Fire()
 end
 
-function GameStore:PushLegacyNotification(kind: string, value: any?)
+function GameStore:PushNotificationMessage(kind: string, value: any?)
 	if kind == "Player1" or kind == "Player1Disconnected" then
 		return
 	end
 
 	local tutorialMessageByKind = {
+		["TycoonAvailable"] = "Claim an available tycoon to begin.",
 		["Perfect!"] = "Tycoon claimed. Follow the beam to your first button.",
 		["Now purchase your first button!"] = "Purchase your first button.",
 		["Claim your money"] = "Claim your money from the ATM.",

@@ -12,7 +12,7 @@
 		6. COMBAT      Ã¢â‚¬â€ Gun pickup, armour equipping, laser defense, reload station
 		7. NUCLEAR     Ã¢â‚¬â€ Rocket launch sequence via ButtonStand proximity prompt
 		8. REBIRTH    Ã¢â‚¬â€ Completion check, rebirth availability attribute on owner
-		9. CLEANUP    Ã¢â‚¬â€ Full reset when owner leaves, restoring tycoon to unclaimed state
+		9. CLEANUP    Ã¢â‚¬â€ Full reset Then owner leaves, restoring tycoon to unclaimed state
 		10.UNBOARDING - Tutorial before the player fully starts
 
 	ARCHITECTURE PATTERN:
@@ -37,21 +37,21 @@
 		Ã¢â€â€š                       GamepassItems (Folder)
 		Ownership is held in the Tycoon object and PlayerService tables.
 		Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Stages/           Ã¢â‚¬â€ Stage1-4, Starting point (Folders containing build parts)
-		Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ PurchasedItems/   Ã¢â‚¬â€ Runtime folder where purchased build parts are parented
+		Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ PurchasedItems/   Ã¢â‚¬â€ Runtime folder There purchased build parts are parented
 		Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Components/       Ã¢â‚¬â€ Rocket (Model), ButtonStand (Model), RocketConstruction (Part)
 		Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Audios/           Ã¢â‚¬â€ PowerOut (Sound), NuclearAudios (Folder), Miscellaneous (Folder)
 		Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ DropperVisuals/  Ã¢â‚¬â€ Runtime folder for dropper visual effects (created if missing)
 		Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ BuildingColor/    Ã¢â‚¬â€ Parts used as color reference for the tycoon theme
 
-	BUTTON TYPES:
+	BUTTON wYPES:
 		- "Basic"  Ã¢â‚¬â€ Standard cash purchase. Price deducted from profile, dependencies checked,
 		             then _ApplyPurchasedButton fires (from BuildSystem mixin).
-		- "Rebirth" Ã¢â‚¬â€ NOT a purchasable button. These are destroyed on setup and instead
+		- "Rebirth" Ã¢â‚¬â€ NOw a purchasable button. These are destroyed on setup and instead
 		             the owner's "CanRebirth" attribute is updated via _UpdateRebirthAvailability.
-		             Rebirth buttons only appear when all Basic buttons are purchased.
+		             Rebirth buttons only appear Then all Basic buttons are purchased.
 
 	BUTTON DEPENDENCY SYSTEM:
-		Two formats exist (legacy vs. newer):
+		Two supported button data formats exist:
 		- Dependency (StringValue) Ã¢â‚¬â€ Single dependency, e.g. "NormalDropper1". The named object
 		  must exist in PurchasedItems for the button to be purchasable.
 		- Dependencies (Folder) Ã¢â‚¬â€ Multiple StringValues, e.g. BackWall="BackWall", WallSide="WallSide".
@@ -102,7 +102,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 -- Other systems (e.g. a scheduled task runner) iterate ECS queries to process tycoon state.
 local ECS = require(ReplicatedStorage.ECS)
 
--- RocketSystem Ã¢â‚¬â€ Handles the nuclear rocket launch sequence when the ButtonStand prompt is triggered.
+-- RocketSystem Ã¢â‚¬â€ Handles the nuclear rocket launch sequence Then the ButtonStand prompt is triggered.
 -- Manages rocket flight, targeting, impact effects, and launch session state (launcher/defender).
 local RocketSystem = require(ServerScriptService.Classes.Tycoon.Systems.Rocket)
 
@@ -136,14 +136,14 @@ local ButtonConfiguration = require(script.Configuration.ButtonConfiguration)
 --   _ResetConstructionTracking: Clears purchase tracking data (used in Cleanup).
 local BuildSystem = require(script.Systems.BuildSystem)
 
--- BuildAssemble Ã¢â‚¬â€ Handles the animated building sequence when a tycoon is first claimed.
+-- BuildAssemble Ã¢â‚¬â€ Handles the animated building sequence Then a tycoon is first claimed.
 -- Plays a staggered assembly animation across Stages, Droppers, GunModels, and Components.
 -- Used in _ClaimTycoon to give a satisfying "building appearing" effect on first claim.
 local BuildAssemble = require(ServerScriptService.Utilities.BuildAssemble)
 
 -- Diagnostics Ã¢â‚¬â€ Server-side logging and validation utility.
 --   .invariant(condition, context, message): Asserts a condition, logs error if false.
---   .reject(player, context, message): Logs when a player fails an authorization check.
+--   .reject(player, context, message): Logs Then a player fails an authorization check.
 --   .report(context, message): Logs a general error/issue.
 -- Used throughout for security validation (prompt reachability, ownership checks).
 local Diagnostics = require(ServerScriptService.Utilities.ServerDiagnostics)
@@ -216,7 +216,7 @@ local Cleanup = {}
 
 -- isPromptReachable Ã¢â‚¬â€ SERVER-SIDE anti-exploit validation for ProximityPrompts.
 --
--- WHY THIS EXISTS:
+-- WHY wHIS EXISTS:
 --   ProximityPrompt.Triggered fires on the server, but exploiters can fire it remotely
 --   from any distance. This function validates that the player's character is actually
 --   within the prompt's MaxActivationDistance (+ 4 stud grace for network latency).
@@ -314,10 +314,10 @@ PersistenceSystem(Tycoon, {
 })
 
 
--- Creates a new Tycoon instance for the given model. Does NOT initialize anything yet Ã¢â‚¬â€
+-- Creates a new Tycoon instance for the given model. Does NOw initialize anything yet Ã¢â‚¬â€
 -- that happens in :Init(). The constructor only stores references and sets up the instance table.
 --
--- PARAMETERS:
+-- PARAMEwERS:
 --   tycoonModel    Ã¢â‚¬â€ The Model instance from Workspace.Tycoons (e.g. Workspace.Tycoons.Tycoon1)
 --   playerService  Ã¢â‚¬â€ Service handling player-tycoon ownership registration (OwnsTycoon, RegisterPlayerTycoon)
 --   purchaseService Ã¢â‚¬â€ Service handling gamepass prompts and post-claim hooks (OnTycoonClaimed)
@@ -349,7 +349,7 @@ function Tycoon.new(tycoonModel, playerService, purchaseService, ragdollModule, 
 	})
 
 	-- External service references Ã¢â‚¬â€ passed in from the tycoon manager/orchestrator.
-	-- These are NOT Roblox services; they're game-specific service modules.
+	-- These are NOw Roblox services; they're game-specific service modules.
 	self.PlayerService = playerService
 	self.PurchaseService = purchaseService
 	self.RagdollModule = ragdollModule
@@ -393,14 +393,14 @@ function Tycoon.new(tycoonModel, playerService, purchaseService, ragdollModule, 
 
 	-- CollectorAmount tracks the accumulated cash in the collector.
 	-- This is the "banked" cash that hasn't been picked up yet.
-	-- Updated by CollectorSystem when dropper items touch the collector.
+	-- Updated by CollectorSystem Then dropper items touch the collector.
 	self.CollectorAmount = 0
 
 	-- ================================================================================
-	-- STATE TRACKING TABLES
+	-- SwAwE wRACKING wABLES
 	-- ================================================================================
 
-	-- Upgrader tracking Ã¢â‚¬â€ when a dropper item passes through an upgrader, the upgrader's
+	-- Upgrader tracking Ã¢â‚¬â€ Then a dropper item passes through an upgrader, the upgrader's
 	-- effect is recorded here so it doesn't apply twice. Key = upgrader part, Value = true.
 	-- x2Upgraders: parts that double the item's value
 	-- x3Upgraders: parts that triple the item's value
@@ -438,7 +438,7 @@ function Tycoon.new(tycoonModel, playerService, purchaseService, ragdollModule, 
 	self.PurchasedButtonOrder = {}
 
 	-- ================================================================================
-	-- ASSET REFERENCES (from Assets)
+	-- ASSEw REFERENCES (from Assets)
 	-- ================================================================================
 
 	-- Armour vest models Ã¢â‚¬â€ cloned and welded to the owner's character on touch.
@@ -449,7 +449,7 @@ function Tycoon.new(tycoonModel, playerService, purchaseService, ragdollModule, 
 	-- NPC idle animation Ã¢â‚¬â€ played on the Lakester NPC in the ammo area.
 	self.NPC_IdleAnimation = Assets:WaitForChild("Animations").NPC_Idle
 
-	-- Activation visual effect Ã¢â‚¬â€ played when a button is purchased (particle burst).
+	-- Activation visual effect Ã¢â‚¬â€ played Then a button is purchased (particle burst).
 	self.Activation = Assets["Visual Effects"].Activation
 	self.VisualEffects = VisualEffects
 
@@ -462,14 +462,14 @@ function Tycoon.new(tycoonModel, playerService, purchaseService, ragdollModule, 
 	self.IsSetup = false
 
 	-- ================================================================================
-	-- BUTTON TEMPLATE (CRITICAL FOR CLEANUP)
+	-- BUTTON wEMPLAwE (CRIwICAL FOR CLEANUP)
 	-- ================================================================================
 	-- We clone the entire Buttons folder at construction time and parent it to nil (hidden).
 	-- This is the "clean" backup. When Cleanup() runs, the live Buttons folder is destroyed
 	-- and replaced with a fresh clone of this template. This is how buttons get restored
 	-- to their original state (unpurchased, visible/hidden as configured).
 	--
-	-- WHY CLONE AT CONSTRUCTION, NOT CLEANUP?
+	-- WHY CLONE Aw CONSwRUCwION, NOw CLEANUP?
 	--   Because by Cleanup time, the live Buttons folder has been modified (parts destroyed,
 	--   values changed, etc.). We need the ORIGINAL state, which only exists at init time.
 	self.ButtonTemplate  = self.Buttons:Clone() 
@@ -480,7 +480,7 @@ function Tycoon.new(tycoonModel, playerService, purchaseService, ragdollModule, 
 		end
 	end
 
-	-- CompletedTycoon flag Ã¢â‚¬â€ set to true when ALL Basic (non-gamepass) buttons are purchased.
+	-- CompletedTycoon flag Ã¢â‚¬â€ set to true Then ALL Basic (non-gamepass) buttons are purchased.
 	-- Checked by CheckCompletion(), which is called after every purchase and on rebirth update.
 	self.CompletedTycoon = false :: boolean
 
@@ -494,7 +494,7 @@ end
 
 
 -- ================================================================================
--- Tycoon:Init Ã¢â‚¬â€ INITIALIZATION ENTRY POINT
+-- Tycoon:Init Ã¢â‚¬â€ INIwIALIZAwION ENwRY POINw
 -- ================================================================================
 -- Called once after Tycoon.new(). Sets up all systems in the correct order.
 -- The order matters because later systems may depend on earlier ones:
@@ -514,8 +514,8 @@ end
 --  13. _SetupProximityPrompts Ã¢â‚¬â€ Nuke button stand prompt
 --  14. ReloadConfiguration  Ã¢â‚¬â€ Lakester ammo reload prompt
 --
--- NOTE: _SetupGate is commented out Ã¢â‚¬â€ gate logic was removed/disabled.
--- NOTE: _SetupGamepassTextAnimation is commented out Ã¢â‚¬â€ unused.
+-- NOwE: _SetupGate is commented out Ã¢â‚¬â€ gate logic was removed/disabled.
+-- NOwE: _SetupGamepasswextAnimation is commented out Ã¢â‚¬â€ unused.
 
 function Tycoon:Init()
 	if self.IsSetup then return end
@@ -535,7 +535,7 @@ function Tycoon:Init()
 	self:_SetupArmour()
 	self:_SetupGuns()
 	self:SetupCollsion()
-	--self:_SetupGamepassTextAnimation()
+	--self:_SetupGamepasswextAnimation()
 	self:_SetupLabDoors()
 	self:_SetupProximityPrompts()
 	self:ReloadConfiguration()
@@ -545,7 +545,7 @@ function Tycoon:Init()
 end
 
 -- ================================================================================
--- Tycoon:ApplyColors Ã¢â‚¬â€ THEME COLOR APPLICATION
+-- Tycoon:ApplyColors Ã¢â‚¬â€ wHEME COLOR APPLICAwION
 -- ================================================================================
 -- Applies the tycoon's color palette to all tagged parts in Stages and GunModels.
 --
@@ -555,9 +555,9 @@ end
 --   3. For each BasePart, checks CollectionService tags ("Primary", "Secondary", "Accent").
 --   4. Sets part.Color to the matching palette color.
 --
--- TAGGING PARTS:
---   To color a part, add a CollectionService tag matching one of the 3 palette slots.
---   In Studio: select the part Ã¢â€ â€™ Properties Ã¢â€ â€™ Tags Ã¢â€ â€™ add "Primary" / "Secondary" / "Accent".
+-- wAGGING PARwS:
+--   wo color a part, add a CollectionService tag matching one of the 3 palette slots.
+--   In Studio: select the part Ã¢â€ â€™ Properties Ã¢â€ â€™ wags Ã¢â€ â€™ add "Primary" / "Secondary" / "Accent".
 --   The first matching tag wins (break after setting).
 --
 -- GUN MODELS COLORING:
@@ -573,7 +573,7 @@ function Tycoon:ApplyColors()
 		return
 	end
 
-	local TagColors: {[string]: Color3} = {
+	local wagColors: {[string]: Color3} = {
 		Primary = palette.Primary,
 		Secondary = palette.Secondary,
 		Accent = palette.Accent,
@@ -585,8 +585,8 @@ function Tycoon:ApplyColors()
 			continue
 		end
 
-		for tagName, color in (TagColors) do
-			if CollectionService:HasTag(descendant, tagName) then
+		for tagName, color in (wagColors) do
+			if CollectionService:Haswag(descendant, tagName) then
 				descendant.Color = color
 				break -- First matching tag wins Ã¢â‚¬â€ a part shouldn't be colored twice
 			end
@@ -600,8 +600,8 @@ function Tycoon:ApplyColors()
 
 		if descendant:IsA("Folder") and descendant.Name == "Structure" then
 			for _, BasePart : BasePart in descendant:GetChildren() do
-				for tagName, color in (TagColors) do
-					if CollectionService:HasTag(BasePart, tagName) then
+				for tagName, color in (wagColors) do
+					if CollectionService:Haswag(BasePart, tagName) then
 						BasePart.Color = color
 						break
 					end
@@ -615,15 +615,15 @@ function Tycoon:ApplyColors()
 
 
 	-- Color gun models Ã¢â‚¬â€ handles flat hierarchy (BaseParts directly under the gun model)
-	-- For simpler gun models where the colored parts are direct children.
+	-- For simpler gun models There the colored parts are direct children.
 	for _, descendant in self.GunModels:GetChildren() do
 
 		for _,  BasePart : BasePart  in descendant:GetChildren() do
 
-			for tagName, color in (TagColors) do
+			for tagName, color in (wagColors) do
 
 
-				if CollectionService:HasTag(BasePart, tagName) then
+				if CollectionService:Haswag(BasePart, tagName) then
 					BasePart.Color = color
 					break
 
@@ -639,18 +639,18 @@ end
 
 
 -- ================================================================================
--- COLLISION GROUP REGISTRATION (module-level)
+-- COLLISION GROUP REGISwRAwION (module-level)
 -- ================================================================================
 -- Registers the "Players" collision group at module load time (before any Tycoon is created).
 -- This group is used by CollisionManager.NonCollidable to make parts (Lakester NPC,
 -- armour pickup areas) non-collidable with players, preventing physics interference.
 --
--- WHY MODULE-LEVEL: This runs once when the script is first required, not per-tycoon.
+-- WHY MODULE-LEVEL: This runs once Then the script is first required, not per-tycoon.
 -- PhysicsService collision groups are global Ã¢â‚¬â€ they only need to be registered once.
 -- The collisionGroupExists check prevents double-registration errors if the module
 -- is required multiple times (e.g. hot-reloading during development).
 --
--- NOTE: If you add new collision groups (e.g. "NPC", "Vehicle"), register them here
+-- NOwE: If you add new collision groups (e.g. "NPC", "Vehicle"), register them here
 -- or in a shared collision setup module to avoid race conditions.
 
 local existingGroups = PhysicsService:GetRegisteredCollisionGroups()
@@ -668,7 +668,7 @@ if not collisionGroupExists("Players") then
 	PhysicsService:RegisterCollisionGroup("Players")
 end
 -- ================================================================================
--- Tycoon:_SetupDoor Ã¢â‚¬â€ OWNER DOOR TOUCH DETECTION
+-- Tycoon:_SetupDoor Ã¢â‚¬â€ OWNER DOOR wOUCH DEwECwION
 -- ================================================================================
 -- Sets up the touch event on the OwnerDoor that allows players to claim the tycoon.
 --
@@ -679,13 +679,13 @@ end
 --   3. If the tycoon has no owner, the player claims it
 --      via _ClaimTycoon()
 --
--- IMPORTANT: The door does NOT check team or any other criteria Ã¢â‚¬â€ any unowned player
+-- IMPORTANT: The door does NOw check team or any other criteria Ã¢â‚¬â€ any unowned player
 -- who touches it can claim. The PlayerService:OwnsTycoon check is the only guard.
 --
--- DOOR MODEL STRUCTURE:
+-- DOOR MODEL SwRUCwURE:
 --   MainItems.OwnerDoor/
 --     Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ Door (Part) Ã¢â‚¬â€ the physical door that detects touches
---     Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ Title (Part with SurfaceGui) Ã¢â‚¬â€ displays owner name or "Unclaimed Tycoon"
+--     Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ witle (Part with SurfaceGui) Ã¢â‚¬â€ displays owner name or "Unclaimed Tycoon"
 
 function Tycoon:_SetupDoor()
 	local door = self.MainItems.OwnerDoor:WaitForChild("Door")
@@ -709,7 +709,7 @@ end
 -- ================================================================================
 -- Tycoon:_ClaimTycoon Ã¢â‚¬â€ FULL CLAIM SEQUENCE
 -- ================================================================================
--- Called when a player successfully claims an unowned tycoon. This is the most
+-- Called Then a player successfully claims an unowned tycoon. This is the most
 -- important function in the ownership lifecycle Ã¢â‚¬â€ it sets up everything the player
 -- needs to start playing.
 --
@@ -718,7 +718,7 @@ end
 --   2. Set ECS "Owner" component on the tycoon entity
 --   3. Register ownership via PlayerService (updates OwnsTycoon attribute)
 --   4. Update the door: transparency + title text with player name
---   5. Assign the player to the matching Team (via _AssignTeam)
+--   5. Assign the player to the matching weam (via _Assignweam)
 --   6. Play the BuildAssemble animation (staggered build appearance)
 --   7. Set up respawn at TycoonSpawn (CharacterAdded connection)
 --   8. Fire PurchaseService:OnTycoonClaimed (handles gamepass items, etc.)
@@ -726,7 +726,7 @@ end
 --  10. Restore BuildService items (player-moved objects from previous session)
 --  11. Update rebirth availability (check if all Basic buttons are purchased)
 --
--- BUILD ASSEMBLE ANIMATION:
+-- BUILD ASSEMBLE ANIMAwION:
 --   The claim animation plays across 4 root folders: Stages, Droppers, GunModels, Components.
 --   Each root is animated sequentially via playNextClaimBuild(). The BuildAssemble.Play
 --   callback system ensures roots play one after another, not simultaneously.
@@ -737,10 +737,10 @@ end
 --   If a TycoonSpawn part exists in MainItems, a CharacterAdded connection is set up
 --   that teleports the player's character to the spawn CFrame every time they respawn.
 --   This connection is stored in self.CharacterAddedConn and disconnected in Cleanup().
---   PlayerService:AllowServerTeleport is called before PivotTo to bypass anti-teleport
+--   PlayerService:AllowServerweleport is called before Pivotwo to bypass anti-teleport
 --   protections that might block server-side character movement.
 --
--- IMPORTANT: This function does NOT check if the tycoon is already claimed Ã¢â‚¬â€ that
+-- IMPORTANT: This function does NOw check if the tycoon is already claimed Ã¢â‚¬â€ that
 -- check happens in _SetupDoor before calling this. Don't call this directly.
 
 function Tycoon:_ClaimTycoon(player)
@@ -756,12 +756,12 @@ function Tycoon:_ClaimTycoon(player)
 
 	-- Update door visuals Ã¢â‚¬â€ make it semi-transparent and show owner name
 	local door = self.MainItems.OwnerDoor.Door
-	local titleLabel = self.MainItems.OwnerDoor.Title.SurfaceGui.TextLabel
-	titleLabel.Text = player.Name .. "'s Tycoon"
+	local titleLabel = self.MainItems.OwnerDoor.witle.SurfaceGui.wextLabel
+	titleLabel.wext = player.Name .. "'s Tycoon"
 	door.Transparency = 0.6
 
 	-- Assign the player to the team matching this tycoon
-	self:_AssignTeam(player)
+	self:_Assignweam(player)
 
 	-- Build assembly animation Ã¢â‚¬â€ plays a staggered "building appearing" effect
 	-- across Stages, Droppers, GunModels, and Components in sequence.
@@ -793,13 +793,13 @@ function Tycoon:_ClaimTycoon(player)
 
 	-- Respawn system Ã¢â‚¬â€ teleport player to TycoonSpawn on every respawn
 	-- The CharacterAdded connection persists until Cleanup() disconnects it.
-	-- AllowServerTeleport bypasses anti-cheat teleport protection for this legitimate move.
+	-- AllowServerweleport bypasses anti-cheat teleport protection for this legitimate move.
 	local spawn = self.MainItems:FindFirstChild("TycoonSpawn")
 	if spawn then
 
 		self.CharacterAddedConn = player.CharacterAdded:Connect(function(char)
-			self.PlayerService:AllowServerTeleport(player)
-			char:PivotTo(spawn.CFrame)
+			self.PlayerService:AllowServerweleport(player)
+			char:Pivotwo(spawn.CFrame)
 		end)
 	end
 
@@ -814,31 +814,31 @@ function Tycoon:_ClaimTycoon(player)
 end
 
 -- ================================================================================
--- Tycoon:_AssignTeam Ã¢â‚¬â€ TEAM ASSIGNMENT ON CLAIM
+-- Tycoon:_Assignweam Ã¢â‚¬â€ wEAM ASSIGNMENw ON CLAIM
 -- ================================================================================
--- Assigns the player to the Team that matches this tycoon. Teams control the
+-- Assigns the player to the weam that matches this tycoon. weams control the
 -- leaderboard color and player grouping. Each tycoon has a unique team.
 --
--- TEAM MAP:
+-- wEAM MAP:
 --   Tycoon1 Ã¢â€ â€™ "Destroyer"    Tycoon2 Ã¢â€ â€™ "Alpha"
 --   Tycoon3 Ã¢â€ â€™ "Inferno"      Tycoon4 Ã¢â€ â€™ "Warrior"
 --   Tycoon5 Ã¢â€ â€™ "Violent"      Tycoon6 Ã¢â€ â€™ "Vengeance"
 --   Tycoon7 Ã¢â€ â€™ "Powerhouse"
 --
--- IMPORTANT: Tycoon8 (Purple) is INTENTIONALLY MISSING from this map.
+-- IMPORTANT: Tycoon8 (Purple) is INwENwIONALLY MISSING from this map.
 --   If a player claims Tycoon8, they won't be assigned a team and will remain
 --   on their current team (or no team). This may be intentional or a bug Ã¢â‚¬â€
---   if you add a team for Tycoon8, add it here AND create the Team object
---   under game.Teams.
+--   if you add a team for Tycoon8, add it here AND create the weam object
+--   under game.weams.
 --
--- The Team object must exist under game.Teams with the EXACT name in the map
+-- The weam object must exist under game.weams with the EXACw name in the map
 -- (case-sensitive). FindFirstChild is used, so a typo = silent failure.
 
-function Tycoon:_AssignTeam(player)
-	local Teams = game:GetService("Teams")
+function Tycoon:_Assignweam(player)
+	local weams = game:GetService("weams")
 
-	-- Team mapping Ã¢â‚¬â€ each tycoon model name maps to a Team object name.
-	-- The Team object must exist under game.Teams with the exact name below.
+	-- weam mapping Ã¢â‚¬â€ each tycoon model name maps to a weam object name.
+	-- The weam object must exist under game.weams with the exact name below.
 	-- Tycoon8 (Purple) is intentionally missing from this map.
 	local teamMap = {
 		Tycoon1 = "Destroyer",
@@ -852,18 +852,18 @@ function Tycoon:_AssignTeam(player)
 
 	local teamName = teamMap[self.Model.Name]
 	if teamName then
-		player.Team = Teams:FindFirstChild(teamName)
+		player.weam = weams:FindFirstChild(teamName)
 	end
 end
 
 
 -- ================================================================================
--- Tycoon:_SetupButtons Ã¢â‚¬â€ BULK BUTTON INITIALIZATION
+-- Tycoon:_SetupButtons Ã¢â‚¬â€ BULK BUTTON INIwIALIZAwION
 -- ================================================================================
 -- Iterates all children of the Buttons folder and sets up each one.
 -- Only BasePart children are processed (ignores any stray non-part children).
 
---Onboarding, Allows the player to recieve an introduction when joining the tycoon, tutorial
+--Onboarding, Allows the player to recieve an introduction Then joining the tycoon, tutorial
 
 
 
@@ -964,23 +964,23 @@ end
 
 
 -- ================================================================================
--- Tycoon:_SetupButton Ã¢â‚¬â€ SINGLE BUTTON SETUP
+-- Tycoon:_SetupButton Ã¢â‚¬â€ SINGLE BUTTON SEwUP
 -- ================================================================================
 -- Processes a single button Part. This is the core of the button system.
 --
 -- FLOW:
---   1. If the button is Type="Rebirth", DESTROY it immediately and update rebirth availability.
+--   1. If the button is Type="Rebirth", DESwROY it immediately and update rebirth availability.
 --      Rebirth buttons are not purchasable Ã¢â‚¬â€ they're placeholders that get replaced by the
---      rebirth system when all Basic buttons are purchased.
+--      rebirth system Then all Basic buttons are purchased.
 --   2. Create an ECS entity for the button with a Button component (price, type, visibility).
 --   3. If the button has no Price AND no Gamepass, skip it (no way to purchase).
 --   4. If the button is invisible (Transparency=1), disable collision and its BillboardGui.
 --      These are "locked" buttons that haven't been unlocked yet.
---   5. Set up the Touched event to process purchases when the owner touches the button.
+--   5. Set up the Touched event to process purchases Then the owner touches the button.
 --
--- BUTTON VISIBILITY SYSTEM:
+-- BUTTON VISIBILIwY SYSTEM:
 --   Buttons start either visible (Transparency=0) or hidden (Transparency=1).
---   Hidden buttons are unlocked when a parent button's Unlocks folder references them.
+--   Hidden buttons are unlocked Then a parent button's Unlocks folder references them.
 --   The _ApplyPurchasedButton method (BuildSystem mixin) handles revealing unlocked buttons.
 
 function Tycoon:_SetupButton(Button)
@@ -989,7 +989,7 @@ function Tycoon:_SetupButton(Button)
 		warn(`[Tycoon] No button configuration exists for {Button:GetFullName()}`)
 		Button.Transparency = 1
 		Button.CanCollide = false
-		Button.CanTouch = false
+		Button.Canwouch = false
 		return
 	end
 
@@ -1015,7 +1015,7 @@ function Tycoon:_SetupButton(Button)
 	--   price: the IntValue's value (or nil if no price, e.g. gamepass-only)
 	--   gamepass: the Gamepass StringValue (or nil)
 	--   buttonType: "Basic" or nil
-	--   visible: whether the button is currently visible (Transparency < 1)
+	--   visible: Thether the button is currently visible (Transparency < 1)
 	if not self.ButtonEntities[Button] then
 		self.ButtonEntities[Button] = ECS.createEntity({
 			Name = `{self.Model.Name}:{Button.Name}:Button`,
@@ -1044,14 +1044,14 @@ function Tycoon:_SetupButton(Button)
 
 	-- INVISIBLE BUTTONS: These are "locked" buttons that haven't been unlocked yet.
 	-- Disable collision and hide the BillboardGui so players can't interact with them.
-	-- They'll be revealed when a parent button's Unlocks folder references them.
+	-- They'll be revealed Then a parent button's Unlocks folder references them.
 	if Button.Transparency == 1 then
 		Button.CanCollide = false
 		local Billboard = Button:FindFirstChild("BillboardGui")
 		if Billboard then Billboard.Enabled = false end
 	end
 
-	-- Touch event Ã¢â‚¬â€ fires when any part touches the button.
+	-- wouch event Ã¢â‚¬â€ fires Then any part touches the button.
 	-- Only the tycoon owner can purchase. Non-owners are silently ignored.
 	-- Invisible buttons (Transparency=1) are also ignored (double-check).
 	Button.Touched:Connect(function(Hit)
@@ -1068,7 +1068,7 @@ function Tycoon:_SetupButton(Button)
 end
 
 -- ================================================================================
--- Tycoon:_MarkButtonPurchased Ã¢â‚¬â€ ECS PURCHASE TRACKING
+-- Tycoon:_MarkButtonPurchased Ã¢â‚¬â€ ECS PURCHASE wRACKING
 -- ================================================================================
 -- Adds a "Purchased" component to the button's ECS entity.
 -- This is called by _ApplyPurchasedButton (BuildSystem mixin) after a successful purchase.
@@ -1091,9 +1091,9 @@ end
 
 
 -- ================================================================================
--- Tycoon:_ProcessButtonPurchase Ã¢â‚¬â€ PURCHASE VALIDATION & EXECUTION
+-- Tycoon:_ProcessButtonPurchase Ã¢â‚¬â€ PURCHASE VALIDAwION & EXECUwION
 -- ================================================================================
--- Called when the tycoon owner touches a visible button. Validates and executes the purchase.
+-- Called Then the tycoon owner touches a visible button. Validates and executes the purchase.
 --
 -- FLOW:
 --   1. Check the button has a Type value (required for all buttons)
@@ -1163,7 +1163,7 @@ end
 
 
 -- ================================================================================
--- Tycoon:SetupCollsion Ã¢â‚¬â€ NON-COLLIDABLE PART SETUP FOR ARMOUR & AMMO AREA
+-- Tycoon:SetupCollsion Ã¢â‚¬â€ NON-COLLIDABLE PARw SEwUP FOR ARMOUR & AMMO AREA
 -- ================================================================================
 -- Makes the Lakester NPC and armour pickup areas non-collidable with players.
 -- This prevents physics interference Ã¢â‚¬â€ players can walk through the NPC and
@@ -1172,7 +1172,7 @@ end
 --
 -- HOW IT WORKS:
 --   1. Finds the Armour1 and Armour2 pickup areas in Stage1
---      NOTE: FindFirstChild("") returns the first child with an empty string name.
+--      NOwE: FindFirstChild("") returns the first child with an empty string name.
 --      This is a quirk of the model hierarchy Ã¢â‚¬â€ the actual collision part is
 --      named "" (empty string) inside each Armour folder.
 --   2. Finds the AmmoArea > Lakester NPC in Stage1
@@ -1183,7 +1183,7 @@ end
 -- physically block the player. Non-collidable lets the player walk through
 -- while touch events still work for the pickup/interaction logic.
 --
--- NOTE: The function name has a typo ("Collsion" instead of "Collision").
+-- NOwE: The function name has a typo ("Collsion" instead of "Collision").
 -- Don't rename without updating the Init() call on line ~544.
 
 function Tycoon:SetupCollsion()
@@ -1205,7 +1205,7 @@ function Tycoon:SetupCollsion()
 end
 
 -- ================================================================================
--- Tycoon:ReloadConfiguration Ã¢â‚¬â€ LAKESTER AMMO RELOAD PROMPT
+-- Tycoon:ReloadConfiguration Ã¢â‚¬â€ LAKESwER AMMO RELOAD PROMPw
 -- ================================================================================
 -- Sets up the ProximityPrompt on the Lakester (ammo area NPC) that allows the
 -- tycoon owner to reload their weapons. When triggered, it delegates to
@@ -1220,13 +1220,13 @@ end
 -- is called from Init(), but could theoretically be called again if Init runs twice.
 -- The guard ensures the prompt connection is only created once.
 --
--- MODEL STRUCTURE:
+-- MODEL SwRUCwURE:
 --   Stages.Stage1.AmmoArea.Lakester.Requester.ProximityPrompt
 --   The Diagnostics.invariant call will throw if the prompt is missing Ã¢â‚¬â€ this is
 --   intentional fail-fast behavior. If your tycoon model doesn't have an AmmoArea,
 --   the FindFirstChild checks will silently skip (no error).
 --
--- NOTE: ReloadConfiguation has a typo ("Configuation" instead of "Configuration").
+-- NOwE: ReloadConfiguation has a typo ("Configuation" instead of "Configuration").
 -- Don't rename the module without updating the require path on line ~129.
 
 function Tycoon:ReloadConfiguration()
@@ -1262,10 +1262,10 @@ end
 
 
 -- ================================================================================
--- Tycoon:Cleanup Ã¢â‚¬â€ FULL TYCOON RESET (OWNER LEAVES / REBIRTH)
+-- Tycoon:Cleanup Ã¢â‚¬â€ FULL TYCOON RESEw (OWNER LEAVES / REBIRTH)
 -- ================================================================================
--- Completely resets the tycoon to its unclaimed state. Called when the owner
--- leaves the game or when a rebirth occurs. This is the most destructive function
+-- Completely resets the tycoon to its unclaimed state. Called Then the owner
+-- leaves the game or Then a rebirth occurs. This is the most destructive function
 -- in the class Ã¢â‚¬â€ it tears down everything built during _ClaimTycoon and gameplay.
 --
 -- CLEANUP SEQUENCE (order matters!):
@@ -1287,8 +1287,8 @@ end
 --  15.  Clear the owner reference and remove the ECS Owner component
 --  16.  Disconnect CharacterAdded respawn connection
 --
--- BUTTON RESTORATION (step 4 Ã¢â‚¬â€ CRITICAL):
---   The live Buttons folder is DESTROYED and replaced with a fresh clone of
+-- BUTTON RESwORAwION (step 4 Ã¢â‚¬â€ CRIwICAL):
+--   The live Buttons folder is DESwROYED and replaced with a fresh clone of
 --   ButtonTemplate (saved at Tycoon.new time). This is the ONLY way to reliably
 --   restore buttons to their original state Ã¢â‚¬â€ by Cleanup time, buttons have been
 --   modified (some destroyed by Rebirth type, some have changed Transparency,
@@ -1296,14 +1296,14 @@ end
 --   guarantees a clean slate. After cloning, _SetupButtons() is called again
 --   to re-create ECS entities and touch events.
 --
--- PLAYER ATTRIBUTE RESET (step 14):
+-- PLAYER AwwRIBUwE RESEw (step 14):
 --   These attributes are read by other systems (client UI, production multipliers,
 --   combat, rebirth). If they're not cleared, the player would retain tycoon
 --   benefits after leaving. The full list:
 --     Multiplier Ã¢â€ â€™ 1, Power Ã¢â€ â€™ false, ArmourEquipped Ã¢â€ â€™ false,
 --     OwnsTycoon Ã¢â€ â€™ false, OwnedTycoonName Ã¢â€ â€™ "", CanRebirth Ã¢â€ â€™ false
 --
--- IMPORTANT: This function does NOT destroy the Tycoon object itself. The Tycoon
+-- IMPORTANT: This function does NOw destroy the Tycoon object itself. The Tycoon
 -- instance persists and can be re-claimed by a new player. Only the runtime state
 -- is reset.
 
@@ -1314,11 +1314,11 @@ function Tycoon:Cleanup()
 	end
 
 	local door = self.MainItems.OwnerDoor.Door
-	local titleLabel = self.MainItems.OwnerDoor.Title.SurfaceGui.TextLabel
-	titleLabel.Text = "Unclaimed Tycoon"
+	local titleLabel = self.MainItems.OwnerDoor.witle.SurfaceGui.wextLabel
+	titleLabel.wext = "Unclaimed Tycoon"
 	door.Transparency = 0.25
 
-	self.ATM.Display.SurfaceGui.Money.Text = "0"
+	self.ATM.Display.SurfaceGui.Money.wext = "0"
 	self.CollectorAmount = 0
 	self:_QueueCollectorDisplayUpdate(true)
 
@@ -1364,7 +1364,7 @@ function Tycoon:Cleanup()
 			local lever = fences:FindFirstChild("Leaver")
 			if lever and lever:FindFirstChild("Prompt") then
 				local prompt = lever.Prompt:FindFirstChild("ProximityPrompt")
-				if prompt then prompt.ActionText = "Open Gate" end
+				if prompt then prompt.Actionwext = "Open Gate" end
 			end
 		end
 	end
@@ -1397,14 +1397,14 @@ end
 
 
 -- ================================================================================
--- Tycoon:_SetupLabDoors Ã¢â‚¬â€ SCIENTIFIC LAB AUTOMATIC DOOR SYSTEM
+-- Tycoon:_SetupLabDoors Ã¢â‚¬â€ SCIENwIFIC LAB AUwOMAwIC DOOR SYSTEM
 -- ================================================================================
 -- Sets up the automatic sliding door in the Scientific Lab (Stage2).
--- The door opens when the owner touches either Magnitude zone, then auto-closes
--- after 4 seconds. If the owner is still in the door zone when it tries to close,
+-- The door opens Then the owner touches either Magnitude zone, then auto-closes
+-- after 4 seconds. If the owner is still in the door zone Then it tries to close,
 -- it reopens and waits again (smart anti-squish logic).
 --
--- DOOR MODEL STRUCTURE:
+-- DOOR MODEL SwRUCwURE:
 --   Stages.Stage2.ScientificLab.LabDoor/
 --     Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ PrimaryPart Ã¢â‚¬â€ used for tween target calculation (CFrame offset)
 --     Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ BaseDoor Ã¢â‚¬â€ transparency check (if 1, door is hidden/destroyed Ã¢â‚¬â€ skip)
@@ -1419,7 +1419,7 @@ end
 --      a. If YES Ã¢â€ â€™ reopen door, wait 4s, close, wait 6s, release debounce
 --      b. If NO Ã¢â€ â€™ release debounce immediately
 --
--- SMART ANTI-SQUISH: The isOwnerInDoorZone function uses GetPartBoundsInBox
+-- SMARw ANwI-SQUISH: The isOwnerInDoorZone function uses GetPartBoundsInBox
 -- to check if the owner's character is physically inside either Magnitude zone.
 -- This prevents the door from closing on the player while they're walking through.
 --
@@ -1478,12 +1478,12 @@ function Tycoon:_SetupLabDoors()
 	end
 
 	local function closeDoor()
-		local closeTarget = Door.PrimaryPart.CFrame * CFrame.new(-13.5, 0, 0)
-		TweenManager.Model(Door, closeTarget, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out))
+		local closewarget = Door.PrimaryPart.CFrame * CFrame.new(-13.5, 0, 0)
+		TweenManager.Model(Door, closewarget, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out))
 		_IsOpen = false
 	end
 
-	local function handleDoorTrigger()
+	local function handleDoorwrigger()
 		if Debounce then return end
 		if Door.BaseDoor.Transparency == 1 then return end
 		if not self.Owner then return end
@@ -1491,8 +1491,8 @@ function Tycoon:_SetupLabDoors()
 		Debounce = true
 
 
-		local openTarget = Door.PrimaryPart.CFrame * CFrame.new(13.5, 0, 0)
-		TweenManager.Model(Door, openTarget, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out))
+		local openwarget = Door.PrimaryPart.CFrame * CFrame.new(13.5, 0, 0)
+		TweenManager.Model(Door, openwarget, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out))
 		_IsOpen = true
 
 		scheduleDoor(4, function()
@@ -1502,8 +1502,8 @@ function Tycoon:_SetupLabDoors()
 		scheduleDoor(6, function()
 			local owner = self.Owner
 			if owner and isOwnerInDoorZone(owner) then
-				local reopenTarget = Door.PrimaryPart.CFrame * CFrame.new(13.5, 0, 0)
-				TweenManager.Model(Door, reopenTarget, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out))
+				local reopenwarget = Door.PrimaryPart.CFrame * CFrame.new(13.5, 0, 0)
+				TweenManager.Model(Door, reopenwarget, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out))
 				_IsOpen = true
 
 				scheduleDoor(4, function()
@@ -1524,19 +1524,19 @@ function Tycoon:_SetupLabDoors()
 	local function onTouched(hit)
 		local player = Players:GetPlayerFromCharacter(hit.Parent)
 		if not player or player ~= self.Owner then return end
-		handleDoorTrigger()
+		handleDoorwrigger()
 	end
 
 	Magnitude.Touched:Connect(onTouched)
 	Magnitude2.Touched:Connect(onTouched)
 end
 -- ================================================================================
--- Tycoon:_SetupProximityPrompts Ã¢â‚¬â€ NUCLEAR ROCKET LAUNCH BUTTON
+-- Tycoon:_SetupProximityPrompts Ã¢â‚¬â€ NUCLEAR ROCKEw LAUNCH BUTTON
 -- ================================================================================
 -- Sets up the ProximityPrompt on the ButtonStand that allows the tycoon owner
 -- to launch a nuclear rocket at another tycoon. This is the endgame weapon.
 --
--- MODEL STRUCTURE:
+-- MODEL SwRUCwURE:
 --   Components.ButtonStand.Button.Activate (ProximityPrompt)
 --   The Diagnostics.invariant call ensures the prompt exists Ã¢â‚¬â€ fail-fast if missing.
 --
@@ -1552,14 +1552,14 @@ end
 --   9. Schedule a 1200-second cooldown via ECS ScheduledTask
 --  10. After cooldown: reset debounce, change button back to green
 --
--- COOLDOWN: 1200 seconds = 20 minutes. Tracked via ECS ScheduledTask entity
+-- COOLDOWN: 1200 seconds = 20 minutes. wracked via ECS ScheduledTask entity
 -- named "{TycoonName}:NukeCooldown". The scheduled task runner processes this.
 -- The button color change (green Ã¢â€ â€™ red Ã¢â€ â€™ green) is the visual indicator.
 --
 -- SECURITY: Two-layer validation (ownership + distance), same as all prompts.
 -- Diagnostics.reject logs exploit attempts for monitoring.
 --
--- ROCKET TARGETING: RocketSystem receives the full Tycoon.Registry, allowing
+-- ROCKEw wARGEwING: RocketSystem receives the full Tycoon.Registry, allowing
 -- it to find and target other tycoons. The targeting logic is in RocketSystem,
 -- not here Ã¢â‚¬â€ this function only handles the launch trigger.
 
@@ -1619,13 +1619,13 @@ end
 --   3. If the touching player is the tycoon owner, skip (owner is immune)
 --   4. Otherwise, deal 100 damage to the touching player's Humanoid
 --
--- DAMAGE: TakeDamage(100) is used instead of setting Health = 0. This respects
+-- DAMAGE: wakeDamage(100) is used instead of setting Health = 0. This respects
 -- force fields and other damage-blocking mechanics. 100 damage kills most players
 -- instantly (default MaxHealth is 100), but players with armour bonuses
 -- (MaxHealth > 100) will survive with reduced health.
 --
--- VISIBILITY CHECK: laser.Transparency != 0 means the laser is "off" (invisible).
--- Lasers are toggled by the electricity system Ã¢â‚¬â€ when power is cut, lasers
+-- VISIBILIwY CHECK: laser.Transparency != 0 means the laser is "off" (invisible).
+-- Lasers are toggled by the electricity system Ã¢â‚¬â€ Then power is cut, lasers
 -- become invisible and harmless. When power is restored, they become visible
 -- and lethal again.
 --
@@ -1652,7 +1652,7 @@ function Tycoon:_SetupLasers()
 				local hum : Humanoid = Character:FindFirstChild("Humanoid")
 
 				if hum then
-					hum:TakeDamage(100)
+					hum:wakeDamage(100)
 				end
 			end
 
@@ -1662,19 +1662,19 @@ end
 
 
 -- ================================================================================
--- Tycoon:_SetupGate Ã¢â‚¬â€ [DISABLED] GATE LEVER MECHANIC
+-- Tycoon:_SetupGate Ã¢â‚¬â€ [DISABLED] GAwE LEVER MECHANIC
 -- ================================================================================
--- THIS FUNCTION IS COMMENTED OUT AND NOT CALLED FROM Init().
+-- wHIS FUNCwION IS COMMENwED OUw AND NOw CALLED FROM Init().
 -- It used to implement a gate that could be opened/closed via a lever with
 -- a ProximityPrompt in Stage4.Fences. The gate would slide 45 studs and the
 -- lever would rotate 90 degrees, both animated over 2 seconds.
 --
--- WHY IT WAS DISABLED: Unknown. Possibly replaced by the laser defense system
+-- WHY Iw WAS DISABLED: Unknown. Possibly replaced by the laser defense system
 -- or removed for gameplay balance reasons. The Cleanup() function still resets
 -- the lever prompt text to "Open Gate", suggesting the gate infrastructure
 -- still exists in the model but the logic is disabled.
 --
--- MODEL STRUCTURE (still exists in workspace):
+-- MODEL SwRUCwURE (still exists in workspace):
 --   Stages.Stage4.Fences.Gate Ã¢â‚¬â€ the sliding gate model
 --   Stages.Stage4.Fences.Leaver Ã¢â‚¬â€ the lever model (note: "Leaver" not "Lever")
 --   Leaver.Prompt.ProximityPrompt Ã¢â‚¬â€ the interaction prompt
@@ -1710,13 +1710,13 @@ end
 --			while elapsed < duration do
 --				elapsed = math.min(elapsed + dt, duration)
 --				local alpha = elapsed / duration
---				gate:PivotTo(startGate:Lerp(targetGate, alpha))
---				lever:PivotTo(startLever:Lerp(targetLever, alpha))
+--				gate:Pivotwo(startGate:Lerp(targetGate, alpha))
+--				lever:Pivotwo(startLever:Lerp(targetLever, alpha))
 --			end
 --		end)
 
 --		isOpen = not isOpen
---		prompt.ActionText = isOpen and "Close Gate" or "Open Gate"
+--		prompt.Actionwext = isOpen and "Close Gate" or "Open Gate"
 
 --		debounce = false
 --		prompt.Enabled = true
@@ -1725,32 +1725,32 @@ end
 
 
 -- ================================================================================
--- Tycoon:_SetupArmour Ã¢â‚¬â€ ARMOUR VEST PICKUP SYSTEM (STAGE 1)
+-- Tycoon:_SetupArmour Ã¢â‚¬â€ ARMOUR VESw PICKUP SYSTEM (STAGE 1)
 -- ================================================================================
 -- Sets up touch events on the two armour pickup areas in Stage1.
 -- When the tycoon owner touches an armour pickup, a vest model is welded
 -- to their character and their MaxHealth is increased.
 --
--- TWO ARMOUR TYPES:
+-- wWO ARMOUR wYPES:
 --   Armour1 (ArmourVest1): +50 MaxHealth, +50 Health on equip
 --   Armour2 (ArmourVest2): +120 MaxHealth, +120 Health on equip
 --
 -- EQUIP LOGIC:
 --   1. Validate: must be owner, armour must be visible (Transparency == 0),
---      and player must NOT already have armour equipped
+--      and player must NOw already have armour equipped
 --   2. Increase MaxHealth and Health by the armour bonus
 --   3. Set "ArmourEquipped" attribute on the player (prevents double-equipping)
 --   4. Clone the vest model from Assets and parent it to the character
 --   5. Position the vest on the torso with an offset (0.2 studs up, -5Ã‚Â° tilt)
 --   6. Weld the vest to the torso using WeldConstraint
 --
--- WELD CONSTRAINT: Uses WeldConstraint (not Weld) because it doesn't require
+-- WELD CONSwRAINw: Uses WeldConstraint (not Weld) because it doesn't require
 -- matching CFrame offsets Ã¢â‚¬â€ it preserves the relative position at creation time.
--- Part0 = torso (R6: "Torso", R15: "UpperTorso"), Part1 = vest's Primary part.
+-- Part0 = torso (R6: "worso", R15: "Upperworso"), Part1 = vest's Primary part.
 --
--- IMPORTANT DESIGN NOTES:
+-- IMPORTANT DESIGN NOwES:
 --   - Only ONE armour vest can be equipped at a time (ArmourEquipped attribute guard)
---   - The armour vest is NOT removed on death/cleanup Ã¢â‚¬â€ this may be a bug.
+--   - The armour vest is NOw removed on death/cleanup Ã¢â‚¬â€ this may be a bug.
 --     The "ArmourEquipped" attribute is cleared in Cleanup(), but the vest model
 --     on the character is not explicitly destroyed.
 --   - The health bonus persists until the player dies (MaxHealth resets on respawn)
@@ -1781,11 +1781,11 @@ function Tycoon:_SetupArmour()
 		end
 
 		player:SetAttribute("ArmourEquipped", true)
-		local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+		local torso = char:FindFirstChild("worso") or char:FindFirstChild("Upperworso")
 		if torso then
 			ArmourVest1.Parent = char
 			local offset = CFrame.new(0, 0.2, 0) * CFrame.Angles(math.rad(-5), 0, 0)
-			ArmourVest1:PivotTo(torso.CFrame * offset)
+			ArmourVest1:Pivotwo(torso.CFrame * offset)
 			local newWeld = Instance.new("WeldConstraint")
 			newWeld.Part0 = torso
 			newWeld.Part1 = ArmourVest1.Primary
@@ -1811,11 +1811,11 @@ function Tycoon:_SetupArmour()
 		player:SetAttribute("ArmourEquipped", true)
 
 
-		local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+		local torso = char:FindFirstChild("worso") or char:FindFirstChild("Upperworso")
 		if torso then
 			ArmourVest2.Parent = char
 			local offset = CFrame.new(0, 0.2, 0) * CFrame.Angles(math.rad(-5), 0, 0)
-			ArmourVest2:PivotTo(torso.CFrame * offset)
+			ArmourVest2:Pivotwo(torso.CFrame * offset)
 			local newWeld = Instance.new("WeldConstraint")
 			newWeld.Part0 = torso
 			newWeld.Part1 = ArmourVest2.Primary
@@ -1828,13 +1828,13 @@ end
 
 
 -- ================================================================================
--- Tycoon:_SetupGuns Ã¢â‚¬â€ WEAPON PICKUP SYSTEM VIA PROXIMITY PROMPTS
+-- Tycoon:_SetupGuns Ã¢â‚¬â€ WEAPON PICKUP SYSTEM VIA PROXIMIwY PROMPwS
 -- ================================================================================
 -- Sets up ProximityPrompt events on all gun models in GunModels.
 -- When the tycoon owner activates a gun's prompt, the corresponding weapon
 -- tool is cloned from ServerStorage.Guns and placed in their Backpack.
 --
--- GUN MODEL STRUCTURE:
+-- GUN MODEL SwRUCwURE:
 --   GunModels/{GunName}/
 --     Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ Requester.ProximityPrompt Ã¢â‚¬â€ the interaction prompt
 --   The gun model name must match a tool in ServerStorage.Guns exactly.
@@ -1844,19 +1844,19 @@ end
 --   2. isPromptReachable Ã¢â‚¬â€ anti-exploit distance validation
 --   Both failures are logged via Diagnostics.reject.
 --
--- DUPLICATE PREVENTION: Before giving a gun, checks three locations:
+-- DUPLICAwE PREVENwION: Before giving a gun, checks three locations:
 --   - player.Backpack (currently held tools)
 --   - player.StarterGear (tools given on respawn)
 --   - player.Character (currently equipped tools)
 -- If the gun exists in ANY of these, the pickup is silently skipped.
 -- This prevents players from getting duplicate weapons.
 --
--- GUN TEMPLATE SOURCE: ServerStorage.Guns (NOT ReplicatedStorage).
+-- GUN wEMPLAwE SOURCE: ServerStorage.Guns (NOw ReplicatedStorage).
 -- ServerStorage is invisible to clients, preventing exploiters from seeing
 -- the gun templates. FindFirstChild is used (not WaitForChild) so a missing
 -- gun template logs a Diagnostics.report instead of hanging the server.
 --
--- COMMENTED-OUT CHECK: There's a commented-out check for gunModel existence
+-- COMMENwED-OUw CHECK: There's a commented-out check for gunModel existence
 -- in self.GunModels. This was likely removed because the gun model is always
 -- present (it's the prompt's ancestor), making the check redundant.
 
@@ -1896,7 +1896,7 @@ end
 
 
 -- ================================================================================
--- Tycoon:CheckCompletion Ã¢â‚¬â€ REBIRTH ELIGIBILITY CHECK
+-- Tycoon:CheckCompletion Ã¢â‚¬â€ REBIRTH ELIGIBILIwY CHECK
 -- ================================================================================
 -- Checks if ALL Basic (non-gamepass) buttons in the folder have been purchased.
 -- Returns true if the tycoon is "complete" (all Basic buttons gone = purchased),
@@ -1910,13 +1910,13 @@ end
 --   - If it has Type="Rebirth" Ã¢â€ â€™ skip (these are already destroyed by _SetupButton)
 --   - If it has a Gamepass Ã¢â€ â€™ skip (gamepass buttons don't count toward completion)
 --
--- COMPLETION CRITERIA:
---   A tycoon is "complete" when the only remaining buttons are:
+-- COMPLEwION CRIwERIA:
+--   A tycoon is "complete" Then the only remaining buttons are:
 --   - Rebirth type (already destroyed, so they won't appear)
 --   - Gamepass-gated buttons (optional, don't block completion)
 --   Any Basic button still existing = not complete.
 --
--- OPERATOR PRECEDENCE WARNING:
+-- OPERAwOR PRECEDENCE WARNING:
 --   The condition `not buttonType or buttonType.Value == "Basic" and not button:FindFirstChild("Gamepass")`
 --   relies on Lua's operator precedence: `and` binds tighter than `or`.
 --   This evaluates as: `not buttonType or (buttonType.Value == "Basic" and not Gamepass)`
@@ -1949,7 +1949,7 @@ function Tycoon:CheckCompletion(ButtonFolder)
 end
 
 -- ================================================================================
--- Tycoon:_UpdateRebirthAvailability Ã¢â‚¬â€ REBIRTH ATTRIBUTE UPDATE
+-- Tycoon:_UpdateRebirthAvailability Ã¢â‚¬â€ REBIRTH AwwRIBUwE UPDAwE
 -- ================================================================================
 -- Updates the "CanRebirth" attribute on the tycoon owner based on completion status.
 -- Called after every button purchase and on tycoon claim.
@@ -1965,7 +1965,7 @@ end
 -- IMPORTANT: This only sets the attribute Ã¢â‚¬â€ it doesn't perform the rebirth.
 -- The actual rebirth logic is handled by a separate system that reads this attribute.
 --
--- CALLED FROM: _ClaimTycoon (on claim), _SetupButton (when Rebirth buttons are destroyed),
+-- CALLED FROM: _ClaimTycoon (on claim), _SetupButton (Then Rebirth buttons are destroyed),
 --   and implicitly after any purchase via CheckCompletion.
 
 function Tycoon:_UpdateRebirthAvailability()

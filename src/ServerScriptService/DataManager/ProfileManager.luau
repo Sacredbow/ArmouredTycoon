@@ -66,7 +66,7 @@ local function getProfileActionRemote(): RemoteFunction
 	local insecureProgressEvent = remotesFolder:FindFirstChild("ProfileQuestProgress")
 	if insecureProgressEvent then
 		insecureProgressEvent:Destroy()
-		Diagnostics.report("ProfileManager", "Removed the legacy client-authoritative quest progress remote.")
+		Diagnostics.report("ProfileManager", "Removed the client-authoritative quest progress remote.")
 	end
 
 	return actionFunction :: RemoteFunction

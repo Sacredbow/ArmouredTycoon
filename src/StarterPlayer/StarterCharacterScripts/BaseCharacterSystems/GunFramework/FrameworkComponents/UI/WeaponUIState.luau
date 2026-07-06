@@ -81,7 +81,7 @@ function WeaponUIState.clear(player: Player)
 end
 
 function WeaponUIState.publishCrosshair(player: Player, info: CrosshairInfo)
-	-- Crosshair is separate from the legacy HUD so third-person/first-person modes
+	-- Crosshair is separate from the weapon HUD so third-person/first-person modes
 	-- can change without touching old SE_GUI objects.
 	setAttribute(player, "ACS_CrosshairVisible", info.visible)
 	setAttribute(player, "ACS_CrosshairKind", info.kind)
@@ -89,7 +89,7 @@ function WeaponUIState.publishCrosshair(player: Player, info: CrosshairInfo)
 end
 
 function WeaponUIState.publishHud(player: Player, weaponData: WeaponData?, ammo: number?, storedAmmo: number?, safeMode: boolean)
-	-- Main calls this whenever legacy HUD state changes. Attribute updates are
+	-- Main calls this whenever weapon HUD state changes. Attribute updates are
 	-- intentionally simple primitives so UI consumers stay decoupled from ACS.
 	if not weaponData or weaponData.Type ~= "Gun" then
 		WeaponUIState.clear(player)

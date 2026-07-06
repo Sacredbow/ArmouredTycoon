@@ -1,16 +1,16 @@
 --!strict
 
 --[[
-	LegacyWeaponHud
+	WeaponHudAdapter
 
-	Thin adapter around the old SE_GUI.GunHUD frame. The full React weapon HUD is
-	paused for now, so this module keeps legacy labels/icons working while Main
+	Thin adapter around the SE_GUI.GunHUD frame. The full React weapon HUD is
+	paused for now, so this module keeps SE_GUI labels/icons working while Main
 	and the weapon logic continue to get modularized.
 ]]
 
 local TweenService = game:GetService("TweenService")
 
-local LegacyWeaponHud = {}
+local WeaponHudAdapter = {}
 
 export type WeaponData = {
 	gunName: string?,
@@ -110,9 +110,9 @@ local function tweenAmmoBar(root: Instance, ammo: number, maxAmmo: number, jamme
 	TweenService:Create(bar, TweenInfo.new(0.14, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), target):Play()
 end
 
-function LegacyWeaponHud.setVisible(statusGui: Instance?, visible: boolean)
+function WeaponHudAdapter.setVisible(statusGui: Instance?, visible: boolean)
 	-- Main calls this on equip/unequip. Keeping visibility here avoids spreading
-	-- legacy frame names through weapon code.
+	-- SE_GUI frame names through weapon code.
 	if not statusGui then
 		return
 	end
@@ -123,7 +123,7 @@ function LegacyWeaponHud.setVisible(statusGui: Instance?, visible: boolean)
 	end
 end
 
-function LegacyWeaponHud.hideGrenadeForce(statusGui: Instance?)
+function WeaponHudAdapter.hideGrenadeForce(statusGui: Instance?)
 	if not statusGui then
 		return
 	end
@@ -134,7 +134,7 @@ function LegacyWeaponHud.hideGrenadeForce(statusGui: Instance?)
 	end
 end
 
-function LegacyWeaponHud.setGrenadeForceText(statusGui: Instance?, text: string)
+function WeaponHudAdapter.setGrenadeForceText(statusGui: Instance?, text: string)
 	if not statusGui then
 		return
 	end
@@ -146,7 +146,7 @@ function LegacyWeaponHud.setGrenadeForceText(statusGui: Instance?, text: string)
 	end
 end
 
-function LegacyWeaponHud.update(
+function WeaponHudAdapter.update(
 	statusGui: Instance?,
 	weaponData: WeaponData?,
 	ammo: number?,
@@ -201,10 +201,10 @@ function LegacyWeaponHud.update(
 		hud.Bullets.Visible = true
 	end
 
-	LegacyWeaponHud.hideGrenadeForce(statusGui)
+	WeaponHudAdapter.hideGrenadeForce(statusGui)
 end
 
-function LegacyWeaponHud.setBipodStatus(statusGui: Instance?, color: Color3, transparency: number)
+function WeaponHudAdapter.setBipodStatus(statusGui: Instance?, color: Color3, transparency: number)
 	if not statusGui then
 		return
 	end
@@ -220,4 +220,4 @@ function LegacyWeaponHud.setBipodStatus(statusGui: Instance?, color: Color3, tra
 	}):Play()
 end
 
-return LegacyWeaponHud
+return WeaponHudAdapter

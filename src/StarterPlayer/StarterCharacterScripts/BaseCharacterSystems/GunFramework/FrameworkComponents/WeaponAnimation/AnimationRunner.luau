@@ -3,7 +3,7 @@
 --[[
 	AnimationRunner
 
-	Runs legacy ACS animation functions with a named error boundary. Weapon
+	Runs ACS animation functions with a named error boundary. Weapon
 	animation modules are still authored as imperative functions, so this wrapper
 	gives us safer failure reporting without rewriting every weapon at once.
 ]]

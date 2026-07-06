@@ -49,13 +49,10 @@ function ReloadController.finishMagazineReload(weaponData: WeaponData, state: Am
 	local storedAmmo = state.storedAmmo
 	local missing = weaponData.Ammo - ammo
 
-	if ammo - missing < 0 then
+	if storedAmmo < missing then
 		ammo += storedAmmo
 		storedAmmo = 0
-	elseif ammo <= 0 then
-		storedAmmo -= missing
-		ammo = weaponData.Ammo
-	elseif min(weaponData.IncludeChamberedBullet, false) then
+	elseif ammo > 0 and min(weaponData.IncludeChamberedBullet, false) then
 		storedAmmo -= missing + 1
 		ammo = weaponData.Ammo + 1
 	else
@@ -81,3 +78,4 @@ function ReloadController.insertOne(state: AmmoState): AmmoState
 end
 
 return ReloadController
+

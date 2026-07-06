@@ -1,3 +1,4 @@
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 local DataTemplate = require(ServerScriptService.DataManager.DataTemplate)
@@ -6,6 +7,7 @@ local TycoonClass = require(ServerScriptService.Classes.Tycoon)
 local RagdollModule = require(ServerScriptService.Modules.RagdollModule)
 local CollisionModule = require(ServerScriptService.Modules.CollisionManager)
 local Diagnostics = require(ServerScriptService.Utilities.ServerDiagnostics)
+local TutorialSignals = require(ReplicatedStorage.Network.TutorialSignals)
 
 local TycoonService = {}
 TycoonService.__index = TycoonService
@@ -13,6 +15,20 @@ TycoonService.__index = TycoonService
 type ConstructionData = {
 	PurchasedButtons: { string },
 }
+
+
+local function waitForProfile(player: Player): boolean
+	local deadline = os.clock() + 20
+	while player.Parent == Players and not ProfileManager.Profiles[player] and os.clock() < deadline do
+		task.wait(0.25)
+	end
+
+	return ProfileManager.Profiles[player] ~= nil
+end
+
+local function getOwnerDoorPath(tycoon): string
+	return `{tycoon.Model.Name}:MainItems:OwnerDoor:Door`
+end
 
 local function clearSavedConstruction(player: Player)
 	local profile = ProfileManager.Profiles[player]
@@ -40,6 +56,41 @@ function TycoonService.new(playerService, purchaseService)
 	return self
 end
 
+
+function TycoonService:_SendAvailableTycoonDoors(player: Player)
+	if not waitForProfile(player) then
+		return
+	end
+
+	if ProfileManager.HasCompletedOnboarding(player) then
+		return
+	end
+
+	for _, tycoon in ipairs(self.Tycoons) do
+		if not tycoon.Owner then
+			TutorialSignals.Send(player, "TycoonAvailable", getOwnerDoorPath(tycoon))
+		end
+	end
+end
+
+function TycoonService:_StartOnboardingDoorGuidance()
+	for _, player in ipairs(Players:GetPlayers()) do
+		task.defer(function()
+			self:_SendAvailableTycoonDoors(player)
+		end)
+	end
+
+	if self.PlayerAddedConnection then
+		self.PlayerAddedConnection:Disconnect()
+	end
+
+	self.PlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
+		task.defer(function()
+			self:_SendAvailableTycoonDoors(player)
+		end)
+	end)
+end
+
 function TycoonService:Init()
 	self:_SetupRemotes()
 
@@ -56,6 +107,7 @@ function TycoonService:Init()
 	end
 
 	print("All tycoons initialized!")
+	self:_StartOnboardingDoorGuidance()
 end
 
 function TycoonService:_SetupRemotes()
