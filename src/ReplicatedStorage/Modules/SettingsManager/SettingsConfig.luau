@@ -100,6 +100,14 @@ local SettingsConfig = {
 				name="Mute SFX",
 				component={class="boolean", default=false},
 			},
+			{
+				name='Wind',
+				component={class='boolean', default=true},
+			},
+			{
+				name='Environmental Volume',
+				component={class='boolean', default=true},
+			},
 		},
 
 		["Graphics"] = {
@@ -148,6 +156,8 @@ local SettingsConfig = {
 		["Mute Music"] = false,
 		["SFX Volume"] = 1,
 		["Mute SFX"] = false,
+		['Wind'] = true,
+		['Environmental Volume'] = true,
 			
 		["Shadows"] = true,
 		["Shadow Quality"] = "Normal",

@@ -14,9 +14,11 @@ local Diagnostics = require(ServerScriptService.Utilities.ServerDiagnostics)
 
 local Remotes = ReplicatedStorage.Remotes
 local NuclearFrame = ServerStorage.UI:FindFirstChild("NuclearFrame") :: Frame?
+local FrozenMovementByHumanoid: { [Humanoid]: { WalkSpeed: number, JumpPower: number } } = {}
 
 type IPlayerService = {
 	HasActivated: (self: IPlayerService, player: Player) -> boolean,
+	ActivateRocket: (self: IPlayerService, player: Player, value: boolean) -> (),
 }
 
 type SessionPlayerState = {
@@ -208,19 +210,19 @@ local function setFrozen(player: Player?, frozen: boolean)
 	end
 
 	if frozen then
-		if humanoid:GetAttribute("NukeWalkSpeed") == nil then
-			humanoid:SetAttribute("NukeWalkSpeed", humanoid.WalkSpeed)
-			humanoid:SetAttribute("NukeJumpPower", humanoid.JumpPower)
+		if not FrozenMovementByHumanoid[humanoid] then
+			FrozenMovementByHumanoid[humanoid] = {
+				WalkSpeed = humanoid.WalkSpeed,
+				JumpPower = humanoid.JumpPower,
+			}
 		end
 		humanoid.WalkSpeed = 0
 		humanoid.JumpPower = 0
 	else
-		local walkSpeed = humanoid:GetAttribute("NukeWalkSpeed")
-		local jumpPower = humanoid:GetAttribute("NukeJumpPower")
-		humanoid.WalkSpeed = if typeof(walkSpeed) == "number" then walkSpeed else 16
-		humanoid.JumpPower = if typeof(jumpPower) == "number" then jumpPower else 50
-		humanoid:SetAttribute("NukeWalkSpeed", nil)
-		humanoid:SetAttribute("NukeJumpPower", nil)
+		local savedMovement = FrozenMovementByHumanoid[humanoid]
+		humanoid.WalkSpeed = if savedMovement then savedMovement.WalkSpeed else 16
+		humanoid.JumpPower = if savedMovement then savedMovement.JumpPower else 50
+		FrozenMovementByHumanoid[humanoid] = nil
 	end
 end
 

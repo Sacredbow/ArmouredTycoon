@@ -7,6 +7,7 @@ local playerGUI = player:WaitForChild("PlayerGui")
 local humanoid : Humanoid = character:WaitForChild("Humanoid")
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ClientRuntimeState = require(ReplicatedStorage.Modules.ClientRuntimeState)
 local TweenService = game:GetService("TweenService")
 local ContentProvider = game:GetService("ContentProvider")
 local Lighting = game:GetService("Lighting")
@@ -15,7 +16,7 @@ local SoundService = game:GetService("SoundService")
 
 local BackgroundBlur = Lighting.BackgroundBlur
 
-player:SetAttribute("HasLoaded", false)
+ClientRuntimeState.SetHasLoaded(player, false)
 
 humanoid.WalkSpeed = 0
 humanoid.JumpHeight = 0
@@ -30,8 +31,8 @@ local SubtitlesGUI = playerGUI.SubtitlesGUI
 local Subtitles = SubtitlesGUI.Subtitles
 local sound = SoundService.SFX.UserInterface.Interactions.TextSound
 local BaseCharSys = character:WaitForChild("BaseCharacterSystems")
-local ACS_Framework = BaseCharSys.GunFramework.ACS_Framework
-ACS_Framework.Enabled = false
+local ACSFramework = BaseCharSys.GunFramework.ACSFramework
+ACSFramework.Enabled = false
 
 local PlayerInterface = playerGUI.MainInterface.PlayerInterface
 
@@ -427,8 +428,8 @@ PlayButton.MouseButton1Click:Connect(function()
 	humanoid.WalkSpeed = 16
 	humanoid.JumpHeight = 8
 	humanoid.JumpPower = currentJump
-	player:SetAttribute("HasLoaded", true)
-	ACS_Framework.Enabled = true
+	ClientRuntimeState.SetHasLoaded(player, true)
+	ACSFramework.Enabled = true
 	Subtitles.TextTransparency = 1
 
 	for _, v in (playerGUI:GetChildren()) do

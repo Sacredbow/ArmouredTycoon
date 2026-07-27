@@ -7,6 +7,7 @@ local Signal = require(ReplicatedStorage.Packages.signal)
 local Janitor = require(ReplicatedStorage.Packages.janitor)
 local QuestOptions = require(ReplicatedStorage.Progression.Quests.QuestOptions)
 local SettingsConfig = require(ReplicatedStorage.Modules.SettingsManager.SettingsConfig)
+local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
 local ClientSignals = require(ReplicatedStorage.Network.ClientSignals)
 local TutorialSignals = require(ReplicatedStorage.Network.TutorialSignals)
 
@@ -258,14 +259,9 @@ local function readLeaderstat(player: Player, statName: string): number?
 end
 
 local function suppressUserAnnouncements(): boolean
-	local player = Players.LocalPlayer
-	local attributeValue = player:GetAttribute("SuppressUserAnnouncements")
-	if typeof(attributeValue) == "boolean" then
-		return attributeValue
-	end
-
-	return SettingsConfig.default_settings["User Announcements"] ~= true
+	return RuntimeSettings.GetBoolean('User Announcements', SettingsConfig.default_settings['User Announcements'] == true) ~= true
 end
+
 
 local function allowNPCConversations(): boolean
 	return true
@@ -380,12 +376,12 @@ function GameStore:Start()
 		end), nil, "NukeCinematic")
 	end), true, "NetworkStartThread")
 
-	addCleanup(self._janitor, Players.LocalPlayer:GetAttributeChangedSignal("SuppressUserAnnouncements"):Connect(function()
-		if suppressUserAnnouncements() and self._kothAnnouncement then
+	addCleanup(self._janitor, RuntimeSettings.Observe('User Announcements', function(value)
+		if value ~= true and self._kothAnnouncement then
 			self._kothAnnouncement = nil
 			self._changed:Fire()
 		end
-	end), "Disconnect", "SuppressUserAnnouncements")
+	end), 'Disconnect', 'UserAnnouncementsSetting')
 
 
 	addCleanup(self._janitor, task.delay(200, function()
@@ -559,7 +555,7 @@ function GameStore:PushNotification(kind: string, message: string, duration: num
 end
 
 function GameStore:PushNotificationMessage(kind: string, value: any?)
-	if kind == "Player1" or kind == "Player1Disconnected" then
+	if kind == "Player1" or kind == "Player1Disconnected" or kind == "CanRebirth" then
 		return
 	end
 

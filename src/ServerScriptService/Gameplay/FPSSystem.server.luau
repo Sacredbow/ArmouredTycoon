@@ -27,6 +27,8 @@ local ProfileManager = require(ServerScriptService.DataManager.ProfileManager) :
 local ECS = require(RS.ECS)
 local Packets = require(RS.Network.Packets)
 local Diagnostics = require(ServerScriptService.Utilities.ServerDiagnostics)
+local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+local DamageRuntimeState = require(ServerScriptService.Services.Combat.DamageRuntimeState)
 
 local ACS_0 = HttpService:GenerateGUID(true)
 local tempBannedPlayers: {number} = ((_G.TempBannedPlayers :: any) or {}) :: {number}
@@ -105,7 +107,7 @@ local weaponRigEntities: {[Player]: number} = {}
 
 local function setupHumanoid(humanoid: Humanoid)
 	humanoid.Died:Connect(function()
-		local userId = humanoid:GetAttribute("LastDamager")
+		local userId = DamageRuntimeState.GetLastDamager(humanoid)
 		if not userId then return end
 		local killer = plr:GetPlayerByUserId(userId :: number)
 		if not killer then
@@ -394,16 +396,16 @@ Evt.Surrender.OnServerEvent:Connect(function(Player: Player, Victim: Player?)
 		PClient = Victim.Character:FindFirstChild("ACS_Client")
 		if not PClient then return; end;
 
-		if PClient:GetAttribute("Surrender") then
-			PClient:SetAttribute("Surrender",false)
+		if PlayerRuntimeState.IsSurrendering(Victim) then
+			PlayerRuntimeState.SetSurrendering(Victim, false)
 		end
 	end
 
 	PClient = Character:FindFirstChild("ACS_Client")
 	if not PClient then return; end;
 
-	if not PClient:GetAttribute("Surrender") then
-		PClient:SetAttribute("Surrender",true)
+	if not PlayerRuntimeState.IsSurrendering(Player) then
+		PlayerRuntimeState.SetSurrendering(Player, true)
 	end
 end)
 

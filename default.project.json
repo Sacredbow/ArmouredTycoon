@@ -375,6 +375,9 @@
         },
         "UI": {
           "$path": "src/StarterPlayer/StarterPlayerScripts/UI"
+        },
+        "Settings": {
+          "$path": "src/StarterPlayer/StarterPlayerScripts/Settings"
         }
       },
 

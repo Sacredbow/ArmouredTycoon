@@ -7,6 +7,7 @@ local TycoonClass = require(ServerScriptService.Classes.Tycoon)
 local RagdollModule = require(ServerScriptService.Modules.RagdollModule)
 local CollisionModule = require(ServerScriptService.Modules.CollisionManager)
 local Diagnostics = require(ServerScriptService.Utilities.ServerDiagnostics)
+local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
 local TutorialSignals = require(ReplicatedStorage.Network.TutorialSignals)
 
 local TycoonService = {}
@@ -198,7 +199,7 @@ function TycoonService:RequestRebirth(player: Player)
 	end
 
 	if not tycoon:CheckCompletion(tycoon.Buttons) then
-		player:SetAttribute("CanRebirth", false)
+		PlayerRuntimeState.SetCanRebirth(player, false)
 		return false, "Complete your tycoon before rebirthing."
 	end
 

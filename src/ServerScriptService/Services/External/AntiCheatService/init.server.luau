@@ -4,6 +4,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 
 local ECS = require(ReplicatedStorage.ECS)
 local Diagnostics = require(ServerScriptService.Utilities.ServerDiagnostics)
+local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
 local Remotes = ReplicatedStorage.Remotes
 
 local LoggingEvent = ServerScriptService.Services.External.LogService:WaitForChild("Logging")
@@ -107,7 +108,7 @@ local function copyPositionHistory(history)
 end
 
 local function isServerTeleportAllowed(player: Player, now: number): boolean
-	local graceUntil = player:GetAttribute("AntiCheatTeleportGraceUntil")
+	local graceUntil = PlayerRuntimeState.GetAntiCheatTeleportGraceUntil(player)
 	return type(graceUntil) == "number" and now <= graceUntil
 end
 

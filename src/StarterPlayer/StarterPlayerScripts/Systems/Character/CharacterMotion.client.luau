@@ -3,6 +3,8 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
 
 local player = Players.LocalPlayer
 
@@ -109,7 +111,7 @@ local function getTargetCameraOffset(rig: Rig): Vector3
 end
 
 local function updateCameraOffset(rig: Rig, deltaTime: number)
-	if player:GetAttribute("CameraControllerOwnsOffset") == true then
+	if RuntimeSettings.GetBoolean('CameraControllerOwnsOffset', false) then
 		return
 	end
 

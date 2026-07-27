@@ -1,4 +1,10 @@
+local ServerScriptService = game:GetService("ServerScriptService")
+
+local DamageRuntimeState = require(ServerScriptService.Services.Combat.DamageRuntimeState)
+
 return function(context)
+
+
 	local world = context.world
 	local Components = context.Components
 
@@ -19,7 +25,7 @@ return function(context)
 					end
 				end)
 
-				humanoid:SetAttribute("LastDamager", attacker.UserId)
+				DamageRuntimeState.SetLastDamager(humanoid, attacker.UserId)
 			end
 
 			humanoid:TakeDamage(amount)

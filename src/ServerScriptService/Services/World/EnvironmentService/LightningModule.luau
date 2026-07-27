@@ -1,4 +1,5 @@
 local TweenService = game:GetService("TweenService")
+local SoundService = game:GetService('SoundService')
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Assets = ReplicatedStorage.Assets
 local ECS = require(ReplicatedStorage.ECS)
@@ -435,10 +436,23 @@ local function createAmbientFlash()
 	end, "Lightning:AmbientFade")
 end
 
+local function getWeatherSoundGroup(): SoundGroup
+	local soundGroup = SoundService:FindFirstChild('WeatherAudioGroup')
+	if soundGroup and soundGroup:IsA('SoundGroup') then
+		return soundGroup
+	end
+
+	soundGroup = Instance.new('SoundGroup')
+	soundGroup.Name = 'WeatherAudioGroup'
+	soundGroup.Parent = SoundService
+	return soundGroup
+end
+
 local function playThunder(position)
 	local sound = Instance.new("Sound")
 	sound.SoundId = Config.ThunderSoundId
 	sound.Volume = Config.ThunderVolume
+	sound.SoundGroup = getWeatherSoundGroup()
 	sound.PlaybackSpeed = math.random(Config.ThunderPitchVariation.Min * 100, Config.ThunderPitchVariation.Max * 100) / 100
 	sound.RollOffMode = Enum.RollOffMode.Linear
 	sound.RollOffMaxDistance = 1000

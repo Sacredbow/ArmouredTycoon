@@ -31,6 +31,8 @@ local DEFAULT_CREATION_BATCH_SIZE = 28
 local MIN_AXIS = 0.35
 local SPREAD = 5.5
 
+local FinalStateByPart: { [BasePart]: { Transparency: number, CanCollide: boolean } } = {}
+
 local SLICE_AXES = {
 	Enum.Axis.X,
 	Enum.Axis.Y,
@@ -291,32 +293,23 @@ local function getPartMoveScale(part: BasePart): number
 end
 
 local function hideFinalPart(part: BasePart, finalTransparency: number, finalCanCollide: boolean)
-	part:SetAttribute("BuildAssembleFinalTransparency", finalTransparency)
-	part:SetAttribute("BuildAssembleFinalCanCollide", finalCanCollide)
+	FinalStateByPart[part] = {
+		Transparency = finalTransparency,
+		CanCollide = finalCanCollide,
+	}
 	part.Transparency = 1
 	part.CanCollide = false
 end
 
 local function restoreFinalPart(part: BasePart)
-	local finalTransparency = part:GetAttribute("BuildAssembleFinalTransparency")
-	local finalCanCollide = part:GetAttribute("BuildAssembleFinalCanCollide")
-
-	if typeof(finalTransparency) ~= "number" and typeof(finalCanCollide) ~= "boolean" then
+	local finalState = FinalStateByPart[part]
+	if not finalState then
 		return
 	end
 
-	if typeof(finalTransparency) == "number" then
-		part.Transparency = finalTransparency
-	else
-		part.Transparency = 0
-	end
-
-	if typeof(finalCanCollide) == "boolean" then
-		part.CanCollide = finalCanCollide
-	end
-
-	part:SetAttribute("BuildAssembleFinalTransparency", nil)
-	part:SetAttribute("BuildAssembleFinalCanCollide", nil)
+	part.Transparency = finalState.Transparency
+	part.CanCollide = finalState.CanCollide
+	FinalStateByPart[part] = nil
 end
 
 local function destroyLater(instance: Instance, lifetime: number)
@@ -524,10 +517,7 @@ function BuildAssemble.Deassemble(item: Instance, onComplete: (() -> ())?, optio
 
 	for _, part in parts do
 		if part.Parent then
-			part:SetAttribute("BuildAssembleFinalTransparency", getFinalTransparency(part))
-			part:SetAttribute("BuildAssembleFinalCanCollide", getFinalCanCollide(part))
-			part.Transparency = 1
-			part.CanCollide = false
+			hideFinalPart(part, getFinalTransparency(part), getFinalCanCollide(part))
 		end
 	end
 

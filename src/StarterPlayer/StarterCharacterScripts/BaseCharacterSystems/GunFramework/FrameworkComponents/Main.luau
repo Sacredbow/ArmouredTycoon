@@ -26,6 +26,8 @@ local Main = {}
 function Main.start(hostScript)
 
 local RS 			= game:GetService("ReplicatedStorage")
+local RuntimeSettings = require(RS.Modules.SettingsManager.RuntimeSettings)
+local ClientRuntimeState = require(RS.Modules.ClientRuntimeState)
 local User 			= game:GetService("UserInputService")
 local CAS 			= game:GetService("ContextActionService")
 local Run 			= game:GetService("RunService")
@@ -216,7 +218,6 @@ local StatusEffects = StatusEffectsGui.create(plr.PlayerGui, HUDs)
 SE_GUI = StatusEffects.gui
 
 local lastCrosshairDebugState = ""
-plr:SetAttribute("ACS_CrosshairMode", "first")
 WeaponUIState.clear(plr)
 
 local ManualCrosshairGui: ScreenGui? = nil
@@ -349,9 +350,8 @@ local viewModelEnabledStates = {}
 local viewModelTransparencyStates = {}
 
 local function isThirdPersonCamera()
-	-- Third person is the new default. Setting the attribute to false opts the
-	-- player back into first-person ACS viewmodel behavior.
-	return plr:GetAttribute("ThirdPersonCameraEnabled") ~= false
+	-- Third person is the new default. RuntimeSettings owns the camera preference.
+	return RuntimeSettings.GetBoolean("Third Person", true)
 end
 
 local function getWeaponName()
@@ -479,7 +479,7 @@ local function setViewModelVisible(visible)
 	end
 end
 
-plr:GetAttributeChangedSignal("ThirdPersonCameraEnabled"):Connect(function()
+RuntimeSettings.Observe("Third Person", function()
 	-- Settings can flip camera mode while a weapon is already equipped.
 	if ToolEquip then
 		applyWeaponCameraMode()
@@ -489,7 +489,7 @@ end)
 local function tweenStanceCameraOffset()
 	-- CharacterMotion can own camera offset. If it does, ACS stance offset backs
 	-- off to avoid two systems fighting over Humanoid.CameraOffset.
-	if plr:GetAttribute("CameraControllerOwnsOffset") == true then
+	if RuntimeSettings.GetBoolean("CameraControllerOwnsOffset", false) then
 		return
 	end
 
@@ -676,7 +676,7 @@ function ACSActions.ADS(isAiming)
 	if not WeaponData or not WeaponInHand then
 		return
 	end
-	plr:SetAttribute("ACS_Aiming", isAiming)
+	WeaponUIState.setAiming(plr, isAiming)
 	if isAiming then
 
 		if SafeMode then
@@ -731,7 +731,7 @@ function ACSActions.setup(Tool)
 
 	ToolEquip = true
 	User.MouseIconEnabled 	= false
-	plr:SetAttribute("ACS_Aiming", false)
+	WeaponUIState.setAiming(plr, false)
 	applyWeaponCameraMode()
 
 	WeaponTool 		= ToolCheck
@@ -909,7 +909,7 @@ end
 
 function ACSActions.unset()
 	ToolEquip = false
-	plr:SetAttribute("ACS_Aiming", false)
+	WeaponUIState.setAiming(plr, false)
 	Evt.Equip:FireServer(WeaponTool,2)
 	--unsetup weapon data module
 	CAS:UnbindAction("Fire")
@@ -985,7 +985,7 @@ function ACSActions.HeadMovement()
 	-- Sends first-person/third-person neck rotation to the server at half-rate.
 	-- This keeps other players seeing where the character is looking without
 	-- firing a remote every single rendered frame.
-	if not plr:GetAttribute("HasLoaded") or not char:FindFirstChild("HumanoidRootPart") or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then return; end;
+	if not ClientRuntimeState.HasLoaded(plr) or not char:FindFirstChild("HumanoidRootPart") or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then return; end;
 	if char.Humanoid.RigType == Enum.HumanoidRigType.R15 then return; end;
 	if not ACS_Client or ACS_Client:GetAttribute("Collapsed") then return; end;
 	local CameraDirection = char.HumanoidRootPart.CFrame:toObjectSpace(cam.CFrame).lookVector

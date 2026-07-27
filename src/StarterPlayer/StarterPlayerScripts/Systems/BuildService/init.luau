@@ -72,7 +72,7 @@ function BuildServiceClient:_bindCharacter(character)
 end
 
 function BuildServiceClient:_isBuilder(tool: Tool): boolean
-	return tool:GetAttribute("ToolType") == "Builder" or tool.Name == "Builder"
+	return tool.Name == "Builder"
 end
 
 function BuildServiceClient:Enter()

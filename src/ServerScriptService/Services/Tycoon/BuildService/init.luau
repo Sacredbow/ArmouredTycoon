@@ -121,7 +121,7 @@ function BuildService:_hasBuilderEquipped(player: Player): boolean
 	end
 
 	for _, child in character:GetChildren() do
-		if child:IsA("Tool") and (child:GetAttribute("ToolType") == "Builder" or child.Name == "Builder") then
+		if child:IsA("Tool") and child.Name == "Builder" then
 			return true
 		end
 	end

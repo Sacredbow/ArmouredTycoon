@@ -45,10 +45,6 @@ function BuildSpawner:Spawn(tycoon, placement, compound: BasePart, cellSize: num
 	end
 
 	instance.Name = placement.Guid
-	instance:SetAttribute("BuildId", placement.BuildId)
-	instance:SetAttribute("BuildTier", placement.Tier)
-	instance:SetAttribute("BuildGuid", placement.Guid)
-	instance:SetAttribute("BuildHealth", tier.Health)
 
 	local target = GridMath.GridToWorldCFrame(compound, placement.GridX, placement.GridY, placement.Rotation, cellSize)
 	if instance:IsA("Model") then

@@ -61,34 +61,26 @@ local function enableRobloxBackpack()
 	end)
 end
 
-local function disableStarterGuiMainInterface(root: Instance)
-	if root.Name == "MainInterface" then
-		if root:IsA("ScreenGui") then
-			root.Enabled = false
-		elseif root:IsA("GuiObject") then
-			root.Visible = false
+-- Keep MainInterface enabled (the new Currency module uses its CurrencyFrame).
+-- Only hide the old PlayerInterface buttons that React replaces.
+local function hideOldInterfaceChildren(root: Instance)
+	local mainInterface
+	if root.Name == "MainInterface" and root:IsA("ScreenGui") then
+		mainInterface = root
+	else
+		mainInterface = root:FindFirstChild("MainInterface")
+		if not (mainInterface and mainInterface:IsA("ScreenGui")) then
+			return
 		end
-		return
 	end
 
-	local mainInterface = root:FindFirstChild("MainInterface")
-
-	if mainInterface and mainInterface:IsA("ScreenGui") then
-		mainInterface.Enabled = false
-	elseif mainInterface and mainInterface:IsA("GuiObject") then
-		mainInterface.Visible = false
-	end
-end
-
-local function disableStarterGuiMainInterfaceInstance(instance: Instance)
-	if instance.Name ~= "MainInterface" then
-		return
-	end
-
-	if instance:IsA("ScreenGui") then
-		instance.Enabled = false
-	elseif instance:IsA("GuiObject") then
-		instance.Visible = false
+	local playerInterface = mainInterface:FindFirstChild("PlayerInterface")
+	if playerInterface then
+		for _, child in ipairs(playerInterface:GetChildren()) do
+			if child:IsA("GuiObject") then
+				child.Visible = false
+			end
+		end
 	end
 end
 
@@ -98,14 +90,13 @@ if existingRoot then
 	existingRoot:Destroy()
 end
 
-disableStarterGuiMainInterface(playerGui)
+hideOldInterfaceChildren(playerGui)
 if CUSTOM_INVENTORY_ENABLED then
 	disableRobloxBackpack()
 else
 	enableRobloxBackpack()
 end
-local childConnection = playerGui.ChildAdded:Connect(disableStarterGuiMainInterface)
-local descendantConnection = playerGui.DescendantAdded:Connect(disableStarterGuiMainInterfaceInstance)
+local childConnection = playerGui.ChildAdded:Connect(hideOldInterfaceChildren)
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ArmouredReactUI"
@@ -120,9 +111,20 @@ local root = ReactRoblox.createRoot(screenGui)
 root:render(React.createElement(App))
 debugPrint("Rendered React app")
 
+-- Initialize the Workspace-based HUD (currency display, etc.)
+type ComponentModule = {
+	Init: () -> (),
+}
+
+task.spawn(function()
+	for _, Module in script.Parent.components.Interface:QueryDescendants("ModuleScript") do
+		local result = require(Module) :: ComponentModule
+		result.Init()  
+	end
+end)
+
 script.Destroying:Connect(function()
 	childConnection:Disconnect()
-	descendantConnection:Disconnect()
 	root:unmount()
 	if screenGui.Parent then
 		screenGui:Destroy()

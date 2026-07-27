@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local React = require(ReplicatedStorage.Packages.react)
+local ClientRuntimeState = require(ReplicatedStorage.Modules.ClientRuntimeState)
 
 local useSpringBinding = require(script.Parent.Parent.hooks.useSpringBinding)
 
@@ -20,11 +21,12 @@ type CrosshairState = {
 }
 
 local function readState(player: Player): CrosshairState
+	local weaponState = ClientRuntimeState.ReadWeaponState(player)
 	return {
-		visible = player:GetAttribute("ACS_CrosshairVisible") == true,
-		kind = tostring(player:GetAttribute("ACS_CrosshairKind") or "rifle"),
-		mode = tostring(player:GetAttribute("ACS_CrosshairMode") or "first"),
-		aiming = player:GetAttribute("ACS_Aiming") == true,
+		visible = weaponState.CrosshairVisible,
+		kind = weaponState.CrosshairKind,
+		mode = weaponState.CrosshairMode,
+		aiming = weaponState.Aiming,
 	}
 end
 
@@ -35,23 +37,17 @@ local function WeaponCrosshair()
 	end)
 
 	React.useEffect(function()
-		local function refresh()
-			setState(readState(player))
-		end
-
-		local connections = {
-			player:GetAttributeChangedSignal("ACS_CrosshairVisible"):Connect(refresh),
-			player:GetAttributeChangedSignal("ACS_CrosshairKind"):Connect(refresh),
-			player:GetAttributeChangedSignal("ACS_CrosshairMode"):Connect(refresh),
-			player:GetAttributeChangedSignal("ACS_Aiming"):Connect(refresh),
-		}
-
-		refresh()
+		local connection = ClientRuntimeState.ObserveWeaponState(player, function(nextState)
+			setState({
+				visible = nextState.CrosshairVisible,
+				kind = nextState.CrosshairKind,
+				mode = nextState.CrosshairMode,
+				aiming = nextState.Aiming,
+			})
+		end)
 
 		return function()
-			for _, connection in connections do
-				connection:Disconnect()
-			end
+			connection:Disconnect()
 		end
 	end, {})
 

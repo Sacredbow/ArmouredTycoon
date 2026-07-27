@@ -141,7 +141,7 @@ local function MainInterface(props: MainInterfaceProps)
 	local profileBaselineAccepted = React.useRef(false)
 	local levelUpVisible, setLevelUpVisible = React.useState(false)
 	local uiScale, setUiScale = React.useState(computeInterfaceScale(getViewportSize()))
-	local canRebirth, setCanRebirth = React.useState(Players.LocalPlayer:GetAttribute("CanRebirth") == true)
+	local canRebirth, setCanRebirth = React.useState(false)
 
 	local function closeModal()
 		setModal("None")
@@ -214,13 +214,11 @@ local function MainInterface(props: MainInterfaceProps)
 	end, {})
 
 	React.useEffect(function()
-		local localPlayer = Players.LocalPlayer
-		local function updateCanRebirth()
-			setCanRebirth(localPlayer:GetAttribute("CanRebirth") == true)
-		end
-
-		updateCanRebirth()
-		local connection = localPlayer:GetAttributeChangedSignal("CanRebirth"):Connect(updateCanRebirth)
+		local connection = ClientSignals.Listen(function(kind: string, value: any?)
+			if kind == "CanRebirth" then
+				setCanRebirth(value == true)
+			end
+		end)
 
 		return function()
 			connection:Disconnect()
@@ -304,6 +302,55 @@ local function MainInterface(props: MainInterfaceProps)
 			for _, connection in ipairs(connections) do
 				connection:Disconnect()
 			end
+		end
+	end, {})
+
+	React.useEffect(function()
+		local openShopSignal = ReplicatedStorage:FindFirstChild("OpenShopSignal")
+		if not openShopSignal or not openShopSignal:IsA("BindableEvent") then
+			return
+		end
+
+		local connection = openShopSignal.Event:Connect(function(tab)
+			openShop(tab)
+		end)
+
+		return function()
+			connection:Disconnect()
+		end
+	end, {})
+
+	React.useEffect(function()
+		local openMenuSignal = ReplicatedStorage:FindFirstChild("OpenMenuSignal")
+		if not openMenuSignal or not openMenuSignal:IsA("BindableEvent") then
+			return
+		end
+
+		local connection = openMenuSignal.Event:Connect(function()
+			if modal ~= "None" then
+				return
+			end
+			setMenuOpen(true)
+			setBlur(24)
+		end)
+
+		return function()
+			connection:Disconnect()
+		end
+	end, { modal })
+
+	React.useEffect(function()
+		local openProfileSignal = ReplicatedStorage:FindFirstChild("OpenProfileSignal")
+		if not openProfileSignal or not openProfileSignal:IsA("BindableEvent") then
+			return
+		end
+
+		local connection = openProfileSignal.Event:Connect(function()
+			openStats()
+		end)
+
+		return function()
+			connection:Disconnect()
 		end
 	end, {})
 
@@ -401,20 +448,21 @@ local function MainInterface(props: MainInterfaceProps)
 	end
 
 	return e(React.Fragment, nil, {
-		Currency = e(CurrencyHud, {
-			stats = stats,
-			hidden = modal == "Profile",
-			uiScale = uiScale,
-			openShop = openShop,
-			openMenu = function()
-				if modal ~= "None" then
-					return
-				end
-				setMenuOpen(true)
-				setBlur(24)
-			end,
-			openStats = openStats,
-		}),
+		-- Currency HUD migrated to Workspace-based GUI (Hud/Shop/Components/Currency)
+		-- Currency = e(CurrencyHud, {
+		-- 	stats = stats,
+		-- 	hidden = modal == "Profile",
+		-- 	uiScale = uiScale,
+		-- 	openShop = openShop,
+		-- 	openMenu = function()
+		-- 		if modal ~= "None" then
+		-- 			return
+		-- 		end
+		-- 		setMenuOpen(true)
+		-- 		setBlur(24)
+		-- 	end,
+		-- 	openStats = openStats,
+		-- }),
 		Menu = e(ItemMenu, {
 			open = menuOpen,
 			uiScale = uiScale,

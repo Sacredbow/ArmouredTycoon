@@ -1,17 +1,15 @@
 local DISPLAY_UPDATE_INTERVAL = 0.25
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 local ECS = require(ReplicatedStorage.ECS)
+local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
 
-local function getNumericAttribute(player, attributeName)
-	local value = player:GetAttribute(attributeName)
-	if type(value) == "number" then
-		return value
-	end
-
-	return 1
+local function getCashMultiplier(player: Player): number
+	return PlayerRuntimeState.GetMultiplier(player)
 end
+
 
 local function getOrigin(instance): Vector3
 	if instance:IsA("BasePart") then
@@ -37,7 +35,7 @@ return function(Tycoon, dependencies)
 	end
 
 	function Tycoon:_GetCashMultiplier(player)
-		local multiplier = getNumericAttribute(player, "Multiplier")
+		local multiplier = getCashMultiplier(player)
 		return multiplier * self.PlayerService:GetFriendBoostMultiplier(player)
 	end
 

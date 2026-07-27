@@ -7,13 +7,12 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local SettingsConfig = require(ReplicatedStorage.Modules.SettingsManager.SettingsConfig)
+local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
+local ClientRuntimeState = require(ReplicatedStorage.Modules.ClientRuntimeState)
 
 local player = Players.LocalPlayer
 
-local THIRD_PERSON_ATTRIBUTE = "ThirdPersonCameraEnabled"
-local BASE_FOV_ATTRIBUTE = "CameraBaseFOV"
 local ACS_AIMING_ATTRIBUTE = "ACS_Aiming"
-local CAMERA_OWNS_OFFSET_ATTRIBUTE = "CameraControllerOwnsOffset"
 
 type CameraMode = "FirstPerson" | "ThirdPerson"
 
@@ -63,21 +62,11 @@ local function expAlpha(speed: number, deltaTime: number): number
 end
 
 local function getBaseFov(): number
-	local value = player:GetAttribute(BASE_FOV_ATTRIBUTE)
-	if typeof(value) == "number" then
-		return math.clamp(value, 30, 90)
-	end
-
-	local defaultValue = SettingsConfig.default_settings["Field of View"]
-	if typeof(defaultValue) == "number" then
-		return defaultValue
-	end
-
-	return 60
+	return math.clamp(RuntimeSettings.GetNumber('Field of View', currentFov), 30, 90)
 end
 
 local function getCameraMode(): CameraMode
-	if player:GetAttribute(THIRD_PERSON_ATTRIBUTE) == false then
+	if not RuntimeSettings.GetBoolean('Third Person', SettingsConfig.default_settings['Third Person'] ~= false) then
 		return FIRST_PERSON
 	end
 
@@ -85,7 +74,7 @@ local function getCameraMode(): CameraMode
 end
 
 local function isAiming(): boolean
-	return player:GetAttribute(ACS_AIMING_ATTRIBUTE) == true
+	return ClientRuntimeState.IsWeaponAiming(player)
 end
 
 local function hasEquippedAcsWeapon(character: Model?): boolean
@@ -234,9 +223,7 @@ local function updateCamera(deltaTime: number)
 
 	local hasWeapon = hasEquippedAcsWeapon(character)
 	if not hasWeapon then
-		if player:GetAttribute(CAMERA_OWNS_OFFSET_ATTRIBUTE) ~= false then
-			player:SetAttribute(CAMERA_OWNS_OFFSET_ATTRIBUTE, false)
-		end
+		RuntimeSettings.Set('CameraControllerOwnsOffset', false)
 		printDebugState(THIRD_PERSON, false, false)
 		setAimLockedFacing(character, humanoid, camera, false, deltaTime)
 		applyMouseBehavior(THIRD_PERSON, false)
@@ -260,9 +247,7 @@ local function updateCamera(deltaTime: number)
 	setAimLockedFacing(character, humanoid, camera, aimLocked, deltaTime)
 
 	if mode == FIRST_PERSON then
-		if player:GetAttribute(CAMERA_OWNS_OFFSET_ATTRIBUTE) ~= false then
-			player:SetAttribute(CAMERA_OWNS_OFFSET_ATTRIBUTE, false)
-		end
+		RuntimeSettings.Set('CameraControllerOwnsOffset', false)
 		if humanoid.CameraOffset.Magnitude > 0.001 then
 			humanoid.CameraOffset = Vector3.zero
 		end
@@ -271,9 +256,7 @@ local function updateCamera(deltaTime: number)
 		return
 	end
 
-	if player:GetAttribute(CAMERA_OWNS_OFFSET_ATTRIBUTE) ~= true then
-		player:SetAttribute(CAMERA_OWNS_OFFSET_ATTRIBUTE, true)
-	end
+	RuntimeSettings.Set('CameraControllerOwnsOffset', true)
 
 	local targetOffset = if aiming then profile.aimOffset else profile.offset
 	currentOffset = currentOffset:Lerp(targetOffset, expAlpha(profile.offsetSpeed, deltaTime))
@@ -283,19 +266,10 @@ local function updateCamera(deltaTime: number)
 	camera.FieldOfView = currentFov
 end
 
-if player:GetAttribute(THIRD_PERSON_ATTRIBUTE) == nil then
-	player:SetAttribute(THIRD_PERSON_ATTRIBUTE, SettingsConfig.default_settings["Third Person"] ~= false)
-end
-
-if player:GetAttribute(BASE_FOV_ATTRIBUTE) == nil then
-	player:SetAttribute(BASE_FOV_ATTRIBUTE, currentFov)
-end
-
 player.CharacterAdded:Connect(setupCharacter)
 player.CharacterRemoving:Connect(function()
 	activeHumanoid = nil
 	currentOffset = Vector3.zero
-	player:SetAttribute(CAMERA_OWNS_OFFSET_ATTRIBUTE, false)
 end)
 
 if player.Character then

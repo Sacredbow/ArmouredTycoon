@@ -63,6 +63,8 @@ export type NatureAudio = typeof(setmetatable({} :: {
 	_folder: Folder,
 	_sounds: SoundSet,
 	_weather: any,
+	_windEnabled: boolean,
+	_environmentAudioEnabled: boolean,
 	_exposure: number,
 	_roofCover: number,
 	_wallOpen: number,
@@ -200,6 +202,8 @@ function NatureAudio.new(): NatureAudio
 			reverb = reverb,
 		},
 		_weather = nil,
+		_windEnabled = true,
+		_environmentAudioEnabled = true,
 		_exposure = 1,
 		_roofCover = 0,
 		_wallOpen = 1,
@@ -275,14 +279,17 @@ function NatureAudio:ApplyWeather(weather)
 	local exposureVolume = math.clamp(WIND_VOLUME.IndoorFloor + exposure * (1 - WIND_VOLUME.IndoorFloor), 0, 1)
 	local heavyPresence = math.clamp((weather.windSpeed - 15) / 24, 0, 1) * math.clamp(weather.windPower, 0, 1)
 	local rainExposure = self:GetRainExposure()
+	local windAudioScale = if self._windEnabled then 1 else 0
+	local environmentAudioScale = if self._environmentAudioEnabled then 1 else 0
 	local generalVolume = math.clamp(
 		WIND_VOLUME.GeneralBase + windPresence * WIND_VOLUME.GeneralWindScale,
 		0,
 		WIND_VOLUME.GeneralMax
-	) * exposureVolume
-	local heavyVolume = math.clamp(heavyPresence * WIND_VOLUME.HeavyScale, 0, WIND_VOLUME.HeavyMax) * exposureVolume
+	) * exposureVolume * windAudioScale
+	local heavyVolume = math.clamp(heavyPresence * WIND_VOLUME.HeavyScale, 0, WIND_VOLUME.HeavyMax) * exposureVolume * windAudioScale
 	local rainVolume = math.clamp(weather.rainIntensity * (0.7 + weather.windPower * 0.24), 0, 1.25)
 		* math.clamp(0.18 + rainExposure * 0.82, 0, 1)
+		* environmentAudioScale
 
 	if not self._sounds.generalWind.Playing then
 		self._sounds.generalWind:Play()
@@ -311,6 +318,44 @@ function NatureAudio:ApplyWeather(weather)
 	tweenNumber(self, "rainBVolume", self._sounds.rainB, "Volume", rainVolume * 0.86, 1.2)
 end
 
+function NatureAudio:SetWindEnabled(enabled: boolean)
+	if self._windEnabled == enabled then
+		return
+	end
+
+	self._windEnabled = enabled
+	if enabled then
+		if self._weather then
+			self:ApplyWeather(self._weather)
+		end
+		return
+	end
+
+	tweenNumber(self, 'generalWindVolume', self._sounds.generalWind, 'Volume', 0, 0.45)
+	tweenNumber(self, 'generalWindBVolume', self._sounds.generalWindB, 'Volume', 0, 0.45)
+	tweenNumber(self, 'heavyWindVolume', self._sounds.heavyWind, 'Volume', 0, 0.45)
+	tweenNumber(self, 'heavyWindBVolume', self._sounds.heavyWindB, 'Volume', 0, 0.45)
+	tweenNumber(self, 'gustVolume', self._sounds.gust, 'Volume', 0, 0.35)
+end
+
+function NatureAudio:SetEnvironmentalAudioEnabled(enabled: boolean)
+	if self._environmentAudioEnabled == enabled then
+		return
+	end
+
+	self._environmentAudioEnabled = enabled
+	if enabled then
+		if self._weather then
+			self:ApplyWeather(self._weather)
+		end
+		return
+	end
+
+	tweenNumber(self, 'rainVolume', self._sounds.rain, 'Volume', 0, 0.45)
+	tweenNumber(self, 'rainBVolume', self._sounds.rainB, 'Volume', 0, 0.45)
+	tweenNumber(self, 'birdsVolume', self._sounds.birds, 'Volume', 0, 0.35)
+end
+
 function NatureAudio:_maintainWindLoop(name: string, primary: Sound, secondary: Sound, length: number)
 	local key = name .. "Swap"
 	if primary.TimeLength > 0 then
@@ -336,6 +381,10 @@ function NatureAudio:_maintainWindLoop(name: string, primary: Sound, secondary: 
 end
 
 function NatureAudio:_maybePlayGust(now: number)
+	if not self._windEnabled then
+		return
+	end
+
 	local weather = self._weather
 	if not weather or weather.windPower < 0.45 or now - self._lastGustAt < NATURE_SOUNDS.WindGust.minGap then
 		return
@@ -360,6 +409,10 @@ function NatureAudio:_maybePlayGust(now: number)
 end
 
 function NatureAudio:_maybePlayBirds(now: number)
+	if not self._environmentAudioEnabled then
+		return
+	end
+
 	local weather = self._weather
 	if not weather or weather.rainIntensity > 0.15 or weather.windPower > 0.7 or self._exposure < 0.45 or now - self._lastBirdAt < NATURE_SOUNDS.BirdCoo.minGap then
 		return

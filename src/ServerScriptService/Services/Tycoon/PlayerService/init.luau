@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ECS = require(ReplicatedStorage.ECS)
 local FriendService = require(script.FriendService)
 local StateManager = require(ServerScriptService.Utilities.StateManager)
+local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
 
 local PlayerService = {}
 PlayerService.__index = PlayerService
@@ -29,12 +30,7 @@ function PlayerService:_OnPlayerAdded(player: Player)
 	-- Create a StateManager for this player
 	self.PlayerStates[player] = StateManager.new(player)
 
-	-- Attributes that still make sense on the player instance itself
-	-- (these are read by the client or other non-service systems)
-	player:SetAttribute("Multiplier", 1)
-	player:SetAttribute("LastDamager", nil)
-	player:SetAttribute("LastDamageTime", nil)
-	player:SetAttribute("CanRebirth", false)
+	PlayerRuntimeState.Get(player)
 
 	player.CharacterAdded:Connect(function(character)
 		self:_OnCharacterAdded(player, character)
@@ -69,7 +65,7 @@ function PlayerService:_OnCharacterAdded(player: Player, character: Model)
 end
 
 function PlayerService:AllowServerTeleport(player: Player, duration: number?)
-	player:SetAttribute("AntiCheatTeleportGraceUntil", os.clock() + (duration or TELEPORT_GRACE_DURATION))
+	PlayerRuntimeState.SetAntiCheatTeleportGraceUntil(player, os.clock() + (duration or TELEPORT_GRACE_DURATION))
 end
 
 function PlayerService:_TeleportToSpawn(player: Player, character: Model)
@@ -121,12 +117,13 @@ function PlayerService:CleanupPlayer(player: Player)
 		self.PlayerStates[player] = nil
 	end
 	self.PlayerTycoons[player] = nil
-	player:SetAttribute("CanRebirth", false)
+	PlayerRuntimeState.SetCanRebirth(player, false)
+	PlayerRuntimeState.Clear(player)
 end
 
 function PlayerService:RegisterPlayerTycoon(player: Player, tycoon: any)
 	self.PlayerTycoons[player] = tycoon
-	player:SetAttribute("CanRebirth", false)
+	PlayerRuntimeState.SetCanRebirth(player, false)
 	print("[PlayerService] Registered tycoon for player:", player.Name)
 	if self.TycoonService then
 		self.TycoonService:RegisterOwner(player, tycoon)

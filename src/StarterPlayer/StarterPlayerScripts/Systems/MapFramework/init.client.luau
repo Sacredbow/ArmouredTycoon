@@ -1,12 +1,13 @@
 --!strict
 
-local Players = game:GetService("Players")
-local Lighting = game:GetService("Lighting")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
+local Players = game:GetService('Players')
+local Lighting = game:GetService('Lighting')
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local RunService = game:GetService('RunService')
+local TweenService = game:GetService('TweenService')
 
 local ClientSignals = require(ReplicatedStorage.Network.ClientSignals)
+local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
 
 local EnvironmentShared = require(ReplicatedStorage.EnvironmentShared)
 local NatureAudio = require(script.NatureAudio)
@@ -15,23 +16,28 @@ local WindConstructor = require(script.WindConstructor)
 
 local player = Players.LocalPlayer
 
-local activeWeather = EnvironmentShared.getWeather("Clear")
+local activeWeather = EnvironmentShared.getWeather('Clear')
 local windVelocity = Vector3.zero
 local natureAudio = NatureAudio.new()
 local rainVolume = -1
 local rainVolumeTimer = 0
-local windBlurInstance = Lighting:FindFirstChild("WindPressureBlur")
+local environmentalAudioEnabled = RuntimeSettings.GetBoolean('Environmental Volume', true)
+local windBlurInstance = Lighting:FindFirstChild('WindPressureBlur')
 local windBlur: BlurEffect
-if windBlurInstance and windBlurInstance:IsA("BlurEffect") then
+if windBlurInstance and windBlurInstance:IsA('BlurEffect') then
 	windBlur = windBlurInstance
 else
-	windBlur = Instance.new("BlurEffect")
-	windBlur.Name = "WindPressureBlur"
+	windBlur = Instance.new('BlurEffect')
+	windBlur.Name = 'WindPressureBlur'
 	windBlur.Size = 0
 	windBlur.Parent = Lighting
 end
 
 local function getRainVolume(weather: EnvironmentShared.WeatherState): number
+	if not environmentalAudioEnabled then
+		return 0
+	end
+
 	local exposure = natureAudio:GetRainExposure()
 	local outdoor = math.clamp(0.22 + exposure * 0.78, 0, 1)
 	return (0.16 + weather.rainIntensity * 0.34) * outdoor
@@ -92,11 +98,23 @@ local function applyWeather(weather: EnvironmentShared.WeatherState)
 	natureAudio:ApplyWeather(weather)
 end
 
+RuntimeSettings.Observe('Wind', function(value)
+	natureAudio:SetWindEnabled(value ~= false)
+end)
+
+RuntimeSettings.Observe('Environmental Volume', function(value)
+	environmentalAudioEnabled = value ~= false
+	natureAudio:SetEnvironmentalAudioEnabled(environmentalAudioEnabled)
+	if activeWeather then
+		setRain(activeWeather)
+	end
+end)
+
 WindConstructor.Start(activeWeather)
 applyWeather(activeWeather)
 
 ClientSignals.Listen(function(kind, value)
-	if kind ~= "Weather" or typeof(value) ~= "table" then
+	if kind ~= 'Weather' or typeof(value) ~= 'table' then
 		return
 	end
 
@@ -111,9 +129,9 @@ RunService.Heartbeat:Connect(function(deltaTime)
 	end
 
 	local character = player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not root or not root:IsA("BasePart") or not humanoid or humanoid.Health <= 0 then
+	local root = character and character:FindFirstChild('HumanoidRootPart')
+	local humanoid = character and character:FindFirstChildOfClass('Humanoid')
+	if not root or not root:IsA('BasePart') or not humanoid or humanoid.Health <= 0 then
 		return
 	end
 

@@ -175,7 +175,7 @@ ButtonConfiguration.Buttons = {
 		Kind = "Basic" 
 	
 	},
-		Build = { Items = { "Ladder" } },
+		Build = { Items = { "Teleporter" } },
 		Progression = { Reveals = { "Button28" } },
 	}),
 	Button28 = Button({

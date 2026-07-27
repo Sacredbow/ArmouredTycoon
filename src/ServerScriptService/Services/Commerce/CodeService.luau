@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Diagnostics = require(ServerScriptService.Utilities.ServerDiagnostics)
+local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
 
 local CodesDataStore = DataStoreService:GetDataStore("RedeemedCodes")
 local RedeemCode = ReplicatedStorage.Remotes.CodeServiceFunction
@@ -13,7 +14,8 @@ local CODES = {
 		player.leaderstats.Cash.Value += 5000
 	end,
 	["FR33MULTI"] = function(player)
-		player:SetAttribute("Multiplier", true)
+		local currentMultiplier = PlayerRuntimeState.GetMultiplier(player)
+		PlayerRuntimeState.SetMultiplier(player, math.max(currentMultiplier, 1.5))
 	end,
 	["STARTER"] = function(player)
 		player.leaderstats.Cash.Value += 10000

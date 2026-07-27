@@ -1,4 +1,10 @@
+local ServerScriptService = game:GetService("ServerScriptService")
+
+local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+
 return function(Tycoon, dependencies)
+
+
 	local Players = dependencies.Players
 	local Cleanup = dependencies.Cleanup
         local CollectionService = dependencies.CollectionService
@@ -27,7 +33,7 @@ return function(Tycoon, dependencies)
 					Diagnostics.reject(player, "Tycoon.Electricity", "Prompt was activated outside its allowed range")
 					return
 				end
-				if player:GetAttribute("Power") then
+				if PlayerRuntimeState.HasPower(player) then
 					if ClientSignals then
 						ClientSignals.Send(player, "AlreadyOn")
 					end
@@ -41,7 +47,7 @@ return function(Tycoon, dependencies)
 					return
 				end
 
-				player:SetAttribute("Power", true)
+				PlayerRuntimeState.SetPower(player, true)
 				self:_EnableElectricity()
 				ClientSignals.Send(self.Owner, "FuseBox")
 			end)
@@ -53,7 +59,7 @@ return function(Tycoon, dependencies)
 			if part:IsA("BasePart") and CollectionService:HasTag(part, "ElectricityParts") then
 				part.Touched:Connect(function(hit)
 					local player = Players:GetPlayerFromCharacter(hit.Parent)
-					if not player or not player:GetAttribute("Power") then
+					if not player or not PlayerRuntimeState.HasPower(player) then
 						return
 					end
 

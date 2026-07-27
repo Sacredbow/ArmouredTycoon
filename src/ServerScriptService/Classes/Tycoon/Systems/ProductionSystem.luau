@@ -1,6 +1,8 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 local ECS = require(ReplicatedStorage.ECS)
+local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
 
 local DROPPER_VALUES = {
 	GoldenDropper = 85,
@@ -14,14 +16,10 @@ local function isRenderablePart(instance)
 	return instance:IsA("BasePart")
 end
 
-local function getNumericMultiplier(player)
-	local value = player:GetAttribute("Multiplier")
-	if type(value) == "number" then
-		return value
-	end
-
-	return 1
+local function getNumericMultiplier(player: Player): number
+	return PlayerRuntimeState.GetMultiplier(player)
 end
+
 
 return function(Tycoon, dependencies)
 	local TweenService = dependencies.TweenService
@@ -240,9 +238,9 @@ return function(Tycoon, dependencies)
 
 		local currentMultiplier = getNumericMultiplier(owner)
 		if currentMultiplier == 1 then
-			owner:SetAttribute("Multiplier", currentMultiplier * bonus)
+			PlayerRuntimeState.SetMultiplier(owner, currentMultiplier * bonus)
 		else
-			owner:SetAttribute("Multiplier", currentMultiplier + bonus)
+			PlayerRuntimeState.SetMultiplier(owner, currentMultiplier + bonus)
 		end
 	end
 

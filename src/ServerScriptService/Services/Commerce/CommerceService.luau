@@ -10,6 +10,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 
 local ECS = require(ReplicatedStorage.ECS)
 local Diagnostics = require(ServerScriptService.Utilities.ServerDiagnostics)
+local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
 
 local CommerceService = {}
 CommerceService.__index = CommerceService
@@ -45,7 +46,7 @@ local GAMEPASS_IDS: { [string]: number } = {
 	X2Cash = 1568972351,
 	SWAT_Gamepass = 1573236427,
 	Raygun = 1793083522,
-	GoldenDropper = 3438520055,
+ 	GoldenDropper = 1618227062,
 }
 
 local PRODUCT_CASH_REWARDS = {
@@ -228,7 +229,7 @@ function CommerceService:_Clothes(player: Player)
 
 	humanoid.MaxHealth = 300
 	humanoid.Health = 300
-	player:SetAttribute("ArmourEquipped", true)
+	PlayerRuntimeState.SetArmourEquipped(player, true)
 
 	local description = humanoid:GetAppliedDescription()
 	description.Shirt = 6433605120

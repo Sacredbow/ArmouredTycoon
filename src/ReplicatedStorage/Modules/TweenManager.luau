@@ -25,7 +25,7 @@ function Module.BasePart(part, properties, tweenInfo, callback)
 end
 
 
-function Module.Interface(guiObject, properties, tweenInfo, callback)
+function Module.Interface(guiObject: GuiBase, properties : {Enum.EasingStyle & Enum.EasingDirection}, tweenInfo : TweenInfo, callback: () -> ())
 	assert(guiObject:IsA("GuiObject"), "Interface: first argument must be a GuiObject")
 	assert(type(properties) == "table", "Interface: properties must be a table")
 

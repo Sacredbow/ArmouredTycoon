@@ -7,6 +7,7 @@ Introduction into the game once you start
 local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
 local TycoonsFolder = workspace:WaitForChild("Tycoons")
 local NetworkFolder = ReplicatedStorage:WaitForChild("Network")
 local TutorialSignal = NetworkFolder:WaitForChild("TutorialSignal") :: RemoteEvent
@@ -70,12 +71,7 @@ local doorBeamsEnabled = false
 local claimedDoorKeys: { [string]: boolean } = {}
 
 local function allowButtonDirections(): boolean
-	local value = Player:GetAttribute("AllowButtonDirections")
-	if typeof(value) == "boolean" then
-		return value
-	end
-
-	return true
+	return RuntimeSettings.GetBoolean('Allow Button Directions', true)
 end
 
 local buttonDirectionsEnabled = allowButtonDirections()
@@ -251,7 +247,7 @@ local function setupTycoonBeams()
 	end
 end
 
-Player:GetAttributeChangedSignal("AllowButtonDirections"):Connect(function()
+RuntimeSettings.Observe('Allow Button Directions', function()
 	buttonDirectionsEnabled = allowButtonDirections()
 	if not buttonDirectionsEnabled then
 		DisplaceAllBeams()

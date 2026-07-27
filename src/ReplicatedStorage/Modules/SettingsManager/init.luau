@@ -68,13 +68,13 @@ end
 function SettingsManager.InitializeSettings()
 	-- resolve GUI references here, not at module load time
 	if not guisFolder then
-		warn("[SettingsManager] Classic ReplicatedStorage.GUIs folder was not found; skipping classic settings UI initialization.")
+		warn("[SettingsManager] Legacy ReplicatedStorage.GUIs folder was not found; skipping legacy settings UI initialization.")
 		return false
 	end
 
 	local settingsGui = localPlayer.PlayerGui:FindFirstChild("SettingsGUI") or localPlayer.PlayerGui:WaitForChild("SettingsGUI", 5)
 	if not settingsGui then
-		warn("[SettingsManager] Classic SettingsGUI was not found; skipping classic settings UI initialization.")
+		warn("[SettingsManager] Legacy SettingsGUI was not found; skipping legacy settings UI initialization.")
 		return false
 	end
 
