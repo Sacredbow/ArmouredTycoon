@@ -1,22 +1,39 @@
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerScriptService = game:GetService("ServerScriptService")
-local DataTemplate = require(ServerScriptService.DataManager.DataTemplate)
-local ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
-local TycoonClass = require(ServerScriptService.Classes.Tycoon)
-local RagdollModule = require(ServerScriptService.Modules.RagdollModule)
-local CollisionModule = require(ServerScriptService.Modules.CollisionManager)
-local Diagnostics = require(ServerScriptService.Utilities.ServerDiagnostics)
-local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
-local TutorialSignals = require(ReplicatedStorage.Network.TutorialSignals)
+--!strict
+--[[
+	@class TycoonService
 
-local TycoonService = {}
-TycoonService.__index = TycoonService
+	@desc
+	Orchestrates tycoon lifecycle — initializes all Tycoon instances,
+	handles player rebirth, owner registration, and tutorial onboarding
+	for unclaimed tycoon doors.
+]]
+
+--// Services
+
+const Players = game:GetService("Players")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const ServerScriptService = game:GetService("ServerScriptService")
+
+--// Modules
+
+const DataTemplate = require(ServerScriptService.DataManager.DataTemplate)
+const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
+const TycoonClass = require(ServerScriptService.Classes.Tycoon)
+const RagdollModule = require(ServerScriptService.Modules.RagdollModule)
+const CollisionModule = require(ServerScriptService.Modules.CollisionManager)
+const PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+const Packets = require(ReplicatedStorage.Network.Packets)
+
+--// Types
 
 type ConstructionData = {
 	PurchasedButtons: { string },
 }
 
+--// Module
+
+local TycoonService = {}
+TycoonService.__index = TycoonService
 
 local function waitForProfile(player: Player): boolean
 	local deadline = os.clock() + 20
@@ -48,8 +65,8 @@ local function clearSavedConstruction(player: Player)
 	(constructionData :: ConstructionData).PurchasedButtons = {}
 end
 
-function TycoonService.new(playerService, purchaseService)
-	local self = setmetatable({}, TycoonService)
+function TycoonService.new(playerService: any, purchaseService: any): TycoonServiceInstance
+	local self = setmetatable({}, TycoonService) :: TycoonServiceInstance
 	self.PlayerService = playerService
 	self.PurchaseService = purchaseService
 	self.Tycoons = {}
@@ -57,8 +74,7 @@ function TycoonService.new(playerService, purchaseService)
 	return self
 end
 
-
-function TycoonService:_SendAvailableTycoonDoors(player: Player)
+function TycoonService._SendAvailableTycoonDoors(self: TycoonServiceInstance, player: Player)
 	if not waitForProfile(player) then
 		return
 	end
@@ -69,15 +85,15 @@ function TycoonService:_SendAvailableTycoonDoors(player: Player)
 
 	for _, tycoon in ipairs(self.Tycoons) do
 		if not tycoon.Owner then
-			TutorialSignals.Send(player, "TycoonAvailable", getOwnerDoorPath(tycoon))
+			Packets.packets.Tutorial.sendTo({ ["type"] = "TycoonAvailable", target = getOwnerDoorPath(tycoon) }, player)
 		end
 	end
 end
 
-function TycoonService:_StartOnboardingDoorGuidance()
+function TycoonService._StartOnboardingDoorGuidance(self: TycoonServiceInstance)
 	for _, player in ipairs(Players:GetPlayers()) do
 		task.defer(function()
-			self:_SendAvailableTycoonDoors(player)
+			self._SendAvailableTycoonDoors(self, player)
 		end)
 	end
 
@@ -87,20 +103,25 @@ function TycoonService:_StartOnboardingDoorGuidance()
 
 	self.PlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
 		task.defer(function()
-			self:_SendAvailableTycoonDoors(player)
+			self._SendAvailableTycoonDoors(self, player)
 		end)
 	end)
 end
 
-function TycoonService:Init()
-	self:_SetupRemotes()
+function TycoonService.Init(self: TycoonServiceInstance)
+	self._SetupRemotes(self)
 
-	local tycoonsFolder = Diagnostics.requireValue(workspace:FindFirstChild("Tycoons"), "TycoonService", "workspace.Tycoons is required")
+	local tycoonsFolder = workspace:FindFirstChild("Tycoons")
+	if not tycoonsFolder then
+		warn("[TycoonService] workspace.Tycoons is required but not found; tycoons will not initialize")
+		return
+	end
 	print("Initializing tycoons...")
 
 	for _, tycoonModel in ipairs(tycoonsFolder:GetChildren()) do
 		if tycoonModel:IsA("Model") then
-			local tycoon = TycoonClass.new(tycoonModel, self.PlayerService, self.PurchaseService, RagdollModule, CollisionModule)
+			local tycoon =
+				TycoonClass.new(tycoonModel, self.PlayerService, self.PurchaseService, RagdollModule, CollisionModule)
 			tycoon:Init()
 			table.insert(self.Tycoons, tycoon)
 			print("Setup complete:", tycoonModel.Name)
@@ -108,69 +129,58 @@ function TycoonService:Init()
 	end
 
 	print("All tycoons initialized!")
-	self:_StartOnboardingDoorGuidance()
+	self._StartOnboardingDoorGuidance(self)
 end
 
-function TycoonService:_SetupRemotes()
-	local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
-	if not remotesFolder then
-		remotesFolder = Instance.new("Folder")
-		remotesFolder.Name = "Remotes"
-		remotesFolder.Parent = ReplicatedStorage
-	end
+function TycoonService._SetupRemotes(self: TycoonServiceInstance)
 	if #self.Tycoons == 0 then
-		Diagnostics.report("TycoonService", "No tycoon models were available during initialization; other services will continue loading.")
+		warn("[TycoonService] No tycoon models were available during initialization; other services will continue loading.")
 	end
 
-	local tycoonAction = remotesFolder:FindFirstChild("TycoonAction")
-	if not tycoonAction then
-		tycoonAction = Instance.new("RemoteFunction")
-		tycoonAction.Name = "TycoonAction"
-		tycoonAction.Parent = remotesFolder
-	end
-
-	Diagnostics.invariant(tycoonAction:IsA("RemoteFunction"), "TycoonService", "Remotes.TycoonAction must be a RemoteFunction");
-	(tycoonAction :: RemoteFunction).OnServerInvoke = function(player: Player, action: string)
-		if action == "Rebirth" then
-			return self:RequestRebirth(player)
+	Packets.queries.TycoonAction.listen(function(request, player: Player?)
+		if not player then
+			return { success = false, message = "Player unavailable." }
 		end
 
-		Diagnostics.reject(player, "TycoonAction", `Unknown action: {tostring(action)}`)
-		return false, "Unknown tycoon action."
-	end
-end
+		if request.action == "Rebirth" then
+			local success, message = self.RequestRebirth(self, player)
+			return { success = success == true, message = tostring(message) }
+		end
 
-function TycoonService:RegisterOwner(player, tycoon)
+		warn(`[TycoonService] {tostring(player)} sent unknown action: {tostring(request.action)}`)
+		return { success = false, message = "Unknown tycoon action." }
+	end)
+end
+function TycoonService.RegisterOwner(self: TycoonServiceInstance, player, tycoon)
 	self.TycoonsByOwner[player] = tycoon
 end
 
-function TycoonService:GetTycoonForPlayer(player)
+function TycoonService.GetTycoonForPlayer(self: TycoonServiceInstance, player)
 	return self.TycoonsByOwner[player]
 end
 
-function TycoonService:GetAllTycoons()
+function TycoonService.GetAllTycoons(self: TycoonServiceInstance)
 	return self.Tycoons
 end
 
-function TycoonService:FindUnclaimedTycoon()
+function TycoonService.FindUnclaimedTycoon(self: TycoonServiceInstance) 
 	for _, tycoon in ipairs(self.Tycoons) do
-		if not tycoon.Owner then 
+		if not tycoon.Owner then
 			return tycoon
 		end
 	end
 	return nil
 end
 
-function TycoonService:_OnPlayerRemoving(player)
+function TycoonService._OnPlayerRemoving(self: TycoonServiceInstance, player)
 	local tycoon = self.TycoonsByOwner[player]
 	if tycoon then
-		tycoon:Cleanup() 
+		tycoon:Cleanup()
 		self.TycoonsByOwner[player] = nil
 	end
 end
 
-
-function TycoonService:Rebirth(player: Player, rebirthAmount: number?)
+function TycoonService.Rebirth(self: TycoonServiceInstance, player: Player, rebirthAmount: number?)
 	local tycoon = self.TycoonsByOwner[player]
 	local amountToAward = rebirthAmount or 1
 
@@ -192,7 +202,7 @@ function TycoonService:Rebirth(player: Player, rebirthAmount: number?)
 	self.TycoonsByOwner[player] = nil
 end
 
-function TycoonService:RequestRebirth(player: Player)
+function TycoonService.RequestRebirth(self: TycoonServiceInstance, player: Player)
 	local tycoon = self.TycoonsByOwner[player]
 	if not tycoon then
 		return false, "Claim a tycoon first."
@@ -203,10 +213,24 @@ function TycoonService:RequestRebirth(player: Player)
 		return false, "Complete your tycoon before rebirthing."
 	end
 
-	self:Rebirth(player)
+	self.Rebirth(self, player)
 	return true, "Rebirth complete. Your tycoon has been reset."
 end
 
+-- ================================================================================
+-- TYPE DEFINITION
+-- ================================================================================
+-- TycoonServiceInstance is the type for a constructed TycoonService object
+-- (returned by TycoonService.new). It combines:
+--   1. All methods defined on TycoonService (via the metatable)
+--   2. Instance properties set in TycoonService.new()
 
+export type TycoonServiceInstance = typeof(setmetatable({}, TycoonService)) & {
+	PlayerService: any,
+	PurchaseService: any,
+	Tycoons: { TycoonClass.TycoonInstance },
+	TycoonsByOwner: { [Player]: TycoonClass.TycoonInstance },
+	PlayerAddedConnection: RBXScriptConnection?,
+}
 
 return TycoonService

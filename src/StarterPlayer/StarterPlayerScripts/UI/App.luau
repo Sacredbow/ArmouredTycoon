@@ -11,10 +11,13 @@ local NukeCinematicPanel = require(script.Parent.components.NukeCinematicPanel)
 local NotificationStack = require(script.Parent.components.NotificationStack)
 local StoreProvider = require(script.Parent.store.StoreProvider)
 local WeaponCrosshair = require(script.Parent.components.WeaponCrosshair)
+local InterfaceShop = require(script.Parent.components.Interface.Shop)
 
 local e = React.createElement
 
 local function App()
+	InterfaceShop.Init()
+
 	return e(StoreProvider, nil, {
 		KOTHBanner = e(KOTHBanner),
 		MainInterface = e(MainInterface),

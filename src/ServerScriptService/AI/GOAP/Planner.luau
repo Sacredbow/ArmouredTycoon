@@ -1,25 +1,43 @@
 --!strict
+--[[
+	@class Planner
 
-local Types = require(script.Parent.Types)
-local WorldState = require(script.Parent.WorldState)
+	@desc
+	GOAP planner — performs a depth-first search for a chain of actions
+	that transforms the current world state into the goal state.
+	Uses action cost + heuristic distance for pruning.
+]]
 
-local Planner = {}
-Planner.__index = Planner
+--// Modules
+
+const Types = require(script.Parent.Types)
+const WorldStateModule = require(script.Parent.WorldState)
+
+--// Types
 
 type Action = Types.Action
 type ActionContext = Types.ActionContext
 type Plan = Types.Plan
 type WorldState = Types.WorldState
 
+--// Module
+
+local Planner = {}
+Planner.__index = Planner
+
 export type Planner = typeof(setmetatable({} :: {
 	_actions: { Action },
 	_maxDepth: number,
 }, Planner))
 
-local function actionCost(action: Action, context: ActionContext): number
-	local score = if action.score then action.score(context) else 0
-	return math.max(0.01, action.cost - score)
+--// Internal Utilities
+
+local function ActionCost(action: Action, context: ActionContext): number
+	const Score = if action.score then action.score(context) else 0
+	return math.max(0.01, action.cost - Score)
 end
+
+--// Constructor
 
 function Planner.new(maxDepth: number?): Planner
 	return setmetatable({
@@ -28,45 +46,47 @@ function Planner.new(maxDepth: number?): Planner
 	}, Planner)
 end
 
+--// Public API
+
 function Planner:AddAction(action: Action)
 	self._actions[#self._actions + 1] = action
 end
 
-function Planner:Plan(startState: WorldState, goal: WorldState, context: ActionContext): Plan?
-	local bestPlan = nil :: Plan?
-	local bestCost = math.huge
+function Planner:Plan(StartState: WorldState, Goal: WorldState, Context: ActionContext): Plan?
+	local BestPlan = nil :: Plan?
+	local BestCost = math.huge
 
-	local function search(state: WorldState, plan: Plan, cost: number, depth: number)
-		if cost >= bestCost then
+	local function Search(State: WorldState, Plan: Plan, Cost: number, Depth: number)
+		if Cost >= BestCost then
 			return
 		end
 
-		if WorldState.matches(state, goal) then
-			bestPlan = table.clone(plan)
-			bestCost = cost
+		if WorldStateModule.matches(State, Goal) then
+			BestPlan = table.clone(Plan)
+			BestCost = Cost
 			return
 		end
 
-		if depth >= self._maxDepth then
+		if Depth >= self._maxDepth then
 			return
 		end
 
-		for _, action in self._actions do
-			if WorldState.matches(state, action.preconditions) then
-				plan[#plan + 1] = action
-				search(
-					WorldState.apply(state, action.effects),
-					plan,
-					cost + actionCost(action, context) + WorldState.distance(state, goal) * 0.1,
-					depth + 1
+		for _, Action in self._actions do
+			if WorldStateModule.matches(State, Action.preconditions) then
+				Plan[#Plan + 1] = Action
+				Search(
+					WorldStateModule.apply(State, Action.effects),
+					Plan,
+					Cost + ActionCost(Action, Context) + WorldStateModule.distance(State, Goal) * 0.1,
+					Depth + 1
 				)
-				plan[#plan] = nil
+				Plan[#Plan] = nil
 			end
 		end
 	end
 
-	search(startState, {}, 0, 0)
-	return bestPlan
+	Search(StartState, {}, 0, 0)
+	return BestPlan
 end
 
 return Planner

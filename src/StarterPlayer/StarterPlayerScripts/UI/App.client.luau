@@ -117,9 +117,12 @@ type ComponentModule = {
 }
 
 task.spawn(function()
-	for _, Module in script.Parent.components.Interface:QueryDescendants("ModuleScript") do
-		local result = require(Module) :: ComponentModule
-		result.Init()  
+	for _, Module in script.Parent.components.Interface:GetChildren() do
+		if Module:IsA("ModuleScript") then
+			local result = require(Module) :: ComponentModule
+			result.Init()  
+		end
+		
 	end
 end)
 

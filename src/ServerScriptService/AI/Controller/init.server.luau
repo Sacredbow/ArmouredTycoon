@@ -1,39 +1,63 @@
 --!strict
+--[[
+	@class AIController
 
-local NPCData = require(script.Core.NPCData)
+	@desc
+	Bootstraps NPC controllers for every NPC model in Workspace.NPCs.
+	Creates NPCData controllers on startup and watches for new NPC
+	models added at runtime (e.g. respawns) to keep the map in sync.
+]]
+
+--// Services
+
+const Workspace = game:GetService("Workspace")
+
+--// Modules
+
+const NPCData = require(script.Core.NPCData)
+
+--// Types
+
 type NPCController = NPCData.NPCController
-
-local NPCs = workspace:WaitForChild("NPCs")
 
 type NPCControllerMap = {
 	[string]: NPCController?,
 }
 
-local NPCController: NPCControllerMap = {}
+--// Constants
 
-local function initializeNPCControllers(npcFolder: Folder, controllerMap: NPCControllerMap)
-	for _, instance: Instance in npcFolder:GetChildren() do
-		if instance:IsA("Model") and instance:FindFirstChildOfClass("Humanoid") then
-			local npc: Model = instance
-			controllerMap[npc.Name] = NPCData.new(npc)
+const NPCs = Workspace:WaitForChild("NPCs")
+
+--// Module
+
+const NPCController: NPCControllerMap = {}
+
+--// Internal Utilities
+
+local function InitializeNPCControllers(NpcFolder: Folder, ControllerMap: NPCControllerMap)
+	for _, Instance: Instance in NpcFolder:GetChildren() do
+		if Instance:IsA("Model") and Instance:FindFirstChildOfClass("Humanoid") then
+			const Npc: Model = Instance
+			ControllerMap[Npc.Name] = NPCData.new(Npc)
 		else
-			warn(`[AIController] Skipping "{instance.Name}" because it is not a valid NPC model`)
+			warn(`[AIController] Skipping "{Instance.Name}" because it is not a valid NPC model`)
 		end
 	end
 end
 
-initializeNPCControllers(NPCs, NPCController)
+--// Bootstrap
 
-NPCs.ChildAdded:Connect(function(instance: Instance)
-	if not instance:IsA("Model") or not instance:FindFirstChildOfClass("Humanoid") then
+InitializeNPCControllers(NPCs, NPCController)
+
+NPCs.ChildAdded:Connect(function(Instance: Instance)
+	if not Instance:IsA("Model") or not Instance:FindFirstChildOfClass("Humanoid") then
 		return
 	end
 
-	local npc: Model = instance
-
-	if NPCController[npc.Name] ~= nil then
+	const Npc: Model = Instance
+	if NPCController[Npc.Name] ~= nil then
 		return
 	end
 
-	NPCController[npc.Name] = NPCData.new(npc) 
+	NPCController[Npc.Name] = NPCData.new(Npc)
 end)

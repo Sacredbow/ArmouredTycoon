@@ -1,27 +1,47 @@
 
 
-local PathfindingService = game:GetService("PathfindingService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerStorage = game:GetService("ServerStorage")
+--!strict
+--[[
+	@class NPCData
 
-local ECS = require(ReplicatedStorage.ECS)
-local Config = require(script.Parent.Config)
-local AvoidFrontBlockState = require(script.Parent.Parent.States.AvoidFrontBlockState)
-local DeadState = require(script.Parent.Parent.States.DeadState)
-local IdleState = require(script.Parent.Parent.States.IdleState)
-local ObservePlayerState = require(script.Parent.Parent.States.ObservePlayerState)
-local PatrolState = require(script.Parent.Parent.States.PatrolState)
-local Dialogue = require(script.Parent.Parent.Services.Dialogue)
-local Speech = require(script.Parent.Parent.Services.Speech)
-local StateMachine = require(script.Parent.StateMachine)
-local Types = require(script.Parent.Types)
-local WorldQuery = require(script.Parent.Parent.Services.WorldQuery)
+	@desc
+	Creates and manages individual NPC controllers.
+	Handles state machine setup, death/respawn pooling, and
+	health-changed threat reactions.
+]]
+
+--// Services
+
+const PathfindingService = game:GetService("PathfindingService")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const ServerStorage = game:GetService("ServerStorage")
+
+--// Modules
+
+const ECS = require(ReplicatedStorage.ECS)
+const Config = require(script.Parent.Config)
+const AvoidFrontBlockState = require(script.Parent.Parent.States.AvoidFrontBlockState)
+const DeadState = require(script.Parent.Parent.States.DeadState)
+const IdleState = require(script.Parent.Parent.States.IdleState)
+const ObservePlayerState = require(script.Parent.Parent.States.ObservePlayerState)
+const PatrolState = require(script.Parent.Parent.States.PatrolState)
+const Dialogue = require(script.Parent.Parent.Services.Dialogue)
+const Speech = require(script.Parent.Parent.Services.Speech)
+const StateMachine = require(script.Parent.StateMachine)
+const Types = require(script.Parent.Types)
+const WorldQuery = require(script.Parent.Parent.Services.WorldQuery)
+
+--// Types
 
 type AIContext = Types.AIContext
 type StateMachineController = StateMachine.StateMachineController
 
-local ClonesFolder = ServerStorage:WaitForChild("Clones")
-local NPCFolder = workspace:WaitForChild("NPCs")
+--// Constants
+
+const ClonesFolder = ServerStorage:WaitForChild("Clones")
+const NPCFolder = workspace:WaitForChild("NPCs")
+
+--// Module
 
 local NPCData = {}
 NPCData.__index = NPCData

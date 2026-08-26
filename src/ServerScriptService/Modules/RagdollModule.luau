@@ -1,100 +1,124 @@
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+--!strict
+--[[
+	@class RagdollModule
 
-local ECS = require(ReplicatedStorage.ECS)
+	@desc
+	Handles ragdoll state for players — replaces Motor6D joints with
+	BallSocketConstraint to allow physics-driven limb collapse, then
+	restores them after a configurable duration.
+]]
+
+--// Services
+
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+--// Modules
+
+const ECS = require(ReplicatedStorage.ECS)
+
+--// Micro-Optimisations
+
+const math_rad = math.rad
+const math_random = math.random
+const Vector3_new = Vector3.new
+
+--// Module
 
 local RagdollModule = {}
 
-local function enableRagdoll(character)
-	local humanoid = character:FindFirstChild("Humanoid")
-	if not humanoid then return end
+--// Internal Methods
 
-	humanoid.PlatformStand = false
-	humanoid.BreakJointsOnDeath = false
+local function EnableRagdoll(Character: Model): (any, any)
+	local Humanoid = Character:FindFirstChild("Humanoid")
+	if not Humanoid then
+		return nil, nil
+	end
 
-	local motorTable = {}
-	local socketTable = {}
+	Humanoid.PlatformStand = false
+	Humanoid.BreakJointsOnDeath = false
 
-	for _, joint in pairs(character:GetDescendants()) do
-		if joint:IsA("Motor6D") then
-			
-			table.insert(motorTable, joint:Clone())
+	local MotorTable = {}
+	local SocketTable = {}
 
-			local socket = Instance.new("BallSocketConstraint")
-			local a1 = Instance.new("Attachment")
-			local a2 = Instance.new("Attachment")
+	for _, Joint in Character:GetDescendants() do
+		if Joint:IsA("Motor6D") then
+			table.insert(MotorTable, Joint:Clone())
 
-			a1.Parent = joint.Part0
-			a2.Parent = joint.Part1
-			socket.Parent = joint.Parent
-			socket.Attachment0 = a1
-			socket.Attachment1 = a2
-			a1.CFrame = joint.C0
-			a2.CFrame = joint.C1
-			socket.LimitsEnabled = true
-			socket.TwistLimitsEnabled = true
+			local Socket = Instance.new("BallSocketConstraint")
+			local A1 = Instance.new("Attachment")
+			local A2 = Instance.new("Attachment")
 
-			table.insert(socketTable, {motor = joint, socket = socket, a1 = a1, a2 = a2})
+			A1.Parent = Joint.Part0
+			A2.Parent = Joint.Part1
+			Socket.Parent = Joint.Parent
+			Socket.Attachment0 = A1
+			Socket.Attachment1 = A2
+			A1.CFrame = Joint.C0
+			A2.CFrame = Joint.C1
+			Socket.LimitsEnabled = true
+			Socket.TwistLimitsEnabled = true
 
-			joint:Destroy()
+			table.insert(SocketTable, { motor = Joint, socket = Socket, a1 = A1, a2 = A2 })
+			Joint:Destroy()
 		end
 	end
 
-	
-	local root = character:FindFirstChild("HumanoidRootPart")
-	if root then
-		root.CFrame = CFrame.new(root.Position) * CFrame.Angles(math.rad(-90), 0, 0)
-		
-		root:ApplyImpulse(Vector3.new(math.random(-50,50), -50, math.random(-50,50)))
+	local Root = Character:FindFirstChild("HumanoidRootPart")
+	if Root then
+		Root.CFrame = CFrame.new(Root.Position) * CFrame.Angles(math_rad(-90), 0, 0)
+		Root:ApplyImpulse(Vector3_new(math_random(-50, 50), -50, math_random(-50, 50)))
 	end
 
-	return socketTable, motorTable
+	return SocketTable, MotorTable
 end
 
+local function RestoreCharacter(Character: Model, SocketTable: any, MotorTable: any)
+	local Humanoid = Character:FindFirstChild("Humanoid")
+	if not Humanoid then
+		return
+	end
 
-local function restoreCharacter(character, socketTable, motorTable)
-	local humanoid = character:FindFirstChild("Humanoid")
-	if not humanoid then return end
+	Humanoid.PlatformStand = false
 
-	humanoid.PlatformStand = false
-
-
-	if socketTable then
-		for _, v in pairs(socketTable) do
-			v.socket:Destroy()
-			v.a1:Destroy()
-			v.a2:Destroy()
+	if SocketTable then
+		for _, Entry in SocketTable do
+			Entry.socket:Destroy()
+			Entry.a1:Destroy()
+			Entry.a2:Destroy()
 		end
 	end
 
-	
-	if motorTable then
-		for _, joint in pairs(motorTable) do
-			joint.Parent = character
+	if MotorTable then
+		for _, Joint in MotorTable do
+			Joint.Parent = Character
 		end
 	end
 end
 
+--// Public API
 
-function RagdollModule.Ragdoll(player, duration)
-	local character = player.Character
-	if not character then return end
+function RagdollModule.Ragdoll(Player: Player, Duration: number?)
+	local Character = Player.Character
+	if not Character then
+		return
+	end
 
-	local sockets, motors = enableRagdoll(character)
-	duration = duration or 4
+	local Sockets, Motors = EnableRagdoll(Character)
+	Duration = Duration or 4
 
-        ECS.createEntity({
-                Name = `{player.Name}:RagdollRestore`,
-                ScheduledTask = {
-                        delay = duration,
-                        elapsed = 0,
-                        callback = function()
-                                if player.Character then
-                                        restoreCharacter(player.Character, sockets, motors)
-                                end
-                        end,
-                },
-        })
+	ECS.createEntity({
+		Name = `{Player.Name}:RagdollRestore`,
+		ScheduledTask = {
+			delay = Duration,
+			elapsed = 0,
+			callback = function()
+				if Player.Character then
+					RestoreCharacter(Player.Character, Sockets, Motors)
+				end
+			end,
+		},
+	})
 end
 
 return RagdollModule

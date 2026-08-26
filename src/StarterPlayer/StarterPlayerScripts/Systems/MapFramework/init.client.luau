@@ -6,7 +6,7 @@ local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local RunService = game:GetService('RunService')
 local TweenService = game:GetService('TweenService')
 
-local ClientSignals = require(ReplicatedStorage.Network.ClientSignals)
+local Packets = require(ReplicatedStorage.Network.Packets)
 local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
 
 local EnvironmentShared = require(ReplicatedStorage.EnvironmentShared)
@@ -113,12 +113,8 @@ end)
 WindConstructor.Start(activeWeather)
 applyWeather(activeWeather)
 
-ClientSignals.Listen(function(kind, value)
-	if kind ~= 'Weather' or typeof(value) ~= 'table' then
-		return
-	end
-
-	applyWeather(value :: EnvironmentShared.WeatherState)
+Packets.packets.Weather.listen(function(data)
+	applyWeather(data)
 end)
 
 RunService.Heartbeat:Connect(function(deltaTime)

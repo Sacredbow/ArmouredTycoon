@@ -3,8 +3,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Packets = require(ReplicatedStorage.Network.Packets)
-local Diagnostics = require(game:GetService("ServerScriptService").Utilities.ServerDiagnostics)
-
 local InventoryServer = {}
 InventoryServer.__index = InventoryServer
 
@@ -26,12 +24,12 @@ end
 
 function InventoryServer:_removeTool(player: Player, tool: Instance?)
 	if not tool or not tool:IsA("Tool") then
-		Diagnostics.reject(player, "InventoryAction", "RemoveTool contained an invalid tool")
+		warn(`[InventoryServer] {player.Name} sent RemoveTool with an invalid tool`)
 		return
 	end
 
 	if not playerOwnsTool(player, tool) then
-		Diagnostics.reject(player, "InventoryAction", `RemoveTool targeted unowned tool {tool:GetFullName()}`)
+		warn(`[InventoryServer] {player.Name} targeted unowned tool {tool:GetFullName()}`)
 		return
 	end
 
@@ -46,10 +44,10 @@ function InventoryServer:Start()
 
 	self._started = true
 	Packets.packets.InventoryAction.listen(function(payload, player: Player)
-		if payload.action == "RemoveTool" then
+	if payload.action == "RemoveTool" then
 			self:_removeTool(player, payload.tool)
 		else
-			Diagnostics.reject(player, "InventoryAction", `Unknown action: {tostring(payload.action)}`)
+			warn(`[InventoryServer] {player.Name} sent unknown action: {tostring(payload.action)}`)
 		end
 	end)
 end

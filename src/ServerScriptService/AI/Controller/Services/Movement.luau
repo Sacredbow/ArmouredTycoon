@@ -1,14 +1,24 @@
 --!strict
+--[[
+	@class Movement
 
-local ServerScriptService = game:GetService("ServerScriptService")
+	@desc
+	AI navigation service — pathfinding, separation, waypoint
+	simplification, fleeing, and blocker avoidance for NPC controllers.
+]]
 
-local Types = require(script.Parent.Parent.Core.Types)
-local Dialogue = require(script.Parent.Dialogue)
-local WorldQuery = require(script.Parent.WorldQuery)
-local Diagnostics = require(ServerScriptService.Utilities.ServerDiagnostics)
+--// Modules
+
+const Types = require(script.Parent.Parent.Core.Types)
+const Dialogue = require(script.Parent.Dialogue)
+const WorldQuery = require(script.Parent.WorldQuery)
+
+--// Types
 
 type AIContext = Types.AIContext
 type StateMachineLike = Types.StateMachineLike
+
+--// Module
 
 local Movement = {}
 
@@ -109,29 +119,29 @@ function Movement.FaceTowardPositionStep(context: AIContext, targetPosition: Vec
 end
 
 function Movement.LookAtPosition(context: AIContext, targetPosition: Vector3, duration: number)
-        local state = (context :: any).LookAtPositionState
-        if not state or (state.targetPosition - targetPosition).Magnitude > 0.1 then
-                state = {
-                        targetPosition = targetPosition,
-                        startedAt = os.clock(),
-                        duration = duration,
-                        stepCount = math.max(1, math.floor(duration / context.Config.LookStep)),
-                }
-                ;(context :: any).LookAtPositionState = state
+	local state = (context :: any).LookAtPositionState
+	if not state or (state.targetPosition - targetPosition).Magnitude > 0.1 then
+		state = {
+			targetPosition = targetPosition,
+			startedAt = os.clock(),
+			duration = duration,
+			stepCount = math.max(1, math.floor(duration / context.Config.LookStep)),
+		}
+		(context :: any).LookAtPositionState = state
 
-                Movement.Stop(context)
-        end
+		Movement.Stop(context)
+	end
 
-        if not context.NPC.Parent then
-                (context :: any).LookAtPositionState = nil
-                return
-        end
+	if not context.NPC.Parent then
+		(context :: any).LookAtPositionState = nil
+		return
+	end
 
-        Movement.FaceTowardPositionStep(context, targetPosition, 1 / state.stepCount)
+	Movement.FaceTowardPositionStep(context, targetPosition, 1 / state.stepCount)
 
-        if os.clock() - state.startedAt >= state.duration then
-                (context :: any).LookAtPositionState = nil
-        end
+	if os.clock() - state.startedAt >= state.duration then
+		(context :: any).LookAtPositionState = nil
+	end
 end
 
 function Movement.ComputePath(context: AIContext, targetPosition: Vector3): { PathWaypoint }?
@@ -140,13 +150,8 @@ function Movement.ComputePath(context: AIContext, targetPosition: Vector3): { Pa
 		context.Path:ComputeAsync(origin, targetPosition)
 	end)
 
-	if not success then
-		Diagnostics.reportThrottled(
-			"AI.Movement",
-			`path:{context.Name}`,
-			`Path compute failed for {context.Name}: {tostring(err)}`,
-			10
-		)
+if not success then
+		warn(`[AI.Movement] Path compute failed for {context.Name}: {tostring(err)}`)
 		return nil
 	end
 
@@ -221,8 +226,8 @@ function Movement.ManeuverAwayFromBlocker(context: AIContext, blockerRoot: BaseP
 		+ awayDirection * (context.Config.AvoidManeuverDistance * 0.45)
 		+ sideDirection * context.Config.AvoidManeuverDistance
 		+ forwardCarry
-
-	;(context :: any).AvoidManeuver = {
+;
+	(context :: any).AvoidManeuver = {
 		nextMoveAt = now + context.Config.AvoidRepathInterval,
 	}
 
@@ -247,8 +252,7 @@ local function clearFleePath(context: AIContext)
 	if state and state.blockedConnection then
 		state.blockedConnection:Disconnect()
 	end
-
-	;(context :: any).FleePath = nil
+	(context :: any).FleePath = nil
 end
 
 local function computeFleeDestination(context: AIContext, targetRoot: BasePart): Vector3
@@ -275,8 +279,8 @@ function Movement.FleeFromTarget(context: AIContext, targetRoot: BasePart): bool
 		if not waypoints then
 			local currentPosition = WorldQuery.GetCurrentPosition(context)
 			local awayDirection = getAwayDirection(context, targetRoot)
-			context.Humanoid:MoveTo(currentPosition + awayDirection * (context.Config.FleeDistance * 0.45))
-			;(context :: any).FleePath = {
+			context.Humanoid:MoveTo(currentPosition + awayDirection * (context.Config.FleeDistance * 0.45));
+			(context :: any).FleePath = {
 				waypoints = {},
 				index = 1,
 				baseMoveTarget = nil,
@@ -303,8 +307,8 @@ function Movement.FleeFromTarget(context: AIContext, targetRoot: BasePart): bool
 		state.blockedConnection = context.Path.Blocked:Connect(function()
 			state.pathBlocked = true
 		end)
-
-		;(context :: any).FleePath = state
+;
+		(context :: any).FleePath = state
 	end
 
 	while state.index <= #state.waypoints do
@@ -344,130 +348,130 @@ function Movement.FleeFromTarget(context: AIContext, targetRoot: BasePart): bool
 end
 
 function Movement.ClearAvoidance(context: AIContext)
-	clearFleePath(context)
-	;(context :: any).AvoidManeuver = nil
+	clearFleePath(context);
+	(context :: any).AvoidManeuver = nil
 end
 
 function Movement.FollowPathTo(context: AIContext, targetPosition: Vector3, machine: StateMachineLike): boolean?
-        local state = (context :: any).PathFollow
-        if not state or (state.targetPosition - targetPosition).Magnitude > 1 then
-                if state and state.blockedConnection then
-                        state.blockedConnection:Disconnect()
-                end
+	local state = (context :: any).PathFollow
+	if not state or (state.targetPosition - targetPosition).Magnitude > 1 then
+		if state and state.blockedConnection then
+			state.blockedConnection:Disconnect()
+		end
 
-                local waypoints = Movement.ComputePath(context, targetPosition)
-                if not waypoints then
-                        return false
-                end
+		local waypoints = Movement.ComputePath(context, targetPosition)
+		if not waypoints then
+			return false
+		end
 
-                state = {
-                        targetPosition = targetPosition,
-                        waypoints = simplifyWaypoints(context, waypoints),
-                        index = 1,
-                        baseMoveTarget = nil,
-                        moveTarget = nil,
-                        nextSeparationAt = 0,
-                        deadline = 0,
-                        pathBlocked = false,
-                        blockedConnection = nil,
-                }
+		state = {
+			targetPosition = targetPosition,
+			waypoints = simplifyWaypoints(context, waypoints),
+			index = 1,
+			baseMoveTarget = nil,
+			moveTarget = nil,
+			nextSeparationAt = 0,
+			deadline = 0,
+			pathBlocked = false,
+			blockedConnection = nil,
+		}
 
-                state.blockedConnection = context.Path.Blocked:Connect(function()
-                        state.pathBlocked = true
-                end)
+		state.blockedConnection = context.Path.Blocked:Connect(function()
+			state.pathBlocked = true
+		end)
+;
+		(context :: any).PathFollow = state
+	end
 
-                ;(context :: any).PathFollow = state
-        end
+	local function finish(result: boolean): boolean
+		if state.blockedConnection then
+			state.blockedConnection:Disconnect()
+		end
+		(context :: any).PathFollow = nil
+		return result
+	end
 
-        local function finish(result: boolean): boolean
-                if state.blockedConnection then
-                        state.blockedConnection:Disconnect()
-                end
-                ;(context :: any).PathFollow = nil
-                return result
-        end
+	if not context.NPC.Parent or machine:GetStateName() == "Dead" then
+		return finish(false)
+	end
 
-        if not context.NPC.Parent or machine:GetStateName() == "Dead" then
-                return finish(false)
-        end
+	if state.pathBlocked then
+		Movement.Stop(context)
+		return finish(false)
+	end
 
-        if state.pathBlocked then
-                Movement.Stop(context)
-                return finish(false)
-        end
+	local observablePlayers = WorldQuery.FindObservablePlayers(context)
+	if #observablePlayers > 0 and Dialogue.PrepareObservation(context, observablePlayers) then
+		Movement.Stop(context)
+		finish(false)
+		machine:SetState("ObservePlayer")
+		return false
+	end
 
-        local observablePlayers = WorldQuery.FindObservablePlayers(context)
-        if #observablePlayers > 0 and Dialogue.PrepareObservation(context, observablePlayers) then
-                Movement.Stop(context)
-                finish(false)
-                machine:SetState("ObservePlayer")
-                return false
-        end
+	local blocker = WorldQuery.FindFrontBlockingPlayer(context)
+	if blocker then
+		context.AvoidTarget = blocker
+		Movement.Stop(context)
+		finish(false)
+		machine:SetState("AvoidFrontBlock")
+		return false
+	end
 
-        local blocker = WorldQuery.FindFrontBlockingPlayer(context)
-        if blocker then
-                context.AvoidTarget = blocker
-                Movement.Stop(context)
-                finish(false)
-                machine:SetState("AvoidFrontBlock")
-                return false
-        end
+	while state.index <= #state.waypoints do
+		local waypoint = state.waypoints[state.index]
+		local currentPosition = WorldQuery.GetCurrentPosition(context)
+		local distance = (waypoint.Position - currentPosition).Magnitude
+		if distance > context.Config.CloseWaypointDistance then
+			break
+		end
 
-        while state.index <= #state.waypoints do
-                local waypoint = state.waypoints[state.index]
-                local currentPosition = WorldQuery.GetCurrentPosition(context)
-                local distance = (waypoint.Position - currentPosition).Magnitude
-                if distance > context.Config.CloseWaypointDistance then
-                        break
-                end
+		state.index += 1
+		state.moveTarget = nil
+	end
 
-                state.index += 1
-                state.moveTarget = nil
-        end
+	if state.index > #state.waypoints then
+		return finish(true)
+	end
 
-        if state.index > #state.waypoints then
-                return finish(true)
-        end
+	local waypoint = state.waypoints[state.index]
+	if not state.moveTarget then
+		refreshSeparatedMoveTarget(context, state, waypoint.Position)
+		state.deadline = os.clock() + context.Config.MoveTimeout
 
-        local waypoint = state.waypoints[state.index]
-        if not state.moveTarget then
-                refreshSeparatedMoveTarget(context, state, waypoint.Position)
-                state.deadline = os.clock() + context.Config.MoveTimeout
+		if waypoint.Action == Enum.PathWaypointAction.Jump then
+			context.Humanoid.Jump = true
+		end
+	elseif state.baseMoveTarget then
+		refreshSeparatedMoveTarget(context, state, state.baseMoveTarget)
+	end
 
-                if waypoint.Action == Enum.PathWaypointAction.Jump then
-                        context.Humanoid.Jump = true
-                end
-        elseif state.baseMoveTarget then
-                refreshSeparatedMoveTarget(context, state, state.baseMoveTarget)
-        end
+	local reachDistance = context.Config.CloseWaypointDistance
+	if state.index < #state.waypoints then
+		reachDistance = math.max(reachDistance, context.Config.Path.WaypointSpacing)
+	end
 
-        local reachDistance = context.Config.CloseWaypointDistance
-        if state.index < #state.waypoints then
-                reachDistance = math.max(reachDistance, context.Config.Path.WaypointSpacing)
-        end
+	if not state.moveTarget then
+		refreshSeparatedMoveTarget(context, state, waypoint.Position)
+	end
 
-        if not state.moveTarget then
-                refreshSeparatedMoveTarget(context, state, waypoint.Position)
-        end
+	if not state.moveTarget then
+		Movement.Stop(context)
+		return finish(false)
+	end
 
-        if not state.moveTarget then
-                Movement.Stop(context)
-                return finish(false)
-        end
+	local currentDistance = (state.moveTarget - WorldQuery.GetCurrentPosition(context)).Magnitude
+	if currentDistance <= reachDistance then
+		state.index += 1
+		state.moveTarget = nil
+		return nil
+	end
 
-        local currentDistance = (state.moveTarget - WorldQuery.GetCurrentPosition(context)).Magnitude
-        if currentDistance <= reachDistance then
-                state.index += 1
-                state.moveTarget = nil
-                return nil
-        end
+	if os.clock() >= state.deadline then
+		Movement.Stop(context)
+		return finish(false)
+	end
 
-        if os.clock() >= state.deadline then
-                Movement.Stop(context)
-                return finish(false)
-        end
-
-        return nil
+	return nil
 end
 
 return Movement

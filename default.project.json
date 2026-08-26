@@ -2,13 +2,11 @@
   "name": "ArmouredTycoon",
   "tree": {
     "$className": "DataModel",
-
     "ReplicatedFirst": {
       "Preload": {
         "$path": "src/ReplicatedFirst/Preload"
       }
     },
-
     "ReplicatedStorage": {
       "Packages": {
         "$className": "Folder",
@@ -17,211 +15,211 @@
           "aliboily_goal@1.5.0": {
             "$className": "Folder",
             "goal": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/aliboily_goal@1.5.0/goal/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/aliboily_goal@1.5.0/goal"
             }
           },
           "elitriare_bytenet-max@0.2.5": {
             "$className": "Folder",
             "bytenet-max": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/elitriare_bytenet-max@0.2.5/bytenet-max/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/elitriare_bytenet-max@0.2.5/bytenet-max"
             }
           },
           "jsdotlua_boolean@1.2.7": {
             "$className": "Folder",
             "boolean": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_boolean@1.2.7/boolean/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_boolean@1.2.7/boolean"
             },
             "number": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_boolean@1.2.7/number.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_boolean@1.2.7/number.luau"
             }
           },
           "jsdotlua_collections@1.2.7": {
             "$className": "Folder",
             "collections": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_collections@1.2.7/collections/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_collections@1.2.7/collections"
             },
             "es7-types": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_collections@1.2.7/es7-types.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_collections@1.2.7/es7-types.luau"
             },
             "instance-of": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_collections@1.2.7/instance-of.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_collections@1.2.7/instance-of.luau"
             }
           },
           "jsdotlua_console@1.2.7": {
             "$className": "Folder",
             "console": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_console@1.2.7/console/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_console@1.2.7/console"
             },
             "collections": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_console@1.2.7/collections.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_console@1.2.7/collections.luau"
             }
           },
           "jsdotlua_es7-types@1.2.7": {
             "$className": "Folder",
             "es7-types": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_es7-types@1.2.7/es7-types/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_es7-types@1.2.7/es7-types.luau"
             }
           },
           "jsdotlua_instance-of@1.2.7": {
             "$className": "Folder",
             "instance-of": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_instance-of@1.2.7/instance-of/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_instance-of@1.2.7/instance-of"
             }
           },
           "jsdotlua_luau-polyfill@1.2.7": {
             "$className": "Folder",
             "luau-polyfill": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/luau-polyfill/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/luau-polyfill"
             },
             "boolean": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/boolean.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/boolean.luau"
             },
             "collections": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/collections.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/collections.luau"
             },
             "console": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/console.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/console.luau"
             },
             "es7-types": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/es7-types.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/es7-types.luau"
             },
             "instance-of": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/instance-of.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/instance-of.luau"
             },
             "math": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/math.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/math.luau"
             },
             "number": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/number.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/number.luau"
             },
             "string": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/string.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/string.luau"
             },
             "symbol-luau": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/symbol-luau.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/symbol-luau.luau"
             },
             "timers": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/timers.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_luau-polyfill@1.2.7/timers.luau"
             }
           },
           "jsdotlua_math@1.2.7": {
             "$className": "Folder",
             "math": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_math@1.2.7/math/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_math@1.2.7/math"
             }
           },
           "jsdotlua_number@1.2.7": {
             "$className": "Folder",
             "number": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_number@1.2.7/number/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_number@1.2.7/number"
             }
           },
           "jsdotlua_promise@3.5.2": {
             "$className": "Folder",
             "promise": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_promise@3.5.2/promise/lib"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_promise@3.5.2/promise"
             }
           },
           "jsdotlua_react-reconciler@17.2.1": {
             "$className": "Folder",
             "react-reconciler": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-reconciler@17.2.1/react-reconciler/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-reconciler@17.2.1/react-reconciler"
             },
             "luau-polyfill": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-reconciler@17.2.1/luau-polyfill.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-reconciler@17.2.1/luau-polyfill.luau"
             },
             "promise": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-reconciler@17.2.1/promise.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-reconciler@17.2.1/promise.luau"
             },
             "react": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-reconciler@17.2.1/react.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-reconciler@17.2.1/react.luau"
             },
             "scheduler": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-reconciler@17.2.1/scheduler.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-reconciler@17.2.1/scheduler.luau"
             },
             "shared": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-reconciler@17.2.1/shared.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-reconciler@17.2.1/shared.luau"
             }
           },
           "jsdotlua_react-roblox@17.2.1": {
             "$className": "Folder",
             "react-roblox": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-roblox@17.2.1/react-roblox/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-roblox@17.2.1/react-roblox"
             },
             "luau-polyfill": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-roblox@17.2.1/luau-polyfill.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-roblox@17.2.1/luau-polyfill.luau"
             },
             "react-reconciler": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-roblox@17.2.1/react-reconciler.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-roblox@17.2.1/react-reconciler.luau"
             },
             "react": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-roblox@17.2.1/react.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-roblox@17.2.1/react.luau"
             },
             "scheduler": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-roblox@17.2.1/scheduler.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-roblox@17.2.1/scheduler.luau"
             },
             "shared": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-roblox@17.2.1/shared.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react-roblox@17.2.1/shared.luau"
             }
           },
           "jsdotlua_react@17.2.1": {
             "$className": "Folder",
             "react": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react@17.2.1/react/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react@17.2.1/react"
             },
             "luau-polyfill": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react@17.2.1/luau-polyfill.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react@17.2.1/luau-polyfill.luau"
             },
             "shared": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react@17.2.1/shared.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_react@17.2.1/shared.luau"
             }
           },
           "jsdotlua_scheduler@17.2.1": {
             "$className": "Folder",
             "scheduler": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_scheduler@17.2.1/scheduler/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_scheduler@17.2.1/scheduler"
             },
             "luau-polyfill": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_scheduler@17.2.1/luau-polyfill.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_scheduler@17.2.1/luau-polyfill.luau"
             },
             "shared": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_scheduler@17.2.1/shared.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_scheduler@17.2.1/shared.luau"
             }
           },
           "jsdotlua_shared@17.2.1": {
             "$className": "Folder",
             "shared": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_shared@17.2.1/shared/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_shared@17.2.1/shared"
             },
             "luau-polyfill": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_shared@17.2.1/luau-polyfill.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_shared@17.2.1/luau-polyfill.luau"
             }
           },
           "jsdotlua_string@1.2.7": {
             "$className": "Folder",
             "string": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_string@1.2.7/string/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_string@1.2.7/string"
             },
             "es7-types": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_string@1.2.7/es7-types.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_string@1.2.7/es7-types.luau"
             },
             "number": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_string@1.2.7/number.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_string@1.2.7/number.luau"
             }
           },
           "jsdotlua_symbol-luau@1.0.1": {
             "$className": "Folder",
             "symbol-luau": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_symbol-luau@1.0.1/symbol-luau/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_symbol-luau@1.0.1/symbol-luau"
             }
           },
           "jsdotlua_timers@1.2.7": {
             "$className": "Folder",
             "timers": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_timers@1.2.7/timers/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_timers@1.2.7/timers"
             },
             "collections": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_timers@1.2.7/collections.lua"
+              "$path": "src/ReplicatedStorage/Packages/_Index/jsdotlua_timers@1.2.7/collections.luau"
             }
           },
           "sleitnick_signal@2.0.3": {
@@ -233,136 +231,126 @@
           "ukendio_jecs@0.1.0": {
             "$className": "Folder",
             "jecs": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/ukendio_jecs@0.1.0/jecs/lib"
+              "$path": "src/ReplicatedStorage/Packages/_Index/ukendio_jecs@0.1.0/jecs.luau"
             }
           },
           "howmanysmall_janitor@1.18.3": {
             "$className": "Folder",
             "janitor": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/howmanysmall_janitor@1.18.3/janitor/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/howmanysmall_janitor@1.18.3/janitor"
             }
           },
           "evaera_promise@4.0.0": {
             "$className": "Folder",
             "promise": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/evaera_promise@4.0.0/promise/lib"
+              "$path": "src/ReplicatedStorage/Packages/_Index/evaera_promise@4.0.0/promise"
             }
           },
           "ophidiedev_replica@0.2.0": {
             "$className": "Folder",
             "replica": {
-              "$path": "src/ReplicatedStorage/Packages/_Index/ophidiedev_replica@0.2.0/replica/src"
+              "$path": "src/ReplicatedStorage/Packages/_Index/ophidiedev_replica@0.2.0/replica"
             }
           }
         },
         "bytenet-max": {
-          "$path": "src/ReplicatedStorage/Packages/bytenet-max.lua"
+          "$path": "src/ReplicatedStorage/Packages/bytenet-max.luau"
         },
         "jecs": {
-          "$path": "src/ReplicatedStorage/Packages/jecs.lua"
+          "$path": "src/ReplicatedStorage/Packages/jecs.luau"
         },
         "react": {
-          "$path": "src/ReplicatedStorage/Packages/react.lua"
+          "$path": "src/ReplicatedStorage/Packages/react.luau"
         },
         "ReactRoblox": {
-          "$path": "src/ReplicatedStorage/Packages/ReactRoblox.lua"
+          "$path": "src/ReplicatedStorage/Packages/ReactRoblox.luau"
         },
         "signal": {
-          "$path": "src/ReplicatedStorage/Packages/signal.lua"
+          "$path": "src/ReplicatedStorage/Packages/signal.luau"
         },
         "janitor": {
-          "$path": "src/ReplicatedStorage/Packages/janitor.lua"
+          "$path": "src/ReplicatedStorage/Packages/janitor.luau"
         },
         "Promise": {
-          "$path": "src/ReplicatedStorage/Packages/Promise.lua"
+          "$path": "src/ReplicatedStorage/Packages/Promise.luau"
         },
         "replica": {
-          "$path": "src/ReplicatedStorage/Packages/replica.lua"
+          "$path": "src/ReplicatedStorage/Packages/replica.luau"
         }
       },
-
       "ECS": {
         "$path": "src/ReplicatedStorage/ECS"
       },
-
       "CharacterUtilities": {
         "$path": "src/ReplicatedStorage/CharacterUtilities"
       },
-
       "Libraries": {
         "$path": "src/ReplicatedStorage/Libraries"
       },
-
       "Modules": {
         "$path": "src/ReplicatedStorage/Modules"
       },
-
       "Network": {
         "$path": "src/ReplicatedStorage/Network"
       },
-
       "Progression": {
         "$path": "src/ReplicatedStorage/Progression"
       },
-
-      "EnvironmentShared": {
-        "$path": "src/ReplicatedStorage/EnvironmentShared"
+      "Shared": {
+        "$path": "src/ReplicatedStorage/Shared"
       },
-
       "BuildService": {
         "$path": "src/ReplicatedStorage/BuildService"
       }
     },
-
     "ServerScriptService": {
       "AI": {
         "$path": "src/ServerScriptService/AI"
       },
-
       "Bootstrap": {
         "$path": "src/ServerScriptService/Bootstrap"
       },
-
       "Classes": {
         "$path": "src/ServerScriptService/Classes"
       },
-
       "DataManager": {
         "$path": "src/ServerScriptService/DataManager"
       },
-
       "Gameplay": {
         "$path": "src/ServerScriptService/Gameplay"
       },
-
       "Libraries": {
         "$path": "src/ServerScriptService/Libraries"
       },
-
       "Modules": {
         "$path": "src/ServerScriptService/Modules"
       },
-
       "Services": {
         "$path": "src/ServerScriptService/Services"
       },
-
       "Utilities": {
         "$path": "src/ServerScriptService/Utilities"
       },
-
       "ECS": {
         "$path": "src/ServerScriptService/ECS"
       }
     },
-
     "ServerStorage": {
       "Stories": {
         "$path": "src/ServerStorage/Stories"
       }
     },
-
     "StarterPlayer": {
+
+
+
+
+
+
+
+
+
+
       "StarterPlayerScripts": {
         "Loader": {
           "$path": "src/StarterPlayer/StarterPlayerScripts/Loader.client.luau"
@@ -370,6 +358,7 @@
         "InventoryClient": {
           "$path": "src/StarterPlayer/StarterPlayerScripts/InventoryClient"
         },
+       
         "Systems": {
           "$path": "src/StarterPlayer/StarterPlayerScripts/Systems"
         },
@@ -380,19 +369,15 @@
           "$path": "src/StarterPlayer/StarterPlayerScripts/Settings"
         }
       },
-
       "StarterCharacterScripts": {
         "BaseCharacterSystems": {
           "$path": "src/StarterPlayer/StarterCharacterScripts/BaseCharacterSystems"
         }
       }
     },
-
     "Lighting": {
-      "$properties": {
-      }
+      "$properties": {}
     },
-
     "SoundService": {
       "$properties": {
         "RespectFilteringEnabled": true

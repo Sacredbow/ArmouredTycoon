@@ -6,7 +6,6 @@ local BuildCatalog = require(ReplicatedStorage.BuildService.BuildCatalog)
 local GridState = require(script.GridState)
 local BuildSpawner = require(script.BuildSpawner)
 local ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
-local Diagnostics = require(ServerScriptService.Utilities.ServerDiagnostics)
 
 local BuildService = {}
 BuildService.__index = BuildService
@@ -43,12 +42,12 @@ function BuildService:Init()
 		action.Parent = remotes
 	end
 
-	Diagnostics.invariant(action:IsA("RemoteFunction"), "BuildService", "Remotes.BuildAction must be a RemoteFunction");
+warn(`[BuildService] Remotes.BuildAction must be a RemoteFunction`);
 	(action :: RemoteFunction).OnServerInvoke = function(player: Player, request: string, payload)
 		local now = os.clock()
 		local lastRequest = self.LastRequests[player] or 0
 		if now - lastRequest < 0.05 then
-			Diagnostics.reject(player, "BuildAction", "Request rate exceeded", 2)
+			warn(`[BuildService] {player.Name} exceeded request rate`)
 			return false, "Please wait before trying again."
 		end
 		self.LastRequests[player] = now
@@ -61,7 +60,7 @@ function BuildService:Init()
 			return self:Remove(player, payload)
 		end
 
-		Diagnostics.reject(player, "BuildAction", `Unknown action: {tostring(request)}`)
+		warn(`[BuildService] {player.Name} sent unknown action: {tostring(request)}`)
 		return false, "Unknown build action."
 	end
 end
@@ -104,7 +103,7 @@ function BuildService:_stateFor(tycoon)
 	if not compound then
 		if not self.MissingCompounds[tycoon] then
 			self.MissingCompounds[tycoon] = true
-			Diagnostics.report("BuildService", `Tycoon {tycoon.Model:GetFullName()} is missing its required Compound part`)
+			warn(`[BuildService] Tycoon {tycoon.Model:GetFullName()} is missing its required Compound part`)
 		end
 		return nil
 	end
@@ -161,11 +160,11 @@ function BuildService:Place(player: Player, payload)
 	local gridYValue = tonumber(payload.GridY)
 	local rotationValue = tonumber(payload.Rotation)
 	if #buildId > 64 or #tierName > 32 then
-		Diagnostics.reject(player, "BuildAction", "Build or tier identifier exceeded its size limit")
+		warn(`[BuildService] {player.Name} build/tier identifier exceeded size limit`)
 		return false, "Invalid build request."
 	end
 	if not isFiniteNumber(gridXValue) or not isFiniteNumber(gridYValue) or not isFiniteNumber(rotationValue) then
-		Diagnostics.reject(player, "BuildAction", "Placement coordinates were missing or non-finite")
+		warn(`[BuildService] {player.Name} placement coordinates were missing or non-finite`)
 		return false, "Invalid placement coordinates."
 	end
 	local gridX = math.floor(gridXValue)
@@ -313,20 +312,10 @@ function BuildService:RestorePlayer(player: Player, tycoon)
 				state:Add(placement)
 				self.Spawner:Spawn(tycoon, placement, state.Compound, state.CellSize)
 			else
-				Diagnostics.reportThrottled(
-					"BuildService",
-					`tombstone:{player.UserId}:{tostring(placement.Guid)}`,
-					`Skipped invalid saved placement {tostring(placement.Guid)} for {player.Name}`,
-					60
-				)
+				warn(`[BuildService] Skipped invalid saved placement {tostring(placement.Guid)} for {player.Name}`)
 			end
 		else
-			Diagnostics.reportThrottled(
-				"BuildService",
-				`corrupt:{player.UserId}`,
-				`Skipped malformed saved build data for {player.Name}`,
-				60
-			)
+			warn(`[BuildService] Skipped malformed saved build data for {player.Name}`)
 		end
 	end
 end

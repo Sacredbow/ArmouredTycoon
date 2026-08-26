@@ -6,7 +6,7 @@ info: Weather script that handles 30+ different weathers.
 
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ClientSignals = require(ReplicatedStorage.Network.ClientSignals)
+local Packets = require(ReplicatedStorage.Network.Packets)
 local Lighting = game:GetService("Lighting")
 
 local ECS = require(ReplicatedStorage.ECS)
@@ -644,7 +644,7 @@ function WeatherModule:ChangeWeather(weatherName: string)
 	end
 
 
-	ClientSignals.SendAll("WeatherChanged", `{weatherName}:{weatherConfig.Name}:{weatherConfig.Duration}`)
+	Packets.packets.WeatherChanged.sendToAll({ weatherId = weatherName, displayName = weatherConfig.Name, duration = weatherConfig.Duration })
 
 	return true
 end
@@ -1581,3 +1581,4 @@ function WeatherModule:CreateHeatDistortion()
 end
 
 return WeatherModule
+

@@ -77,7 +77,7 @@ function Runtime.findMuzzle(player: Player, weapon: Instance?): Attachment?
 	for _, name in ipairs(MUZZLE_PART_NAMES) do
 		local part = weaponModel:FindFirstChild(name, true)
 		if part and part:IsA("BasePart") then
-+-			local attachment = part:FindFirstChild("GeneratedMuzzleAttachment")
+			local attachment = part:FindFirstChild("GeneratedMuzzleAttachment")
 			if attachment and attachment:IsA("Attachment") then
 				return attachment
 			end

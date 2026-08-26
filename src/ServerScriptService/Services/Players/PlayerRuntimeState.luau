@@ -3,7 +3,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local ClientSignals = require(ReplicatedStorage.Network.ClientSignals)
+local Packets = require(ReplicatedStorage.Network.Packets)
 
 export type State = {
 	Multiplier: number,
@@ -12,15 +12,17 @@ export type State = {
 	CanRebirth: boolean,
 	AntiCheatTeleportGraceUntil: number,
 	Surrender: boolean,
+	GamepassOwnership: { [number]: boolean },
 }
 
-local DEFAULT_STATE: State = {
+local DefaultState: State = {
 	Multiplier = 1,
 	Power = false,
 	ArmourEquipped = false,
 	CanRebirth = false,
 	AntiCheatTeleportGraceUntil = 0,
 	Surrender = false,
+	GamepassOwnership = {},
 }
 
 local StatesByPlayer: { [Player]: State } = {}
@@ -28,7 +30,7 @@ local StatesByPlayer: { [Player]: State } = {}
 local PlayerRuntimeState = {}
 
 local function cloneDefaults(): State
-	return table.clone(DEFAULT_STATE) :: State
+	return table.clone(DefaultState) :: State
 end
 
 function PlayerRuntimeState.Get(player: Player): State
@@ -47,10 +49,10 @@ end
 
 function PlayerRuntimeState.ResetTycoonState(player: Player)
 	local state = PlayerRuntimeState.Get(player)
-	state.Multiplier = DEFAULT_STATE.Multiplier
-	state.Power = DEFAULT_STATE.Power
-	state.ArmourEquipped = DEFAULT_STATE.ArmourEquipped
-	PlayerRuntimeState.SetCanRebirth(player, DEFAULT_STATE.CanRebirth)
+	state.Multiplier = DefaultState.Multiplier
+	state.Power = DefaultState.Power
+	state.ArmourEquipped = DefaultState.ArmourEquipped
+	PlayerRuntimeState.SetCanRebirth(player, DefaultState.CanRebirth)
 end
 
 function PlayerRuntimeState.GetMultiplier(player: Player): number
@@ -88,7 +90,7 @@ function PlayerRuntimeState.SetCanRebirth(player: Player, value: boolean)
 	end
 
 	state.CanRebirth = value
-	ClientSignals.Send(player, "CanRebirth", value)
+	Packets.packets.GameEvent.sendTo({ ["type"] = "CanRebirth", valueBoolean = value }, player)
 end
 
 function PlayerRuntimeState.GetAntiCheatTeleportGraceUntil(player: Player): number
@@ -105,6 +107,14 @@ end
 
 function PlayerRuntimeState.SetSurrendering(player: Player, value: boolean)
 	PlayerRuntimeState.Get(player).Surrender = value
+end
+
+function PlayerRuntimeState.HasGamepassOwned(player: Player, gamepassId: number): boolean
+	return PlayerRuntimeState.Get(player).GamepassOwnership[gamepassId] == true
+end
+
+function PlayerRuntimeState.SetGamepassOwned(player: Player, gamepassId: number, value: boolean)
+	PlayerRuntimeState.Get(player).GamepassOwnership[gamepassId] = value
 end
 
 Players.PlayerRemoving:Connect(function(player)

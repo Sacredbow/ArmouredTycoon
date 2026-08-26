@@ -1,4 +1,3 @@
-
 local Lighting = game:GetService("Lighting")
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
@@ -8,9 +7,9 @@ local UserInputService = game:GetService("UserInputService")
 
 local React = require(ReplicatedStorage.Packages.react)
 
-local QuestOptions = require(ReplicatedStorage.Progression.Quests.QuestOptions)
+local QuestOptions = require(ReplicatedStorage.Progression.QuestOptions)
 local useGameStore = require(script.Parent.Parent.store.useGameStore)
-local ClientSignals = require(ReplicatedStorage.Network.ClientSignals)
+local Packets = require(ReplicatedStorage.Network.Packets)
 
 local e = React.createElement
 
@@ -99,18 +98,21 @@ local function setBlur(size: number)
 	end
 end
 
-local InterfaceModules = script.Parent.MainInterfaceModules
-local InterfaceKit = require(InterfaceModules.InterfaceKit)
-local CurrencyHud = require(InterfaceModules.CurrencyHud)
-local ItemMenu = require(InterfaceModules.NavigationMenu)
-local ShopPanel = require(InterfaceModules.ShopPanel)
-local CodesPanel = require(InterfaceModules.CodesPanel)
-local LootboxPanel = require(InterfaceModules.LootboxPanel)
-local ProfilePanel = require(InterfaceModules.ProfilePanel)
-local QuestPanels = require(InterfaceModules.QuestPanels)
-local RebirthPanels = require(InterfaceModules.RebirthPanels)
-local LevelUpPresentation = require(InterfaceModules.LevelUpPresentation)
-local SettingsPanel = require(InterfaceModules.SettingsPanel)
+local CommerceModules = script.Parent.Commerce
+local PlayerModules = script.Parent.Player
+local ProgressionModules = script.Parent.Progression
+local NavigationModules = script.Parent.Navigation
+local InterfaceKit = require(script.Parent.Kit.InterfaceKit)
+
+local ItemMenu = require(NavigationModules.NavigationMenu)
+local ShopPanel = require(CommerceModules.ShopPanel)
+local CodesPanel = require(CommerceModules.CodesPanel)
+local LootboxPanel = require(CommerceModules.LootboxPanel)
+local ProfilePanel = require(PlayerModules.ProfilePanel)
+local QuestPanels = require(ProgressionModules.QuestPanels)
+local RebirthPanels = require(PlayerModules.RebirthPanels)
+local LevelUpPresentation = require(ProgressionModules.LevelUpPresentation)
+local SettingsPanel = require(NavigationModules.SettingsPanel)
 
 local QuestsPanel = QuestPanels.Quests
 local DailyPanel = QuestPanels.Daily
@@ -120,6 +122,8 @@ local corner = InterfaceKit.Corner
 local noticeGradient = InterfaceKit.NoticeGradient
 local solidButton = InterfaceKit.SolidButton
 local SwatGamepassId = 1573236427
+
+local store = require(script.Parent.Parent.store.GameStore).get()
 
 local function MainInterface(props: MainInterfaceProps)
 	local resolvedProps: { stats: Stats?, profile: ProfileState? } = props or {
@@ -200,10 +204,13 @@ local function MainInterface(props: MainInterfaceProps)
 		end
 
 		connectCamera(workspace.CurrentCamera)
-		table.insert(connections, workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-			connectCamera(workspace.CurrentCamera)
-			updateScale()
-		end))
+		table.insert(
+			connections,
+			workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+				connectCamera(workspace.CurrentCamera)
+				updateScale()
+			end)
+		)
 		updateScale()
 
 		return function()
@@ -213,10 +220,11 @@ local function MainInterface(props: MainInterfaceProps)
 		end
 	end, {})
 
+	-- Replaces the old ClientSignals.Listen(kind == "CanRebirth") branch.
 	React.useEffect(function()
-		local connection = ClientSignals.Listen(function(kind: string, value: any?)
-			if kind == "CanRebirth" then
-				setCanRebirth(value == true)
+		local connection = Packets.packets.GameEvent.listen(function(data)
+			if data.type == "CanRebirth" then
+				setCanRebirth(true)
 			end
 		end)
 
@@ -267,7 +275,11 @@ local function MainInterface(props: MainInterfaceProps)
 			local localPlayer = Players.LocalPlayer
 			local scopedUser = (localPlayer :: any).User or localPlayer.UserId
 			local ok, content = pcall(function()
-				return Players:GetUserThumbnailAsync(scopedUser, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+				return Players:GetUserThumbnailAsync(
+					scopedUser,
+					Enum.ThumbnailType.HeadShot,
+					Enum.ThumbnailSize.Size420x420
+				)
 			end)
 			if ok then
 				setProfileImage(content)
@@ -275,33 +287,28 @@ local function MainInterface(props: MainInterfaceProps)
 		end)
 	end, {})
 
+	-- Replaces the old second ClientSignals.Listen block.
+	-- "Rain" removed: GameStore's Weather listener already owns that notification.
+	-- "Teleporting" removed: GameStore's messageByKind now owns that notification.
+	-- NotFollowing / Prompt / SystemMessage remain here since they're UI actions,
+	-- not toasts, and GameStore explicitly ignores these types for that reason.
 	React.useEffect(function()
-		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-		local connections = {}
-
-		table.insert(connections, ClientSignals.Listen(function(request, value)
-			if request == "NotFollowing" then
+		local connection = Packets.packets.GameEvent.listen(function(data)
+			if data.type == "NotFollowing" then
 				setMenuOpen(false)
 				setModal("Lootbox")
-			elseif request == "Prompt" then
+			elseif data.type == "Prompt" then
 				MarketplaceService:PromptGamePassPurchase(Players.LocalPlayer, SwatGamepassId)
-			elseif request == "Rain" then
-				local store = require(script.Parent.Parent.store.GameStore).get()
-				local typedStore: any = store
-				typedStore:PushNotification("info", "Rain is moving through the area.", 4)
-			elseif request == "SystemMessage" and typeof(value) == "string" then
+			elseif data.type == "SystemMessage" and data.message then
 				local general = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
 				if general then
-					general:DisplaySystemMessage(value)
+					general:DisplaySystemMessage(data.message)
 				end
 			end
-		end))
-
+		end)
 
 		return function()
-			for _, connection in ipairs(connections) do
-				connection:Disconnect()
-			end
+			connection:Disconnect()
 		end
 	end, {})
 
@@ -359,21 +366,11 @@ local function MainInterface(props: MainInterfaceProps)
 			return
 		end
 
-		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-		local redeemFunction = remotes and remotes:FindFirstChild("CodeServiceFunction")
-		if not redeemFunction or not redeemFunction:IsA("RemoteFunction") then
-			setFeedbackText("Codes are unavailable.")
-			setFeedbackColor(Color3.fromRGB(255, 0, 0))
-			return
-		end
-
-		local success = false
-		local message = nil
-		local ok = pcall(function()
-			success, message = redeemFunction:InvokeServer(codeText)
+		local ok, result = pcall(function()
+			return Packets.queries.RedeemCode.invoke({ code = codeText })
 		end)
 
-		if ok and success then
+		if ok and result then
 			if codeText == "R3L3ASE" then
 				setFeedbackText("Earned $5000!")
 			elseif codeText == "STARTER" then
@@ -386,7 +383,7 @@ local function MainInterface(props: MainInterfaceProps)
 			setFeedbackColor(Color3.fromRGB(0, 170, 0))
 			setCodeText("")
 		else
-			setFeedbackText(tostring(message or "Already redeemed or invalid code."))
+			setFeedbackText(tostring((result or {}).message or "Already redeemed or invalid code."))
 			setFeedbackColor(Color3.fromRGB(255, 0, 0))
 		end
 
@@ -396,73 +393,47 @@ local function MainInterface(props: MainInterfaceProps)
 	end
 
 	local function invokeProfileAction(action: string, payload: any?)
-		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-		local profileAction = remotes and remotes:FindFirstChild("ProfileAction")
-		if not profileAction or not profileAction:IsA("RemoteFunction") then
-			local store = require(script.Parent.Parent.store.GameStore).get()
-			local typedStore: any = store
-			typedStore:PushNotification("error", "Profile rewards are unavailable.")
-			return
-		end
+		local store = require(script.Parent.Parent.store.GameStore).get()
 
-		local success = false
-		local message = "Unable to claim reward."
-		local ok = pcall(function()
-			success, message = profileAction:InvokeServer(action, payload)
+		local ok, result = pcall(function()
+			return Packets.queries.ProfileAction.invoke({
+				action = action,
+				payload = if type(payload) == "string" then payload else nil,
+			})
 		end)
 
-		local store = require(script.Parent.Parent.store.GameStore).get()
-		local typedStore: any = store
-		if ok and success then
-			typedStore:PushNotification("success", tostring(message))
+		if ok and result then
+			if result.success then
+				store:PushNotification("success", tostring(result.message))
+			else
+				store:PushNotification("error", tostring(result.message))
+			end
 		else
-			typedStore:PushNotification("error", tostring(message))
+			store:PushNotification("error", "Profile rewards are unavailable.")
 		end
 	end
 
 	local function invokeTycoonAction(action: string)
-		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-		local tycoonAction = remotes and remotes:FindFirstChild("TycoonAction")
-		if not tycoonAction or not tycoonAction:IsA("RemoteFunction") then
-			local store = require(script.Parent.Parent.store.GameStore).get()
-			local typedStore: any = store
-			typedStore:PushNotification("error", "Tycoon actions are unavailable.")
-			return
-		end
+		local store = require(script.Parent.Parent.store.GameStore).get()
 
-		local success = false
-		local message = "Unable to perform tycoon action."
-		local ok = pcall(function()
-			success, message = tycoonAction:InvokeServer(action)
+		local ok, result = pcall(function()
+			return Packets.queries.TycoonAction.invoke({ action = action })
 		end)
 
-		local store = require(script.Parent.Parent.store.GameStore).get()
-		local typedStore: any = store
-		if ok and success then
-			typedStore:PushNotification("success", tostring(message))
-			setModal("None")
-			setBlur(0)
+		if ok and result then
+			if result.success then
+				store:PushNotification("success", tostring(result.message))
+				setModal("None")
+				setBlur(0)
+			else
+				store:PushNotification("error", tostring(result.message))
+			end
 		else
-			typedStore:PushNotification("error", tostring(message))
+			store:PushNotification("error", "Tycoon actions are unavailable.")
 		end
 	end
 
 	return e(React.Fragment, nil, {
-		-- Currency HUD migrated to Workspace-based GUI (Hud/Shop/Components/Currency)
-		-- Currency = e(CurrencyHud, {
-		-- 	stats = stats,
-		-- 	hidden = modal == "Profile",
-		-- 	uiScale = uiScale,
-		-- 	openShop = openShop,
-		-- 	openMenu = function()
-		-- 		if modal ~= "None" then
-		-- 			return
-		-- 		end
-		-- 		setMenuOpen(true)
-		-- 		setBlur(24)
-		-- 	end,
-		-- 	openStats = openStats,
-		-- }),
 		Menu = e(ItemMenu, {
 			open = menuOpen,
 			uiScale = uiScale,
@@ -582,6 +553,3 @@ local function MainInterface(props: MainInterfaceProps)
 end
 
 return MainInterface
-
-
-

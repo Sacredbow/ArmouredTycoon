@@ -14,6 +14,14 @@ PlayerService.__index = PlayerService
 
 local TELEPORT_GRACE_DURATION = 2
 
+-- State name constants for StateManager
+local STATES = {
+	X2 = "X2",
+	Electrified = "Electrified",
+	FriendBoost = "FriendBoost",
+	RocketActivated = "RocketActivated",
+}
+
 function PlayerService.new()
 	local self = setmetatable({}, PlayerService)
 	self.PlayerStates = {} :: {[Player]: typeof(StateManager.new(nil :: any))}
@@ -138,40 +146,40 @@ end
 
 -- X2
 function PlayerService:HasX2(player: Player): boolean
-	return self.PlayerStates[player]:HasState("X2")
+	return self.PlayerStates[player]:HasState(STATES.X2)
 end
 
 function PlayerService:SetX2(player: Player, value: boolean)
 	if value then
-		self.PlayerStates[player]:SetState("X2")
+		self.PlayerStates[player]:SetState(STATES.X2)
 	else
-		self.PlayerStates[player]:RemoveState("X2")
+		self.PlayerStates[player]:RemoveState(STATES.X2)
 	end
 end
 
 -- Electrified
 function PlayerService:IsElectrified(player: Player): boolean
-	return self.PlayerStates[player]:HasState("Electrified")
+	return self.PlayerStates[player]:HasState(STATES.Electrified)
 end
 
 function PlayerService:SetElectrified(player: Player, value: boolean)
 	if value then
-		self.PlayerStates[player]:SetState("Electrified")
+		self.PlayerStates[player]:SetState(STATES.Electrified)
 	else
-		self.PlayerStates[player]:RemoveState("Electrified")
+		self.PlayerStates[player]:RemoveState(STATES.Electrified)
 	end
 end
 
 -- FriendBoost
 function PlayerService:HasFriendBoost(player: Player): boolean
-	return self.PlayerStates[player]:HasState("FriendBoost")
+	return self.PlayerStates[player]:HasState(STATES.FriendBoost)
 end
 
 function PlayerService:SetFriendBoost(player: Player, value: boolean)
 	if value then
-		self.PlayerStates[player]:SetState("FriendBoost")
+		self.PlayerStates[player]:SetState(STATES.FriendBoost)
 	else
-		self.PlayerStates[player]:RemoveState("FriendBoost")
+		self.PlayerStates[player]:RemoveState(STATES.FriendBoost)
 	end
 end
 
@@ -185,14 +193,14 @@ end
 
 -- Rocket
 function PlayerService:HasActivated(player: Player): boolean
-	return self.PlayerStates[player]:HasState("RocketActivated")
+	return self.PlayerStates[player]:HasState(STATES.RocketActivated)
 end
 
 function PlayerService:ActivateRocket(player: Player, value: boolean)
 	if value then
-		self.PlayerStates[player]:SetState("RocketActivated")
+		self.PlayerStates[player]:SetState(STATES.RocketActivated)
 	else
-		self.PlayerStates[player]:RemoveState("RocketActivated")
+		self.PlayerStates[player]:RemoveState(STATES.RocketActivated)
 	end
 end
 

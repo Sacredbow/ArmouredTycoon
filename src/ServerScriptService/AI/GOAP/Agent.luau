@@ -1,16 +1,29 @@
 --!strict
+--[[
+	@class Agent
 
-local Types = require(script.Parent.Types)
-local Planner = require(script.Parent.Planner)
+	@desc
+	GOAP agent — holds a blackboard, a planner instance, a current plan,
+	and a goal. Runs the plan one action at a time via Step/Think.
+]]
 
-local Agent = {}
-Agent.__index = Agent
+--// Modules
+
+const Types = require(script.Parent.Types)
+const Planner = require(script.Parent.Planner)
+
+--// Types
 
 type Action = Types.Action
 type ActionContext = Types.ActionContext
 type Plan = Types.Plan
 type WorldState = Types.WorldState
 type PlannerInstance = typeof(Planner.new())
+
+--// Module
+
+local Agent = {}
+Agent.__index = Agent
 
 export type Agent = typeof(setmetatable({} :: {
 	_npc: Model,
@@ -19,6 +32,8 @@ export type Agent = typeof(setmetatable({} :: {
 	_plan: Plan?,
 	_goal: WorldState?,
 }, Agent))
+
+--// Constructor
 
 function Agent.new(npc: Model, maxDepth: number?): Agent
 	return setmetatable({
@@ -29,6 +44,8 @@ function Agent.new(npc: Model, maxDepth: number?): Agent
 		_goal = nil,
 	}, Agent)
 end
+
+--// Public API
 
 function Agent:AddAction(action: Action)
 	self._planner:AddAction(action)

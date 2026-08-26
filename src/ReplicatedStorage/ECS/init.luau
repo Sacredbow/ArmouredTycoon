@@ -1,99 +1,125 @@
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+--!strict
+--[[
+	@class ECS
 
-local jecs = require(ReplicatedStorage.Packages.jecs)
+	@desc
+	Minimal jecs wrapper. Owns the shared ECS world (server + client),
+	defines every component ahead of time, and exposes typed helpers
+	for entity/component CRUD. The returned table and component map are
+	frozen to prevent accidental mutation at runtime.
+]]
 
-local world = jecs.World.new()
+--// Services
 
-local Components = {
-	Name = world:component(),
-	Model = world:component(),
-	Owner = world:component(),
-	Tycoon = world:component(),
-	Transform = world:component(),
-	Velocity = world:component(),
-	Health = world:component(),
-	Lifetime = world:component(),
-	Producer = world:component(),
-	Projectile = world:component(),
-	Raycast = world:component(),
-	PreviousPosition = world:component(),
-	BuildItem = world:component(),
-	Button = world:component(),
-	Reveal = world:component(),
-	Purchased = world:component(),
-	Character = world:component(),
-	CharacterManager = world:component(),
-	RocketFlight = world:component(),
-	TimedEmitter = world:component(),
-	DamageRequest = world:component(),
-	WeaponRig = world:component(),
-	StanceState = world:component(),
-	NPCUpdate = world:component(),
-	ScheduledTask = world:component(),
-	EnvironmentClock = world:component(),
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+--// Modules
+
+const jecs = require(ReplicatedStorage.Packages.jecs)
+
+--// Constants
+
+const ComponentNames = {
+	"Name",
+	"Model",
+	"Owner",
+	"Tycoon",
+	"Transform",
+	"Velocity",
+	"Health",
+	"Lifetime",
+	"Producer",
+	"Projectile",
+	"Raycast",
+	"PreviousPosition",
+	"BuildItem",
+	"Button",
+	"Reveal",
+	"Purchased",
+	"Character",
+	"CharacterManager",
+	"RocketFlight",
+	"TimedEmitter",
+	"DamageRequest",
+	"WeaponRig",
+	"StanceState",
+	"NPCUpdate",
+	"ScheduledTask",
+	"EnvironmentClock",
 }
 
-local ECS = {}
+--// Module
+
+const World = jecs.World.new()
+const Components: { [string]: any } = {}
+
+for _, Name in ComponentNames do
+	Components[Name] = World:component()
+end
+
+const ECS = {}
 
 ECS.jecs = jecs
-ECS.world = world
+ECS.world = World
 ECS.Components = table.freeze(Components)
 
-function ECS.createEntity(componentData: {[string]: any}?): number
-	local entity = world:entity()
+--// Public API
 
-	if componentData then
-		for componentName, value in pairs(componentData) do
-			local component = Components[componentName]
-			if component then
-				world:set(entity, component, value)
+function ECS.createEntity(ComponentData: { [string]: any }?): number
+	const Entity = World:entity()
+
+	if ComponentData then
+		for ComponentName, Value in ComponentData do
+			const Component = Components[ComponentName]
+			if Component then
+				World:set(Entity, Component, Value)
 			else
-				warn(`[ECS] Unknown component "{componentName}"`)
+				warn(`[ECS] Unknown component "{ComponentName}"`)
 			end
 		end
 	end
 
-	return entity
+	return Entity
 end
 
-function ECS.deleteEntity(entity: number)
-	world:delete(entity)
+function ECS.deleteEntity(Entity: number)
+	World:delete(Entity)
 end
 
-function ECS.set(entity: number, componentName: string, value: any)
-	local component = Components[componentName]
-	if not component then
-		error(`[ECS] Unknown component "{componentName}"`)
+function ECS.set(Entity: number, ComponentName: string, Value: any)
+	const Component = Components[ComponentName]
+	if not Component then
+		error(`[ECS] Unknown component "{ComponentName}"`)
 	end
 
-	world:set(entity, component, value)
+	World:set(Entity, Component, Value)
 end
 
-function ECS.add(entity: number, componentName: string)
-	local component = Components[componentName]
-	if not component then
-		error(`[ECS] Unknown component "{componentName}"`)
+function ECS.add(Entity: number, ComponentName: string)
+	const Component = Components[ComponentName]
+	if not Component then
+		error(`[ECS] Unknown component "{ComponentName}"`)
 	end
 
-	world:add(entity, component)
+	World:add(Entity, Component)
 end
 
-function ECS.remove(entity: number, componentName: string)
-	local component = Components[componentName]
-	if not component then
-		error(`[ECS] Unknown component "{componentName}"`)
+function ECS.remove(Entity: number, ComponentName: string)
+	const Component = Components[ComponentName]
+	if not Component then
+		error(`[ECS] Unknown component "{ComponentName}"`)
 	end
 
-	world:remove(entity, component)
+	World:remove(Entity, Component)
 end
 
-function ECS.get(entity: number, componentName: string): any
-	local component = Components[componentName]
-	if not component then
-		error(`[ECS] Unknown component "{componentName}"`)
+function ECS.get(Entity: number, ComponentName: string): any
+	const Component = Components[ComponentName]
+	if not Component then
+		error(`[ECS] Unknown component "{ComponentName}"`)
 	end
 
-	return world:get(entity, component)
+	return World:get(Entity, Component)
 end
 
 return table.freeze(ECS)

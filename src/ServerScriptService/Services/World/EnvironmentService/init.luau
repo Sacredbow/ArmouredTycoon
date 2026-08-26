@@ -1,49 +1,95 @@
+--!strict
+--[[
+	@class EnvironmentService
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Lighting = game:GetService("Lighting")
-local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local LightningModule = require(script.LightningModule)
-local EnvironmentSchedule = require(script.EnvironmentSchedule)
-local EnvironmentShared = require(ReplicatedStorage.EnvironmentShared)
-local ECS = require(ReplicatedStorage.ECS)
+	@desc
+	Server-side day/night cycle and weather scheduler.
+	- Drives Lighting.ClockTime through an ECS EnvironmentClock entity.
+	- Blends between dawn/day/dusk/night lighting presets.
+	- Schedules weather changes via EnvironmentSchedule.
+	- Broadcasts the current weather state over the Weather packet.
+	- Animates street lights on/off via BuildAssemble.
+	- Triggers lightning storms during weather with thunderChance.
+]]
 
+--// Services
 
+const Lighting = game:GetService("Lighting")
+const Players = game:GetService("Players")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local EnvironmentService = {}
+--// Modules
 
-EnvironmentService.__index = EnvironmentService
+const EnvironmentShared = require(ReplicatedStorage.EnvironmentShared)
+const EnvironmentSchedule = require(script.EnvironmentSchedule)
+const LightningModule = require(script.LightningModule)
+const ECS = require(ReplicatedStorage.ECS)
 
-local FULL_DAY_LENGTH = 600  
-local currentTime = 6
-local timeSpeed = 24 / FULL_DAY_LENGTH  
+--// Constants
 
-local DAWN_START = 5
-local DAY_START = 6
-local DUSK_START = 16
-local NIGHT_START = 17
-local WEATHER_LIGHTING_TWEEN_TIME = 4
+const FULL_DAY_LENGTH = 600
+const TIME_SPEED = 24 / FULL_DAY_LENGTH
 
-local presets = {
-	night = {
+const DAWN_START = 5
+const DAY_START = 6
+const DUSK_START = 16
+const NIGHT_START = 17
+
+const WEATHER_LIGHTING_TWEEN_TIME = 4
+const STREET_LIGHT_STAGGER = 0.18
+const WEATHER_TICK_INTERVAL = 12
+const THUNDER_RADIUS = 400
+const DAY_START_HOUR = 6
+
+const SHOOTING_STAR_INTERVAL = 25
+const SHOOTING_STAR_CHANCE = 0.6
+const SHOOTING_STAR_IMPACT_CHANCE = 0.35
+const SHOOTING_STAR_ALTITUDE_MIN = 700
+const SHOOTING_STAR_ALTITUDE_MAX = 1200
+const SHOOTING_STAR_RADIUS = 900
+
+--// Types
+
+type LightingPreset = {
+	Brightness: number,
+	OutdoorAmbient: Color3,
+	Ambient: Color3,
+	FogEnd: number,
+}
+
+type WeatherPacketPayload = {
+	["type"]: string,
+	duration: number,
+	windDirection: Vector3,
+	windSpeed: number,
+	windPower: number,
+	rainIntensity: number,
+	thunderChance: number,
+	lightingWeight: number,
+}
+
+--// Lighting Presets
+
+const DayNightPresets: { [string]: LightingPreset } = {
+	Night = {
 		Brightness = 0.85,
 		OutdoorAmbient = Color3.fromRGB(92, 100, 132),
 		Ambient = Color3.fromRGB(118, 126, 164),
 		FogEnd = 5200,
 	},
-	dawn = {
+	Dawn = {
 		Brightness = 1,
 		OutdoorAmbient = Color3.fromRGB(100, 80, 70),
 		Ambient = Color3.fromRGB(150, 120, 100),
 		FogEnd = 4000,
 	},
-	day = {
+	Day = {
 		Brightness = 1.1,
 		OutdoorAmbient = Color3.fromRGB(128, 128, 128),
 		Ambient = Color3.fromRGB(255, 255, 255),
 		FogEnd = 7000,
 	},
-	dusk = {
+	Dusk = {
 		Brightness = 1.05,
 		OutdoorAmbient = Color3.fromRGB(112, 116, 136),
 		Ambient = Color3.fromRGB(166, 164, 178),
@@ -51,7 +97,7 @@ local presets = {
 	},
 }
 
-local weatherPresets = {
+const WeatherPresets: { [string]: LightingPreset } = {
 	Clear = {
 		Brightness = 1.1,
 		OutdoorAmbient = Color3.fromRGB(128, 128, 128),
@@ -84,121 +130,231 @@ local weatherPresets = {
 	},
 }
 
+--// Micro-Optimisations
 
+const math_clamp = math.clamp
+const math_random = math.random
 
-local function lerp(a, b, t)
-	return a + (b - a) * t
+--// Internal Utilities
+
+local function Lerp(A: number, B: number, T: number): number
+	return A + (B - A) * T
 end
 
-local function lerpColor(a, b, t)
-	return Color3.new(
-		lerp(a.R, b.R, t),
-		lerp(a.G, b.G, t),
-		lerp(a.B, b.B, t)
-	)
+local function LerpColor(A: Color3, B: Color3, T: number): Color3
+	return Color3.new(Lerp(A.R, B.R, T), Lerp(A.G, B.G, T), Lerp(A.B, B.B, T))
 end
 
-local function blend(a, b, t)
+local function Blend(A: LightingPreset, B: LightingPreset, T: number): LightingPreset
 	return {
-		Brightness = lerp(a.Brightness, b.Brightness, t),
-		OutdoorAmbient = lerpColor(a.OutdoorAmbient, b.OutdoorAmbient, t),
-		Ambient = lerpColor(a.Ambient, b.Ambient, t),
-		FogEnd = lerp(a.FogEnd, b.FogEnd, t),
+		Brightness = Lerp(A.Brightness, B.Brightness, T),
+		OutdoorAmbient = LerpColor(A.OutdoorAmbient, B.OutdoorAmbient, T),
+		Ambient = LerpColor(A.Ambient, B.Ambient, T),
+		FogEnd = Lerp(A.FogEnd, B.FogEnd, T),
 	}
 end
 
-local function blendWeather(base, weather, lightingWeight: number?)
-	if not weather then
-		return base
+local function BlendWeather(Base: LightingPreset, Weather: EnvironmentShared.WeatherState?, LightingWeight: number?): LightingPreset
+	if not Weather then
+		return Base
 	end
 
-	local target = weatherPresets[weather.kind]
-	if not target then
-		return base
+	const Target = WeatherPresets[Weather["type"]]
+	if not Target then
+		return Base
 	end
 
-	local weight = math.clamp(lightingWeight or weather.lightingWeight or 0, 0, 1)
-	return blend(base, target, weight)
+	const Weight = math_clamp(LightingWeight or Weather.lightingWeight or 0, 0, 1)
+	return Blend(Base, Target, Weight)
 end
 
-
-
-
-
-local lightsAreOn = false
-
-local function getOrCreateLightingEffect(className: string, name: string): Instance
-	local existing = Lighting:FindFirstChild(name)
-	if existing and existing.ClassName == className then
-		return existing
-	end
-
-	local effect = Instance.new(className)
-	effect.Name = name
-	effect.Parent = Lighting
-	return effect
+local function ToWeatherPacket(State: EnvironmentShared.WeatherState): WeatherPacketPayload
+	return {
+		["type"] = State["type"],
+		duration = State.duration,
+		windDirection = State.windDirection,
+		windSpeed = State.windSpeed,
+		windPower = State.windPower,
+		rainIntensity = State.rainIntensity,
+		thunderChance = State.thunderChance,
+		lightingWeight = State.lightingWeight,
+	}
 end
 
-local function setLightEffects(item: Instance, enabled: boolean)
-	for _, descendant in ipairs(item:GetDescendants()) do
-		if descendant:IsA("SurfaceLight") then
-			descendant.Brightness = enabled and 1 or 0
-		elseif descendant:IsA("PointLight") or descendant:IsA("SpotLight") then
-			descendant.Enabled = enabled
-		elseif descendant:IsA("Beam") then
-			descendant.Enabled = enabled
+local function SetLightEffects(Item: Instance, Enabled: boolean)
+	for _, Descendant in Item:GetDescendants() do
+		if Descendant:IsA("SurfaceLight") then
+			Descendant.Brightness = if Enabled then 1 else 0
+			Descendant.Enabled = Enabled
+			continue
+		end
+
+		if Descendant:IsA("PointLight") then
+			Descendant.Enabled = Enabled
+			continue
+		end
+
+		if Descendant:IsA("SpotLight") then
+			Descendant.Enabled = Enabled
+			continue
+		end
+
+		if Descendant:IsA("Beam") then
+			Descendant.Enabled = Enabled
 		end
 	end
 end
 
-function EnvironmentService:_SetStreetLights(enabled)
-	if lightsAreOn == enabled then return end
-	lightsAreOn = enabled
+--// Module
 
-	for _, prop in ipairs(self.Props:GetChildren()) do
-		if prop.Name == "StreetLights" and prop:IsA("Model") then
-			local lightGroups = prop:GetChildren()
-			for groupIndex, item in ipairs(lightGroups) do
-				if item:IsA("Model") or item:IsA("Folder") or item:IsA("BasePart") then
-					local delayTime = (groupIndex - 1) * 0.18
-					setLightEffects(item, false)
+local EnvironmentService = {}
+EnvironmentService.__index = EnvironmentService
 
-					if enabled and self.BuildAssemble then
-						self.BuildAssemble.Play(item, function()
-							setLightEffects(item, true)
-						end, {
-							includeHidden = true,
-							timingScale = 1.35 + (groupIndex % 3) * 0.18,
-							pieceBudget = 54,
-							maxPiecesPerPart = 3,
-							creationBatchSize = 10,
-							staggerPortion = 0.78,
-							initialDelay = delayTime,
-							settleFade = 0.22,
-						})
-					elseif enabled then
-						setLightEffects(item, true)
-						for _, part in ipairs(item:GetDescendants()) do
-							if part:IsA("BasePart") then
-								part.Transparency = 0
-								part.CanCollide = true
-							end
+local LightsAreOn = false
+
+--// Constructor
+
+type EnvironmentDependencies = {
+	LightingPackage: Instance?,
+	Props: Instance,
+	Packets: any,
+	BuildAssemble: any?,
+}
+
+export type EnvironmentService = typeof(setmetatable({} :: {
+	LightingPackage: Instance?,
+	Props: Instance,
+	Packets: any,
+	BuildAssemble: any?,
+	WeatherSchedule: EnvironmentSchedule.EnvironmentSchedule,
+	CurrentWeather: EnvironmentShared.WeatherState,
+	WeatherLightingWeight: number,
+	NightStormActive: boolean,
+	_WeatherLightingTweenToken: number?,
+}, EnvironmentService))
+
+function EnvironmentService.new(Dependencies: EnvironmentDependencies): EnvironmentService
+	const self = setmetatable({}, EnvironmentService) :: EnvironmentService
+
+	self.LightingPackage = Dependencies.LightingPackage
+	self.Props = Dependencies.Props
+	self.Packets = Dependencies.Packets
+	self.BuildAssemble = Dependencies.BuildAssemble
+	self.WeatherSchedule = EnvironmentSchedule.new()
+	self.CurrentWeather = self.WeatherSchedule:GetCurrent()
+	self.WeatherLightingWeight = self.CurrentWeather.lightingWeight or 0
+	self.NightStormActive = false
+	self._WeatherLightingTweenToken = nil
+
+	return self
+end
+
+--// Public API
+
+function EnvironmentService:Init()
+	self:_InitDayNight()
+	self:_InitWeather()
+	self:_InitShootingStar()
+end
+
+--// Internal Methods — Day/Night
+
+function EnvironmentService:_InitDayNight()
+	ECS.createEntity({
+		Name = "EnvironmentClock",
+		EnvironmentClock = {
+			service = self,
+			currentTime = DAY_START_HOUR,
+			timeSpeed = TIME_SPEED,
+		},
+	})
+end
+
+function EnvironmentService:_UpdateLighting(Hour: number)
+	Hour = Hour % 24
+	Lighting.ClockTime = Hour
+
+	if Hour < DAWN_START then
+		self:_ApplyLighting(Blend(DayNightPresets.Night, DayNightPresets.Dawn, Hour / DAWN_START))
+		self:_SetStreetLights(true)
+	elseif Hour < DAY_START then
+		self:_ApplyLighting(Blend(DayNightPresets.Dawn, DayNightPresets.Day, (Hour - DAWN_START) / (DAY_START - DAWN_START)))
+		self:_SetStreetLights(false)
+	elseif Hour < DUSK_START then
+		self:_ApplyLighting(DayNightPresets.Day)
+		self:_SetStreetLights(false)
+	elseif Hour < NIGHT_START then
+		self:_ApplyLighting(Blend(DayNightPresets.Day, DayNightPresets.Dusk, (Hour - DUSK_START) / (NIGHT_START - DUSK_START)))
+		self:_SetStreetLights(true)
+	else
+		self:_ApplyLighting(Blend(DayNightPresets.Dusk, DayNightPresets.Night, (Hour - NIGHT_START) / (24 - NIGHT_START)))
+		self:_SetStreetLights(true)
+	end
+end
+
+function EnvironmentService:_ApplyLighting(Props: LightingPreset)
+	const ResolvedProps = BlendWeather(Props, self.CurrentWeather, self.WeatherLightingWeight)
+
+	Lighting.Brightness = ResolvedProps.Brightness
+	Lighting.OutdoorAmbient = ResolvedProps.OutdoorAmbient
+	Lighting.Ambient = ResolvedProps.Ambient
+	Lighting.FogEnd = ResolvedProps.FogEnd
+end
+
+--// Internal Methods — Street Lights
+
+function EnvironmentService:_SetStreetLights(Enabled: boolean)
+	if LightsAreOn == Enabled then
+		return
+	end
+	LightsAreOn = Enabled
+
+	for _, Prop in self.Props:GetChildren() do
+		if Prop.Name == "StreetLights" and Prop:IsA("Model") then
+			const LightGroups = Prop:GetChildren()
+			for GroupIndex, Item in LightGroups do
+				if not (Item:IsA("Model") or Item:IsA("Folder") or Item:IsA("BasePart")) then
+					continue
+				end
+
+				const DelayTime = (GroupIndex - 1) * STREET_LIGHT_STAGGER
+				SetLightEffects(Item, false)
+
+				if Enabled and self.BuildAssemble then
+					self.BuildAssemble.Play(Item, function()
+						SetLightEffects(Item, true)
+					end, {
+						includeHidden = true,
+						timingScale = 1.35 + (GroupIndex % 3) * 0.18,
+						pieceBudget = 54,
+						maxPiecesPerPart = 3,
+						creationBatchSize = 10,
+						staggerPortion = 0.78,
+						initialDelay = DelayTime,
+						settleFade = 0.22,
+					})
+				elseif Enabled then
+					SetLightEffects(Item, true)
+					for _, Part in Item:GetDescendants() do
+						if Part:IsA("BasePart") then
+							Part.Transparency = 0
+							Part.CanCollide = true
 						end
-					elseif self.BuildAssemble then
-						self.BuildAssemble.Deassemble(item, nil, {
-							includeHidden = true,
-							timingScale = 0.9 + (groupIndex % 2) * 0.15,
-							pieceBudget = 42,
-							maxPiecesPerPart = 2,
-							creationBatchSize = 10,
-							staggerPortion = 0.62,
-						})
-					else
-						for _, part in ipairs(item:GetDescendants()) do
-							if part:IsA("BasePart") then
-								part.Transparency = 1
-								part.CanCollide = false
-							end
+					end
+				elseif self.BuildAssemble then
+					self.BuildAssemble.Deassemble(Item, nil, {
+						includeHidden = true,
+						timingScale = 0.9 + (GroupIndex % 2) * 0.15,
+						pieceBudget = 42,
+						maxPiecesPerPart = 2,
+						creationBatchSize = 10,
+						staggerPortion = 0.62,
+					})
+				else
+					for _, Part in Item:GetDescendants() do
+						if Part:IsA("BasePart") then
+							Part.Transparency = 1
+							Part.CanCollide = false
 						end
 					end
 				end
@@ -207,141 +363,21 @@ function EnvironmentService:_SetStreetLights(enabled)
 	end
 end
 
-
-
-
-
-function EnvironmentService:_UpdateLighting(hour)
-	hour = hour % 24
-	Lighting.ClockTime = hour
-
-	if hour < DAWN_START then
-		self:_ApplyLighting(blend(presets.night, presets.dawn, hour / DAWN_START))
-		self:_SetStreetLights(true)
-
-	elseif hour < DAY_START then
-		self:_ApplyLighting(blend(presets.dawn, presets.day, (hour - DAWN_START) / (DAY_START - DAWN_START)))
-		self:_SetStreetLights(false)
-
-	elseif hour < DUSK_START then
-		self:_ApplyLighting(presets.day)
-		self:_SetStreetLights(false)
-
-	elseif hour < NIGHT_START then
-		self:_ApplyLighting(blend(presets.day, presets.dusk, (hour - DUSK_START) / (NIGHT_START - DUSK_START)))
-		self:_SetStreetLights(true)
-
-	else
-		self:_ApplyLighting(blend(presets.dusk, presets.night, (hour - NIGHT_START) / (24 - NIGHT_START)))
-		self:_SetStreetLights(true)
-	end
-end
-
-
-
-function EnvironmentService:_ApplyLighting(props)
-	props = blendWeather(props, self.CurrentWeather, self.WeatherLightingWeight)
-	for k, v in pairs(props) do
-		Lighting[k] = v
-	end
-
-	--self:_ApplyWeatherPostEffects()
-end
-
---function EnvironmentService:_ApplyWeatherPostEffects()
---	local weather = self.CurrentWeather
---	local targetLightingWeight = math.max(weather.lightingWeight or 0, 0.001)
---	local weatherBlendAlpha = math.clamp((self.WeatherLightingWeight or weather.lightingWeight or 0) / targetLightingWeight, 0, 1)
---	local stormWeight = (if weather.kind == "Storm" then 1 elseif weather.kind == "Rain" then 0.58 else 0) * weatherBlendAlpha
---	local colorCorrection = getOrCreateLightingEffect("ColorCorrectionEffect", "WeatherColorGrade") :: ColorCorrectionEffect
---	local bloom = getOrCreateLightingEffect("BloomEffect", "WeatherBloom") :: BloomEffect
---	local atmosphere = getOrCreateLightingEffect("Atmosphere", "WeatherAtmosphere") :: Atmosphere
-
---	TweenService:Create(colorCorrection, TweenInfo.new(1.4, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
---		Brightness = -0.012 * stormWeight,
---		Contrast = 0.13 * stormWeight,
---		Saturation = -0.15 * stormWeight,
---		TintColor = Color3.fromRGB(
---			math.floor(255 - 42 * stormWeight),
---			math.floor(255 - 28 * stormWeight),
---			255
---		),
---	}):Play()
-
---	TweenService:Create(bloom, TweenInfo.new(1.4, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
---		Intensity = 0.24 * stormWeight,
---		Size = 18 + 22 * stormWeight,
---		Threshold = 1.65 - 0.32 * stormWeight,
---	}):Play()
-
---	TweenService:Create(atmosphere, TweenInfo.new(1.4, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
---		Density = 0.38 * stormWeight,
---		Offset = 0.08 * stormWeight,
---		Glare = 0.18 * stormWeight,
---		Haze = 2.6 * stormWeight,
---		Color = Color3.fromRGB(178, 190, 204),
---		Decay = Color3.fromRGB(78, 92, 112),
---	}):Play()
---end
-
-function EnvironmentService:_SetWeather(weather)
-	local previousWeight = self.WeatherLightingWeight or (self.CurrentWeather and self.CurrentWeather.lightingWeight) or 0
-	local targetWeight = weather.lightingWeight or 0
-
-	self.CurrentWeather = weather
-	self._weatherLightingTweenToken = (self._weatherLightingTweenToken or 0) + 1
-	local tweenToken = self._weatherLightingTweenToken
-	local startedAt = os.clock()
-
-	task.spawn(function()
-		while tweenToken == self._weatherLightingTweenToken do
-			local alpha = math.clamp((os.clock() - startedAt) / WEATHER_LIGHTING_TWEEN_TIME, 0, 1)
-			local easedAlpha = 1 - (1 - alpha) * (1 - alpha)
-			self.WeatherLightingWeight = lerp(previousWeight, targetWeight, easedAlpha)
-
-			if alpha >= 1 then
-				break
-			end
-
-			task.wait(0.05)
-		end
-
-		if tweenToken == self._weatherLightingTweenToken then
-			self.WeatherLightingWeight = targetWeight
-		end
-	end)
-end
-
-
-
-
-function EnvironmentService:_InitDayNight()
-        ECS.createEntity({
-                Name = "EnvironmentClock",
-                EnvironmentClock = {
-                        service = self,
-                        currentTime = currentTime,
-                        timeSpeed = timeSpeed,
-                },
-        })
-end
-
-
-
+--// Internal Methods — Weather
 
 function EnvironmentService:_InitWeather()
-	self:_BroadcastWeather()
-	Players.PlayerAdded:Connect(function(player)
+	self:_BroadcastWeather(nil :: Player?)
+	Players.PlayerAdded:Connect(function(Player: Player)
 		task.defer(function()
-			self:_BroadcastWeather(player)
+			self:_BroadcastWeather(Player)
 		end)
 	end)
 
-        ECS.createEntity({
-                Name = "EnvironmentWeatherTick",
-                ScheduledTask = {
-                        delay = 12,
-			repeatEvery = 12,
+	ECS.createEntity({
+		Name = "EnvironmentWeatherTick",
+		ScheduledTask = {
+			delay = WEATHER_TICK_INTERVAL,
+			repeatEvery = WEATHER_TICK_INTERVAL,
 			elapsed = 0,
 			callback = function()
 				self:_UpdateWeather()
@@ -350,86 +386,132 @@ function EnvironmentService:_InitWeather()
 	})
 end
 
-function EnvironmentService:_BroadcastWeather(player)
-	if not self.ClientSignals then
+function EnvironmentService:_BroadcastWeather(Player: Player?)
+	if not self.Packets then
 		return
 	end
 
-	if player then
-		self.ClientSignals.Send(player, "Weather", self.CurrentWeather)
+	const Payload = ToWeatherPacket(self.CurrentWeather)
+	if Player then
+		self.Packets.packets.Weather.sendTo(Payload, Player)
 	else
-		self.ClientSignals.SendAll("Weather", self.CurrentWeather)
+		self.Packets.packets.Weather.sendToAll(Payload)
 	end
 end
 
---function EnvironmentService:_Rain()
-	
---	local RandomNumber = math.random(1, 1)
-	
---	if RandomNumber == 1 then
---		--local Sky = self.LightingPackage.Sky:Clone()
---		--local Rain = self.LightingPackage.Rain:Clone()
-		
-		
---		--Sky.Parent = workspace
---		--Rain.Parent = workspace
-		
-		
-			
---		end
-		
-			
---			--Sky:Destroy()
---			--Rain:Destroy()
---		end)
---	end 
+function EnvironmentService:_SetWeather(Weather: EnvironmentShared.WeatherState)
+	const PreviousWeight = self.WeatherLightingWeight
+	const TargetWeight = Weather.lightingWeight or 0
 
+	self.CurrentWeather = Weather
+	self._WeatherLightingTweenToken = (self._WeatherLightingTweenToken or 0) + 1
+	const TweenToken = self._WeatherLightingTweenToken
+	const StartedAt = os.clock()
 
---end
+	task.spawn(function()
+		while TweenToken == self._WeatherLightingTweenToken do
+			const Alpha = math_clamp((os.clock() - StartedAt) / WEATHER_LIGHTING_TWEEN_TIME, 0, 1)
+			const EasedAlpha = 1 - (1 - Alpha) * (1 - Alpha)
+			self.WeatherLightingWeight = Lerp(PreviousWeight, TargetWeight, EasedAlpha)
 
+			if Alpha >= 1 then
+				break
+			end
+
+			task.wait(0.05)
+		end
+
+		if TweenToken == self._WeatherLightingTweenToken then
+			self.WeatherLightingWeight = TargetWeight
+		end
+	end)
+end
+
+--// Internal Methods — Shooting Stars
+
+function EnvironmentService:_InitShootingStar()
+	ECS.createEntity({
+		Name = "EnvironmentShootingStarTick",
+		ScheduledTask = {
+			delay = SHOOTING_STAR_INTERVAL,
+			repeatEvery = SHOOTING_STAR_INTERVAL,
+			elapsed = 0,
+			callback = function()
+				self:_MaybeSpawnShootingStar()
+			end,
+		},
+	})
+end
+
+function EnvironmentService:_MaybeSpawnShootingStar()
+	local Hour = Lighting.ClockTime % 24
+	local IsNight = Hour >= NIGHT_START or Hour < DAWN_START
+	if not IsNight then
+		return
+	end
+
+	--[[ RANDOMIZED SPAWN (commented out for consistent fixed spawn)
+	if math_random() > SHOOTING_STAR_CHANCE then
+		return
+	end
+
+	local Angle = math_random() * math.pi * 2
+	local Radius = math_random() * SHOOTING_STAR_RADIUS
+	local StartPosition = Vector3.new(
+		math.cos(Angle) * Radius,
+		math_random(SHOOTING_STAR_ALTITUDE_MIN, SHOOTING_STAR_ALTITUDE_MAX),
+		math.sin(Angle) * Radius
+	)
+
+	local Impact = math_random() < SHOOTING_STAR_IMPACT_CHANCE
+	local HorizontalAngle = math_random() * math.pi * 2
+	local Direction: Vector3
+	if Impact then
+		-- Plunge toward the map.
+		Direction = Vector3.new(
+			math.cos(HorizontalAngle),
+			-(0.5 + math_random() * 0.5),
+			math.sin(HorizontalAngle)
+		).Unit
+	else
+		-- Streak across the sky, mostly horizontal.
+		Direction = Vector3.new(
+			math.cos(HorizontalAngle),
+			math_random() * 0.16 - 0.08,
+			math.sin(HorizontalAngle)
+		).Unit
+	end
+	]]
+
+	-- Fixed spawn: always spawns at the same position, streaking across the sky.
+	local StartPosition = Vector3.new(-600, 1000, 400)
+	local Impact = false
+	local Direction = Vector3.new(1, -0.05, 0.4).Unit
+
+	if self.Packets then
+		self.Packets.packets.ShootingStar.sendToAll({
+			startPosition = StartPosition,
+			direction = Direction,
+			impact = Impact,
+		})
+	end
+end
 
 function EnvironmentService:_UpdateWeather()
-	local hour = Lighting.ClockTime % 24
 	if self.NightStormActive then
 		self.NightStormActive = false
 		self:_SetWeather(self.WeatherSchedule:GetCurrent())
-		self:_BroadcastWeather()
+		self:_BroadcastWeather(nil)
 	elseif self.WeatherSchedule:ShouldAdvance() then
 		self:_SetWeather(self.WeatherSchedule:Next())
-		self:_BroadcastWeather()
+		self:_BroadcastWeather(nil)
 	end
 
-	local weather = self.CurrentWeather
-	if math.random() < weather.thunderChance then
-		LightningModule.StartStorm(Vector3.new(50, 0, 0), 400, math.clamp(weather.duration * 0.35, 25, 90))
+	local Weather: EnvironmentShared.WeatherState = self.CurrentWeather
+	if math_random() < Weather.thunderChance then
+		LightningModule.StartStorm(Vector3.new(50, 0, 0), THUNDER_RADIUS, math_clamp(Weather.duration * 0.35, 25, 90))
 	end
-	
-end
-
-
-
-function EnvironmentService.new(dependencies)
-	local self = setmetatable({}, EnvironmentService)
-
-	self.LightingPackage = dependencies.LightingPackage
-	self.Props = dependencies.Props
-	self.ClientSignals = dependencies.ClientSignals
-	self.BuildAssemble = dependencies.BuildAssemble
-	self.WeatherSchedule = EnvironmentSchedule.new()
-	self.CurrentWeather = self.WeatherSchedule:GetCurrent()
-	self.WeatherLightingWeight = self.CurrentWeather.lightingWeight or 0
-	self.NightStormActive = false
-	
-	
-
-	return self
-end
-
-
-function EnvironmentService:Init()
-	self:_InitDayNight()
-	self:_InitWeather()
-
 end
 
 return EnvironmentService
+

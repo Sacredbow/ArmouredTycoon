@@ -1,10 +1,24 @@
 --!strict
+--[[
+	@class StateMachine
 
-local Types = require(script.Parent.Types)
+	@desc
+	Finite state machine for NPC controllers. Registers states,
+	switches between them (calling Exit/Enter hooks), and steps the
+	active state's Update each tick.
+]]
+
+--// Modules
+
+const Types = require(script.Parent.Types)
+
+--// Types
 
 type AIContext = Types.AIContext
 type State = Types.State
 type StateName = Types.StateName
+
+--// Module
 
 local StateMachine = {}
 StateMachine.__index = StateMachine

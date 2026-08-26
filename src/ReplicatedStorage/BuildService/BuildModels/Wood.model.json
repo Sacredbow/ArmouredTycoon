@@ -1,11 +1,6 @@
 {
-  "ClassName": "Part",
-  "Properties": {
-    "Anchored": true,
-    "CanCollide": true,
-    "Color": [0.427451, 0.294118, 0.184314],
-    "Material": "WoodPlanks",
-    "Size": [4, 5, 1],
-    "Name": "Wood"
-  }
+"className": "Part",
+"properties": {
+
+}
 }

@@ -2,7 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ECS = require(ReplicatedStorage.ECS)
-local ClientSignals = require(ReplicatedStorage.Network.ClientSignals)
+local Packets = require(ReplicatedStorage.Network.Packets)
 
 local FriendService = {}
 FriendService.__index = FriendService
@@ -46,11 +46,11 @@ function FriendService:CheckFriendBoost(player: Player)
 
 	
 		self.PlayerService:SetFriendBoost(player, true)
-		ClientSignals.Send(player, "Player1", TextCalc)
+Packets.packets.FriendBoost.sendTo({ ["type"] = "Connected", percent = TextCalc }, player)
 	else
 		
 		self.PlayerService:SetFriendBoost(player, false)
-		ClientSignals.Send(player, "Player1", 0)
+		Packets.packets.FriendBoost.sendTo({ ["type"] = "Connected", percent = 0 }, player)
 	end
 end
 
@@ -90,12 +90,11 @@ function FriendService:OnPlayerLeaving(leavingPlayer: Player)
 						local MultiCalc = newCount * FriendBoostMulti
 						local TextCalc = MultiCalc * 100
 
-						ClientSignals.Send(player, "Player1Disconnected", TextCalc)
-					
+						Packets.packets.FriendBoost.sendTo({ ["type"] = "Disconnected", percent = TextCalc }, player)
 						
 					else
 						self.PlayerService:SetFriendBoost(player, false)
-						ClientSignals.Send(player, "Player1Disconnected", 0)
+						Packets.packets.FriendBoost.sendTo({ ["type"] = "Disconnected", percent = 0 }, player)
 					end
 					break
 				end
@@ -137,3 +136,4 @@ function FriendService:Init()
 end
 
 return FriendService
+

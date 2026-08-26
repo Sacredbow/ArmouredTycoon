@@ -1,35 +1,78 @@
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ModuleLoader = require(ReplicatedStorage.Libraries.ModuleLoader)
-local player = game.Players.LocalPlayer
-local ClientReplicator = ReplicatedStorage.Remotes.Interface:WaitForChild("ClientReplicator")
+--!strict
+--[[
+	@class Loader
 
-task.defer(function()
+	@desc
+	Client bootstrapper. Waits for the ByteNet namespace to be ready before
+	requiring packets (so client replicators can decode bytenet payloads),
+	then runs the ModuleLoader to mount all UI systems.
+	Also cleans up legacy UI containers (Window/ScreenGui/MainMenu)
+	when the ClientReplicator signals.
+]]
+
+--// Services
+
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const Players = game:GetService("Players")
+
+--// Constants
+
+const NAMESPACE_NAME = "ArmouredTycoon"
+const NAMESPACE_POLL_INTERVAL = 0.5
+
+--// Modules
+
+const ModuleLoader = require(ReplicatedStorage.Libraries.ModuleLoader)
+
+--// Runtime State
+
+const Player = Players.LocalPlayer
+const ClientReplicator = ReplicatedStorage.Remotes.Interface:WaitForChild("ClientReplicator")
+
+--// Internal Utilities
+
+local function WaitForNamespace(): boolean
 	while true do
-		local storage = ReplicatedStorage:FindFirstChild("BytenetStorage")
-		local namespaceValue = storage and storage:FindFirstChild("ArmouredTycoon")
-		if namespaceValue and namespaceValue:IsA("StringValue") and namespaceValue.Value ~= "" then
-			break
+		const Storage = ReplicatedStorage:FindFirstChild("BytenetStorage")
+		const NamespaceValue = Storage and Storage:FindFirstChild(NAMESPACE_NAME)
+		if NamespaceValue and NamespaceValue:IsA("StringValue") and NamespaceValue.Value ~= "" then
+			return true
 		end
 
-		task.wait(0.5)
+		task.wait(NAMESPACE_POLL_INTERVAL)
 	end
 
-	local packetsOk, packetsError = pcall(function()
-		require(ReplicatedStorage.Network.Packets)
+	return false
+end
+
+local function EnsurePacketsReady()
+	task.defer(function()
+		if not WaitForNamespace() then
+			warn("[Loader] Bytenet namespace never became ready; packets may not decode")
+			return
+		end
+
+		const PacketsOk, PacketsError = pcall(function()
+			require(ReplicatedStorage.Network.Packets)
+		end)
+		if not PacketsOk then
+			warn(`[Loader] Network packets unavailable after startup: {PacketsError}`)
+		end
 	end)
-	if not packetsOk then
-		warn(`[Loader] Network packets unavailable after startup: {packetsError}`)
-	end
-end)
+end
 
-ModuleLoader()
-
-
-ClientReplicator.OnClientEvent:Connect(function()
-	for _, v in player.PlayerGui:GetChildren() do
-		if v.Name == "Window" or v.Name == "ScreenGui" or v.Name == "MainMenu" then
-			v:Destroy()
+local function ClearLegacyUI()
+	ClientReplicator.OnClientEvent:Connect(function()
+		for _, Instance in Player.PlayerGui:GetChildren() do
+			if Instance.Name == "Window" or Instance.Name == "ScreenGui" or Instance.Name == "MainMenu" then
+				Instance:Destroy()
+			end
 		end
-	end
-	
-end)
+	end)
+end
+
+--// Bootstrap
+
+EnsurePacketsReady()
+ClearLegacyUI()
+ModuleLoader()

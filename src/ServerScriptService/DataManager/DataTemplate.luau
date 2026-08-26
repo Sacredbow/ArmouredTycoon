@@ -1,6 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local QuestOptions = require(ReplicatedStorage.Progression.Quests.QuestOptions)
+local QuestOptions = require(ReplicatedStorage.Progression.QuestOptions)
 
 return {
 	Cash = 125,
@@ -18,9 +18,12 @@ return {
 	Quests = QuestOptions.createProgressMap(),
 	TycoonConstruction = {
 		PurchasedButtons = {},
+		ConfigVersion = 1,
 	},
 	BuildService = {
 		PlacedBuilds = {},
 	},
-	
+	RedeemedCodes = {
+		-- ["CODE"] = redeemedAtUnixTimestamp
+	},
 }

@@ -7,10 +7,9 @@ local ProfileManager = {}
 local Packets = require(ReplicatedStorage.Network.Packets)
 local Janitor = require(ReplicatedStorage.Packages.janitor)
 local Replica = require(ReplicatedStorage.Packages.replica)
-local QuestOptions = require(ReplicatedStorage.Progression.Quests.QuestOptions)
-local QuestProgression = require(ServerScriptService.Gameplay.Progression.Quests.QuestProgression)
+local QuestOptions = require(ReplicatedStorage.Progression.QuestOptions)
+local QuestProgression = require(ServerScriptService.Gameplay.Progression.QuestProgression)
 local SoundManager = require(ServerScriptService.Utilities.SoundManager)
-local Diagnostics = require(ServerScriptService.Utilities.ServerDiagnostics)
 
 -- Store profiles from the Profile Store.
 
@@ -41,36 +40,6 @@ local function copyQuestState(quests: { [string]: any }): { [string]: any }
     return copied
 end
 
-
-local function getProfileActionRemote(): RemoteFunction
-	local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
-	if not remotesFolder then
-		remotesFolder = Instance.new("Folder")
-		remotesFolder.Name = "Remotes"
-		remotesFolder.Parent = ReplicatedStorage
-	end
-
-	local oldSyncEvent = remotesFolder:FindFirstChild("ProfileStateSync")
-	if oldSyncEvent then
-		oldSyncEvent:Destroy()
-		Diagnostics.report("ProfileManager", "Removed ProfileStateSync; profile state now replicates through Replica.")
-	end
-
-	local actionFunction = remotesFolder:FindFirstChild("ProfileAction")
-	if not actionFunction then
-		actionFunction = Instance.new("RemoteFunction")
-		actionFunction.Name = "ProfileAction"
-		actionFunction.Parent = remotesFolder
-	end
-
-	local insecureProgressEvent = remotesFolder:FindFirstChild("ProfileQuestProgress")
-	if insecureProgressEvent then
-		insecureProgressEvent:Destroy()
-		Diagnostics.report("ProfileManager", "Removed the client-authoritative quest progress remote.")
-	end
-
-	return actionFunction :: RemoteFunction
-end
 
 function ProfileManager.GetRequiredExperience(level: number): number
 	return math.floor(120 * (1.18 ^ math.max(level - 1, 0)))
@@ -400,17 +369,22 @@ function ProfileManager.BindQuestTracking(player: Player)
 end
 
 do
-	local actionFunction = getProfileActionRemote()
-	actionFunction.OnServerInvoke = function(player: Player, action: string, payload: any?)
-		if action == "ClaimDaily" then
-			return ProfileManager.ClaimDailyReward(player)
-		elseif action == "ClaimQuest" and typeof(payload) == "string" then
-			return ProfileManager.ClaimQuest(player, payload)
+	Packets.queries.ProfileAction.listen(function(request, player: Player?)
+		if not player then
+			return { success = false, message = "Player unavailable." }
 		end
 
-		Diagnostics.reject(player, "ProfileAction", `Unknown or malformed action: {tostring(action)}`)
-		return false, "Unknown profile action."
-	end
+		if request.action == "ClaimDaily" then
+			local success, message = ProfileManager.ClaimDailyReward(player)
+			return { success = success == true, message = tostring(message) }
+		elseif request.action == "ClaimQuest" and typeof(request.payload) == "string" then
+			local success, message = ProfileManager.ClaimQuest(player, request.payload)
+			return { success = success == true, message = tostring(message) }
+		end
+
+warn(`[ProfileManager] {player.Name} sent unknown or malformed action: {tostring(request.action)}`)
+		return { success = false, message = "Unknown profile action." }
+	end)
 end
 
 
@@ -436,6 +410,7 @@ end
 
 
 return ProfileManager
+
 
 
 

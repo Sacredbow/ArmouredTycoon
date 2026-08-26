@@ -1,24 +1,40 @@
 --!strict
+--[[
+	@class ObservePlayerState
 
-local ServerScriptService = game:GetService("ServerScriptService")
+	@desc
+	NPC state where the NPC observes a nearby player — faces them,
+	speaks an observation line, optionally waves, and may start a
+	conversation or trigger an avoidance reaction if the player is armed.
+]]
 
-local Movement = require(script.Parent.Parent.Services.Movement)
-local ConversationService = require(script.Parent.Parent.Services.ConversationService)
-local Dialogue = require(script.Parent.Parent.Services.Dialogue)
-local Speech = require(script.Parent.Parent.Services.Speech)
-local Types = require(script.Parent.Parent.Core.Types)
-local WorldQuery = require(script.Parent.Parent.Services.WorldQuery)
-local Diagnostics = require(ServerScriptService.Utilities.ServerDiagnostics)
+--// Services
+
+const ServerScriptService = game:GetService("ServerScriptService")
+
+--// Modules
+
+const Movement = require(script.Parent.Parent.Services.Movement)
+const ConversationService = require(script.Parent.Parent.Services.ConversationService)
+const Dialogue = require(script.Parent.Parent.Services.Dialogue)
+const Speech = require(script.Parent.Parent.Services.Speech)
+const Types = require(script.Parent.Parent.Core.Types)
+const WorldQuery = require(script.Parent.Parent.Services.WorldQuery)
+
+--// Types
 
 type AIContext = Types.AIContext
 type StateMachineLike = Types.StateMachineLike
 
+--// Module
 
 local ObservePlayerState = {
 	Name = "ObservePlayer",
 }
 
-local R6_WAVE_ANIMATION_ID = "rbxassetid://128777973"
+--// Constants
+
+const R6_WAVE_ANIMATION_ID = "rbxassetid://128777973"
 
 local function debugLog(context: AIContext, message: string)
 	if not context.Config.DebugObservation then
@@ -29,7 +45,7 @@ local function debugLog(context: AIContext, message: string)
 end
 
 local function tryPlayWave(context: AIContext)
-	local animator = context.Humanoid:FindFirstChildOfClass("Animator")  
+	local animator = context.Humanoid:FindFirstChildOfClass("Animator")
 	if not animator then
 		animator = Instance.new("Animator")
 		animator.Parent = context.Humanoid
@@ -54,13 +70,8 @@ local function tryPlayWave(context: AIContext)
 		return track.Length
 	end)
 
-	if not success then
-		Diagnostics.reportThrottled(
-			"AI.ObservePlayer",
-			`wave:{context.Name}`,
-			`Wave animation failed for {context.Name}: {tostring(result)}`,
-			30
-		)
+if not success then
+		warn(`[AI.ObservePlayer] Wave animation failed for {context.Name}: {tostring(result)}`)
 		animation:Destroy()
 		return
 	end
@@ -69,8 +80,8 @@ local function tryPlayWave(context: AIContext)
 end
 
 function ObservePlayerState.Enter(context: AIContext)
-	(context :: any).ObservationStartedAt = os.clock()
-	;(context :: any).ConversationActive = false
+	(context :: any).ObservationStartedAt = os.clock();
+	(context :: any).ConversationActive = false
 	if context.ObservationHoldDuration > 0 then
 		context.Humanoid.WalkSpeed = 0
 		Movement.Stop(context)
@@ -81,7 +92,11 @@ function ObservePlayerState.Enter(context: AIContext)
 		(context :: any).ConversationActive = ConversationService.TryStart(context, context.ObservationTarget)
 	end
 
-	if context.ObservationLine and not (context :: any).ConversationActive and not context.ObservationShouldAvoidAfter then
+	if
+		context.ObservationLine
+		and not (context :: any).ConversationActive
+		and not context.ObservationShouldAvoidAfter
+	then
 		Speech.Say(context, context.ObservationLine)
 	end
 
@@ -109,8 +124,8 @@ function ObservePlayerState.Update(context: AIContext, machine: StateMachineLike
 	debugLog(context, `looking at target {observationTarget:GetFullName()}`)
 	if (context :: any).ConversationActive then
 		if not ConversationService.IsActive(context) then
-			debugLog(context, "conversation finished, returning to patrol")
-			;(context :: any).ConversationActive = false
+			debugLog(context, "conversation finished, returning to patrol");
+			(context :: any).ConversationActive = false
 			context.ObservationTarget = nil
 			context.ObservationSecondaryTarget = nil
 			context.ObservationLine = nil
@@ -125,8 +140,8 @@ function ObservePlayerState.Update(context: AIContext, machine: StateMachineLike
 
 		local distance = (observationTarget.Position - WorldQuery.GetCurrentPosition(context)).Magnitude
 		if distance > context.Config.ObservationRadius * 1.8 then
-			ConversationService.EndForContext(context)
-			;(context :: any).ConversationActive = false
+			ConversationService.EndForContext(context);
+			(context :: any).ConversationActive = false
 			context.IgnoreObservationUntil = os.clock() + context.Config.ObservationIgnoreDuration
 			machine:SetState("Patrol")
 			return
@@ -201,8 +216,8 @@ function ObservePlayerState.Exit(context: AIContext)
 	if (context :: any).ConversationActive then
 		ConversationService.EndForContext(context)
 	end
-	;(context :: any).ConversationActive = nil
-	;(context :: any).ObservationStartedAt = nil
+	(context :: any).ConversationActive = nil
+	(context :: any).ObservationStartedAt = nil
 	context.Humanoid.WalkSpeed = context.Config.DefaultWalkSpeed
 end
 

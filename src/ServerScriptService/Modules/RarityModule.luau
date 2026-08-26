@@ -1,40 +1,50 @@
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local BoxFolder = ReplicatedStorage.Assets.Workspace.Boxes
+  --!strict
+--[[
+	@class RarityModule
+
+	@desc
+	Weighted random box selection for rarity-based loot boxes.
+	Returns a box model from ReplicatedStorage.Assets.Workspace.Boxes
+	based on configured rarity weights.
+]]
+
+--// Services
+
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+--// Constants
+
+const BoxFolder = ReplicatedStorage.Assets.Workspace.Boxes
+
+const Boxes: { [string]: Instance } = {
+	Common = BoxFolder.Common,
+	Rare = BoxFolder.Rare,
+	Legendary = BoxFolder.Legendary,
+	Mythical = BoxFolder.Mythical,
+	Divine = BoxFolder.Divine,
+}
+
+const RarityNames: { string } = { "Common", "Rare", "Legendary", "Mythical", "Divine" }
+const RarityWeights: { number } = { 49, 30, 16, 4, 1 }
+
+--// Module
 
 local RarityModule = {}
 
-local Boxes = {
-	["Common"] = BoxFolder.Common;
-	["Rare"] = BoxFolder.Rare;
-	["Legendary"] = BoxFolder.Legendary;
-	["Mythical"] = BoxFolder.Mythical;
-	["Divine"] = BoxFolder.Divine;
-	
-}
+--// Public API
 
-local Rarities = {
-	["Common"] = 49;
-	["Rare"] = 30;
-	["Legendary"] = 16;
-	["Mythical"] = 4;
-	["Divine"] = 1
-}
+function RarityModule:SpawnRandomBox(): Instance?
+	const RandomNumber = math.random(1, 100)
+	local Counter = 0
 
-
-function RarityModule:SpawnRandomBox()
-	local randomNumber = math.random(1, 100)
-	local counter = 0
-	
-	for rarity, weight in Rarities do
-		counter += weight
-		
-		if counter >= randomNumber then
-			return Boxes[rarity]
+	for Index = 1, #RarityNames do
+		Counter += RarityWeights[Index]
+		if Counter >= RandomNumber then
+			return Boxes[RarityNames[Index]]
 		end
-		
 	end
-	return Boxes["Common"]
 
+	return Boxes.Common
 end
 
 return RarityModule

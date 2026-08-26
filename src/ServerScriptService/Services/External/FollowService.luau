@@ -1,22 +1,69 @@
-local HTTPService = game:GetService("HttpService")
+--!strict
+--[[
+	@class FollowService
+
+	@desc
+	Checks if a player follows a Roblox user via the Friends API.
+	Uses roproxy.com to avoid official API rate limits.
+	Supports cursor-based pagination for large follow lists.
+]]
+
+--// Services
+
+const HTTPService = game:GetService("HttpService")
+
+--// Constants
+
+const REQUEST_TIMEOUT = 10
+const BASE_URL = "http://friends.roproxy.com/v1/users/"
+
+--// Module
 
 local FollowService = {}
 
-function FollowService.IsFollowing(follower: number, beingFollowed: number, cursor: string)
-	cursor = cursor or ""
-	local url = "http://friends.roproxy.com/v1/users/" .. follower .. "/followings?&cursor=" .. cursor .. "&sortOrder=Asc&limit=100"
+--// Public API
 
-	local response = HTTPService:RequestAsync({ Url = url, Method = "GET" })
+function FollowService.IsFollowing(Follower: number, BeingFollowed: number, Cursor: string?): boolean
+	Cursor = Cursor or ""
+	local Url = BASE_URL .. Follower .. "/followings?&cursor=" .. Cursor .. "&sortOrder=Asc&limit=100"
 
-	if response.Success then
-		local body = HTTPService:JSONDecode(response.Body)
-		for _, v in pairs(body.data) do
-			if v.id == beingFollowed then return true end
-		end
-		if body.nextPageCursor then
-			return FollowService.IsFollowing(follower, beingFollowed, body.nextPageCursor)
+	local Success, Response = pcall(function()
+		return HTTPService:RequestAsync({
+			Url = Url,
+			Method = "GET",
+			Timeout = REQUEST_TIMEOUT,
+		})
+	end)
+
+	if not Success then
+		warn(`[FollowService] HTTP request failed for user {Follower}: {tostring(Response)}`)
+		return false
+	end
+
+	if not Response.Success then
+		warn(`[FollowService] API returned status {Response.StatusCode} for user {Follower}`)
+		return false
+	end
+
+	local Success2, Body = pcall(function()
+		return HTTPService:JSONDecode(Response.Body)
+	end)
+
+	if not Success2 then
+		warn(`[FollowService] Failed to decode response body for user {Follower}`)
+		return false
+	end
+
+	for _, Entry in Body.data do
+		if Entry.id == BeingFollowed then
+			return true
 		end
 	end
+
+	if Body.nextPageCursor then
+		return FollowService.IsFollowing(Follower, BeingFollowed, Body.nextPageCursor)
+	end
+
 	return false
 end
 

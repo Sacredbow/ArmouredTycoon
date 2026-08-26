@@ -1,351 +1,361 @@
+--!strict
 --[[
+	@class OnboardingClient
 
-Introduction into the game once you start
+	@desc
+	Client-side onboarding helper. Draws guide beams from the player's
+	character to tycoon doors, buttons, and the ATM as they follow the
+	tutorial flow. Responds to Tutorial packets from the server.
 
+	Beam system is keyed so individual beams can be removed without
+	nuking all of them. Uses fresh Attachments + Beam instead of cloning
+	the Arrow Beam model (which had WeldConstraints and physical parts
+	that broke player physics).
+
+	Message types are shared with the server via OnboardingDefinitions so
+	the client and server can never drift on the tutorial control strings.
 ]]
 
-local Players = game:GetService("Players")
-local Player = Players.LocalPlayer
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
-local TycoonsFolder = workspace:WaitForChild("Tycoons")
-local NetworkFolder = ReplicatedStorage:WaitForChild("Network")
-local TutorialSignal = NetworkFolder:WaitForChild("TutorialSignal") :: RemoteEvent
+--// Services
 
-type TutorialKind = "TycoonClaimed" | "TycoonAvailable" | "Perfect!" | "Now purchase your first button!" | "Claim your money" | "Congrats! Tutorial Completed."
+const Players = game:GetService("Players")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local PROTOCOL_VERSION = 1
+--// Modules
 
-local function getKindFromActionId(actionId: number): TutorialKind?
-	if actionId == 1 then
-		return "TycoonClaimed"
-	elseif actionId == 2 then
-		return "TycoonAvailable"
-	elseif actionId == 3 then
-		return "Perfect!"
-	elseif actionId == 4 then
-		return "Now purchase your first button!"
-	elseif actionId == 5 then
-		return "Claim your money"
-	elseif actionId == 6 then
-		return "Congrats! Tutorial Completed."
-	end
+const RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
+const Packets = require(ReplicatedStorage.Network.Packets)
+const OnboardingDefinitions = require(ReplicatedStorage.Progression.Onboarding.OnboardingDefinitions)
 
-	return nil
+--// Constants
+
+const Player = Players.LocalPlayer
+const TycoonsFolder = workspace:WaitForChild("Tycoons")
+
+const OnboardingStep = OnboardingDefinitions.STEP_BY_KEY
+
+const BEAM_COLOR = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 135, 255)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 255, 219)),
+})
+const BEAM_TRANSPARENCY = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0),
+	NumberSequenceKeypoint.new(0.9, 0),
+	NumberSequenceKeypoint.new(1, 1),
+})
+const BEAM_TEXTURE = "rbxassetid://6399401493"
+
+--// Types
+
+type TutorialData = {
+	type: string,
+	target: string?,
+}
+
+type BeamEntry = {
+	att0: Attachment?,
+	att1: Attachment?,
+	beam: Beam?,
+}
+
+--// Runtime State
+
+local ActiveBeams: { [string]: BeamEntry } = {}
+local DoorBeamsEnabled = false
+local ClaimedDoorKeys: { [string]: boolean } = {}
+
+local function ButtonDirectionsEnabled(): boolean
+	return RuntimeSettings.GetBoolean("Allow Button Directions", true)
 end
 
-local function decodeTutorialMessage(message: any): TutorialKind?
-	if typeof(message) == "string" then
-		local actionIdByName: { [string]: TutorialKind } = {
-			TycoonClaimed = "TycoonClaimed",
-			TycoonAvailable = "TycoonAvailable",
-			["Perfect!"] = "Perfect!",
-			["Now purchase your first button!"] = "Now purchase your first button!",
-			["Claim your money"] = "Claim your money",
-			["Congrats! Tutorial Completed."] = "Congrats! Tutorial Completed.",
-		}
+local buttonDirectionsEnabled = ButtonDirectionsEnabled()
 
-		return actionIdByName[message]
+--// Internal Utilities — Beam System
+
+local function DestroyBeamEntry(Entry: BeamEntry)
+	if Entry.beam then
+		Entry.beam:Destroy()
 	end
-
-	if typeof(message) ~= "number" then
-		return nil
+	if Entry.att0 then
+		Entry.att0:Destroy()
 	end
-
-	local version = bit32.rshift(message, 8)
-	if version ~= PROTOCOL_VERSION then
-		return nil
+	if Entry.att1 then
+		Entry.att1:Destroy()
 	end
-
-	return getKindFromActionId(bit32.band(message, 0xff))
 end
 
----------------------------------------------------------------------------
--- Beam system (keyed so we can remove specific beams without nuking all)
--- Uses fresh Attachments + Beam instead of cloning the Arrow Beam model,
--- which had WeldConstraints and physical parts that broke player physics.
----------------------------------------------------------------------------
-
-local activeBeams: { [string]: { att0: Attachment, att1: Attachment, beam: Beam } } = {}
-local doorBeamsEnabled = false
-local claimedDoorKeys: { [string]: boolean } = {}
-
-local function allowButtonDirections(): boolean
-	return RuntimeSettings.GetBoolean('Allow Button Directions', true)
-end
-
-local buttonDirectionsEnabled = allowButtonDirections()
-
-local function setBeam(start: BasePart, target: BasePart, key: string)
+local function SetBeam(Start: BasePart, Target: BasePart, Key: string)
 	if not buttonDirectionsEnabled then
 		return
 	end
 
-	-- Remove old beam with the same key if it exists
-	if activeBeams[key] then
-		if activeBeams[key].beam then activeBeams[key].beam:Destroy() end
-		if activeBeams[key].att0 then activeBeams[key].att0:Destroy() end
-		if activeBeams[key].att1 then activeBeams[key].att1:Destroy() end
+	if ActiveBeams[Key] then
+		DestroyBeamEntry(ActiveBeams[Key])
 	end
 
-	local att0 = Instance.new("Attachment")
-	att0.Parent = start
+	const Att0 = Instance.new("Attachment")
+	Att0.Parent = Start
 
-	local att1 = Instance.new("Attachment")
-	att1.Parent = target
+	const Att1 = Instance.new("Attachment")
+	Att1.Parent = Target
 
-	local beam = Instance.new("Beam")
-	beam.Attachment0 = att0
-	beam.Attachment1 = att1
-	beam.Parent = start
-	beam.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 135, 255)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 255, 219)),
-	})
-	beam.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0),
-		NumberSequenceKeypoint.new(0.9, 0),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	beam.Width0 = 2
-	beam.Width1 = 2
-	beam.FaceCamera = true
-	beam.LightInfluence = 0
-	beam.LightEmission = 1
-	beam.Texture = "rbxassetid://6399401493"
-	beam.TextureMode = Enum.TextureMode.Static
-	beam.TextureSpeed = -2
-	beam.TextureLength = 5
-	beam.CurveSize0 = 20
-	beam.CurveSize1 = 20
-	beam.Segments = 500
+	const Beam = Instance.new("Beam")
+	Beam.Attachment0 = Att0
+	Beam.Attachment1 = Att1
+	Beam.Parent = Start
+	Beam.Color = BEAM_COLOR
+	Beam.Transparency = BEAM_TRANSPARENCY
+	Beam.Width0 = 2
+	Beam.Width1 = 2
+	Beam.FaceCamera = true
+	Beam.LightInfluence = 0
+	Beam.LightEmission = 1
+	Beam.Texture = BEAM_TEXTURE
+	Beam.TextureMode = Enum.TextureMode.Static
+	Beam.TextureSpeed = -2
+	Beam.TextureLength = 5
+	Beam.CurveSize0 = 20
+	Beam.CurveSize1 = 20
+	Beam.Segments = 500
 
-	activeBeams[key] = { att0 = att0, att1 = att1, beam = beam }
+	ActiveBeams[Key] = { att0 = Att0, att1 = Att1, beam = Beam }
 end
 
-local function DisplaceBeam(key: string)
-	if activeBeams[key] then
-		if activeBeams[key].beam then activeBeams[key].beam:Destroy() end
-		if activeBeams[key].att0 then activeBeams[key].att0:Destroy() end
-		if activeBeams[key].att1 then activeBeams[key].att1:Destroy() end
-		activeBeams[key] = nil
+local function DisplaceBeam(Key: string)
+	const Entry = ActiveBeams[Key]
+	if Entry then
+		DestroyBeamEntry(Entry)
+		ActiveBeams[Key] = nil
 	end
 end
 
 local function DisplaceAllBeams()
-	for key, entry in activeBeams do
-		if entry.beam then entry.beam:Destroy() end
-		if entry.att0 then entry.att0:Destroy() end
-		if entry.att1 then entry.att1:Destroy() end
+	for _, Entry in ActiveBeams do
+		DestroyBeamEntry(Entry)
 	end
-	table.clear(activeBeams)
+	table.clear(ActiveBeams)
 end
 
----------------------------------------------------------------------------
--- Tycoon door beams (set up once, not inside the event handler)
----------------------------------------------------------------------------
+--// Internal Utilities — Tycoon / Door Resolution
 
-local function getHRP(): BasePart?
-	local character = Player.Character
-	if character then
-		return character:FindFirstChild("HumanoidRootPart") :: BasePart?
+local function GetHRP(): BasePart?
+	const Character = Player.Character
+	if Character then
+		return Character:FindFirstChild("HumanoidRootPart") :: BasePart?
 	end
 	return nil
 end
 
-local function getTycoonFromDescendant(descendant: Instance): Instance?
-	local current: Instance? = descendant
-	while current and current.Parent ~= TycoonsFolder do
-		current = current.Parent
+local function GetTycoonFromDescendant(Descendant: Instance): Instance?
+	local Current: Instance? = Descendant
+	while Current and Current.Parent ~= TycoonsFolder do
+		Current = Current.Parent
 	end
 
-	return current
+	return Current
 end
 
-local function getDoorBeamKey(door: BasePart): string
-	local tycoon = getTycoonFromDescendant(door)
-	return if tycoon then `tycoon_{tycoon.Name}` else `tycoon_{door:GetFullName()}`
+local function GetDoorBeamKey(Door: BasePart): string
+	const Tycoon = GetTycoonFromDescendant(Door)
+	return if Tycoon then `tycoon_{Tycoon.Name}` else `tycoon_{Door:GetFullName()}`
 end
 
-local function getDoorFromTycoonName(tycoonName: string): BasePart?
-	local tycoon = TycoonsFolder:FindFirstChild(tycoonName)
-	local mainItems = tycoon and tycoon:FindFirstChild("MainItems")
-	local ownerDoor = mainItems and mainItems:FindFirstChild("OwnerDoor")
-	local door = ownerDoor and ownerDoor:FindFirstChild("Door")
-	if door and door:IsA("BasePart") then
-		return door
+local function GetDoorFromTycoonName(TycoonName: string): BasePart?
+	const Tycoon = TycoonsFolder:FindFirstChild(TycoonName)
+	const MainItems = Tycoon and Tycoon:FindFirstChild("MainItems")
+	const OwnerDoor = MainItems and MainItems:FindFirstChild("OwnerDoor")
+	const Door = OwnerDoor and OwnerDoor:FindFirstChild("Door")
+	if Door and Door:IsA("BasePart") then
+		return Door
 	end
 
 	return nil
 end
 
-local function resolveTycoonPath(path: string): BasePart?
-	local segments = string.split(path, ":")
-	local tycoonName = segments[1]
-	local current: Instance? = TycoonsFolder:FindFirstChild(tycoonName)
-	for index = 2, #segments do
-		if not current then
+local function ResolveTycoonPath(Path: string): BasePart?
+	const Segments = string.split(Path, ":")
+	const TycoonName = Segments[1]
+	local Current: Instance? = TycoonsFolder:FindFirstChild(TycoonName)
+	for Index = 2, #Segments do
+		if not Current then
 			return nil
 		end
-		current = current:FindFirstChild(segments[index])
+		Current = Current:FindFirstChild(Segments[Index])
 	end
 
-	if current and current:IsA("BasePart") then
-		return current
-	end
-
-	return nil
-end
-
-local function resolveSignalTarget(target: any?): BasePart?
-	if typeof(target) == "Instance" and target:IsA("BasePart") then
-		return target
-	elseif typeof(target) == "string" then
-		return resolveTycoonPath(target)
+	if Current and Current:IsA("BasePart") then
+		return Current
 	end
 
 	return nil
 end
 
-local function markTycoonClaimed(target: any?)
-	local door = resolveSignalTarget(target)
-	if not door and typeof(target) == "string" then
-		door = getDoorFromTycoonName(target)
+local function ResolveSignalTarget(Target: any?): BasePart?
+	if typeof(Target) == "Instance" and Target:IsA("BasePart") then
+		return Target
+	elseif typeof(Target) == "string" then
+		return ResolveTycoonPath(Target)
 	end
 
-	if not door then
-		return
-	end
-
-	local key = getDoorBeamKey(door)
-	claimedDoorKeys[key] = true
-	DisplaceBeam(key)
+	return nil
 end
 
-local function setupTycoonBeams()
-	if not doorBeamsEnabled or not buttonDirectionsEnabled then
+--// Internal Methods — Beam Controller
+
+local function GetPlayerHRP()
+	return GetHRP()
+end
+
+local function MarkTycoonClaimed(Target: any?)
+	local Door = ResolveSignalTarget(Target)
+	if not Door and typeof(Target) == "string" then
+		Door = GetDoorFromTycoonName(Target)
+	end
+
+	if not Door then
 		return
 	end
 
-	for _, tycoon in TycoonsFolder:GetChildren() do
-		local MainItems = tycoon:FindFirstChild("MainItems")
-		if not MainItems then continue end
+	const Key = GetDoorBeamKey(Door)
+	ClaimedDoorKeys[Key] = true
+	DisplaceBeam(Key)
+end
 
-		local ownerDoor = MainItems:FindFirstChild("OwnerDoor")
-		if not ownerDoor then continue end
+local function SetupTycoonBeams()
+	if not DoorBeamsEnabled or not buttonDirectionsEnabled then
+		return
+	end
 
-		local Door = ownerDoor:FindFirstChild("Door")
-		if not Door or not Door:IsA("BasePart") then continue end
+	for _, Tycoon in TycoonsFolder:GetChildren() do
+		const MainItems = Tycoon:FindFirstChild("MainItems")
+		if not MainItems then
+			continue
+		end
 
-		local key = getDoorBeamKey(Door)
-		if claimedDoorKeys[key] then continue end
+		const OwnerDoor = MainItems:FindFirstChild("OwnerDoor")
+		if not OwnerDoor then
+			continue
+		end
 
-		local hrp = getHRP()
-		if hrp then
-			setBeam(hrp, Door, key)
+		const Door = OwnerDoor:FindFirstChild("Door")
+		if not Door or not Door:IsA("BasePart") then
+			continue
+		end
+
+		const Key = GetDoorBeamKey(Door)
+		if ClaimedDoorKeys[Key] then
+			continue
+		end
+
+		const HRP = GetPlayerHRP()
+		if HRP then
+			SetBeam(HRP, Door, Key)
 		end
 	end
 end
 
-RuntimeSettings.Observe('Allow Button Directions', function()
-	buttonDirectionsEnabled = allowButtonDirections()
+--// Bootstrap — Runtime Hooks
+
+RuntimeSettings.Observe("Allow Button Directions", function()
+	buttonDirectionsEnabled = ButtonDirectionsEnabled()
 	if not buttonDirectionsEnabled then
 		DisplaceAllBeams()
 	else
-		setupTycoonBeams()
+		SetupTycoonBeams()
 	end
 end)
 
-
-Player.CharacterAdded:Connect(function(character)
-	if not doorBeamsEnabled or not buttonDirectionsEnabled then
+Player.CharacterAdded:Connect(function(Character)
+	if not DoorBeamsEnabled or not buttonDirectionsEnabled then
 		return
 	end
 
-	local hrp = character:WaitForChild("HumanoidRootPart")
-	for _, tycoon in TycoonsFolder:GetChildren() do
-		local MainItems = tycoon:FindFirstChild("MainItems")
-		if not MainItems then continue end
-		local ownerDoor = MainItems:FindFirstChild("OwnerDoor")
-		if not ownerDoor then continue end
-		local Door = ownerDoor:FindFirstChild("Door")
-		if not Door or not Door:IsA("BasePart") then continue end
-		local key = getDoorBeamKey(Door)
-		if claimedDoorKeys[key] then continue end
-		setBeam(hrp, Door, key)
-	end
-end)
-
-
-
-TutorialSignal.OnClientEvent:Connect(function(message: any, rawTarget: any?)
-	local newMessage = decodeTutorialMessage(message)
-	if not newMessage then
-		return
-	end
-
-	local target = if typeof(rawTarget) == "string" then rawTarget else nil
-	if newMessage == "TycoonClaimed" then
-		markTycoonClaimed(target)
-		return
-	elseif newMessage == "TycoonAvailable" then
-		doorBeamsEnabled = true
-		local door = resolveSignalTarget(target)
-		if not door and typeof(target) == "string" then
-			door = getDoorFromTycoonName(target)
+	const HRP = Character:WaitForChild("HumanoidRootPart")
+	for _, Tycoon in TycoonsFolder:GetChildren() do
+		const MainItems = Tycoon:FindFirstChild("MainItems")
+		if not MainItems then
+			continue
 		end
-		if door then
-			local key = getDoorBeamKey(door)
-			claimedDoorKeys[key] = nil
-			local hrp = getHRP()
-			if hrp then
-				setBeam(hrp, door, key)
+		const OwnerDoor = MainItems:FindFirstChild("OwnerDoor")
+		if not OwnerDoor then
+			continue
+		end
+		const Door = OwnerDoor:FindFirstChild("Door")
+		if not Door or not Door:IsA("BasePart") then
+			continue
+		end
+		const Key = GetDoorBeamKey(Door)
+		if ClaimedDoorKeys[Key] then
+			continue
+		end
+		SetBeam(HRP, Door, Key)
+	end
+end)
+
+Packets.packets.Tutorial.listen(function(Data: TutorialData)
+	const NewMessage = Data.type
+	const Target = Data.target
+
+	if NewMessage == "TycoonClaimed" then
+		MarkTycoonClaimed(Target)
+		return
+	elseif NewMessage == "TycoonAvailable" then
+		DoorBeamsEnabled = true
+		local Door = ResolveSignalTarget(Target)
+		if not Door and typeof(Target) == "string" then
+			Door = GetDoorFromTycoonName(Target)
+		end
+		if Door then
+			const Key = GetDoorBeamKey(Door)
+			ClaimedDoorKeys[Key] = nil
+			const HRP = GetPlayerHRP()
+			if HRP then
+				SetBeam(HRP, Door, Key)
 			end
 		end
 		return
-	elseif newMessage == "Perfect!" then
-		doorBeamsEnabled = false
+	elseif NewMessage == OnboardingStep.ClaimComplete.Message then
+		DoorBeamsEnabled = false
 		DisplaceAllBeams()
 		return
 	end
-	if newMessage == "Congrats! Tutorial Completed." then
+
+	if NewMessage == OnboardingStep.Completed.Message then
 		DisplaceAllBeams()
 		task.wait(3)
 		script:Destroy()
 		return
 	end
 
-	if newMessage == "Now purchase your first button!" then
+	if NewMessage == OnboardingStep.PurchaseButton.Message then
 		if not buttonDirectionsEnabled then
 			return
 		end
-		local targetPart = resolveSignalTarget(target)
-		if not targetPart then
+		const TargetPart = ResolveSignalTarget(Target)
+		if not TargetPart then
 			warn("[Onboarding] Target not found for button beam")
 			return
 		end
 		DisplaceAllBeams()
 		task.wait()
-		local hrp = getHRP()
-		if hrp then
-			setBeam(hrp, targetPart, "tutorial_button")
+		const HRP = GetPlayerHRP()
+		if HRP then
+			SetBeam(HRP, TargetPart, "tutorial_button")
 		end
-
-	elseif newMessage == "Claim your money" then
+	elseif NewMessage == OnboardingStep.ClaimMoney.Message then
 		if not buttonDirectionsEnabled then
 			return
 		end
-		local targetPart = resolveSignalTarget(target)
-		if not targetPart then
+		const TargetPart = ResolveSignalTarget(Target)
+		if not TargetPart then
 			warn("[Onboarding] Target not found for ATM beam")
 			return
 		end
 		DisplaceAllBeams()
 		task.wait()
-		local hrp = getHRP()
-		if hrp then
-			setBeam(hrp, targetPart, "tutorial_atm")
+		const HRP = GetPlayerHRP()
+		if HRP then
+			SetBeam(HRP, TargetPart, "tutorial_atm")
 		end
 	end
 end)
-

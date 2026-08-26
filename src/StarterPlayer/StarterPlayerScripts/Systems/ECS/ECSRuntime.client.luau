@@ -1,15 +1,31 @@
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+--!strict
+--[[
+	@class ECSRuntimeClient
 
-local ECS = require(ReplicatedStorage.ECS)
-local Runner = require(ReplicatedStorage.ECS.Runner)
+	@desc
+	Client-side ECS runner. Registers systems that must run on every
+	render step (character management, projectile casting, scheduled
+	tasks) and kicks them off with RunService.RenderStepped.
+]]
 
-local CharacterManagerSystem = require(script.Parent.CharacterManagerSystem)
-local ProjectileCastSystem = require(script.Parent.ProjectileCastSystem)
-local ScheduledTaskSystem = require(script.Parent.ScheduledTaskSystem)
+--// Services
 
-local runner = Runner.new("Client", ECS.world, ECS.Components)
-runner:AddSystem("CharacterManagerSystem", CharacterManagerSystem)
-runner:AddSystem("ProjectileCastSystem", ProjectileCastSystem)
-runner:AddSystem("ScheduledTaskSystem", ScheduledTaskSystem)
-runner:Start(RunService.RenderStepped)
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const RunService = game:GetService("RunService")
+
+--// Modules
+
+const ECS = require(ReplicatedStorage.ECS)
+const Runner = require(ReplicatedStorage.ECS.Runner)
+
+const CharacterManagerSystem = require(script.Parent.CharacterManagerSystem)
+const ProjectileCastSystem = require(script.Parent.ProjectileCastSystem)
+const ScheduledTaskSystem = require(script.Parent.ScheduledTaskSystem)
+
+--// Bootstrap
+
+const RunnerInstance = Runner.new("Client", ECS.world, ECS.Components)
+RunnerInstance:AddSystem("CharacterManagerSystem", CharacterManagerSystem)
+RunnerInstance:AddSystem("ProjectileCastSystem", ProjectileCastSystem)
+RunnerInstance:AddSystem("ScheduledTaskSystem", ScheduledTaskSystem)
+RunnerInstance:Start(RunService.RenderStepped)

@@ -17,8 +17,8 @@ local TONE_COLORS = {
 	info = Color3.fromRGB(235, 242, 255),
 }
 
-local function getToneColor(kind: string): Color3
-	return TONE_COLORS[kind] or TONE_COLORS.info
+local function getToneColor(type: string): Color3
+	return TONE_COLORS[type] or TONE_COLORS.info
 end
 
 local function NotificationText(props)
@@ -59,7 +59,7 @@ local function NotificationText(props)
 		end
 	end, { notification.id })
 
-	local color = getToneColor(notification.kind)
+	local color = getToneColor(notification.type)
 	local yOffset = -offset * 30
 
 	return e("CanvasGroup", {

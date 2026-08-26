@@ -5,8 +5,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
-local ClientSignals = require(ReplicatedStorage.Network.ClientSignals)
 local Janitor = require(ReplicatedStorage.Packages.janitor)
+local Packets = require(ReplicatedStorage.Network.Packets)
 
 local player = Players.LocalPlayer
 local janitor = Janitor.new()
@@ -56,7 +56,7 @@ local function cubicBezierTangent(a: Vector3, b: Vector3, c: Vector3, d: Vector3
 	return (b - a) * 3 * inverse ^ 2
 		+ (c - b) * 6 * inverse * t
 		+ (d - c) * 3 * t ^ 2
-end
+	end
 
 local function easeInOut(value: number): number
 	return if value < 0.5 then 4 * value ^ 3 else 1 - ((-2 * value + 2) ^ 3) / 2
@@ -122,8 +122,6 @@ local function createProjectile(origin: Vector3, index: number, scale: number): 
 	projectile.Shape = Enum.PartType.Ball
 	projectile.CFrame = CFrame.new(origin)
 	projectile.Parent = workspace
-
-	
 
 	addTrail(projectile, scale)
 	return projectile
@@ -216,16 +214,6 @@ local function playCashEffect(origin: Vector3, amount: number)
 	end)
 end
 
-janitor:Add(ClientSignals.Listen(function(kind, value)
-	if kind ~= "CashCollected" or typeof(value) ~= "table" then
-		return
-	end
-
-	local amount = value.amount
-	local origin = value.origin
-	if typeof(amount) ~= "number" or typeof(origin) ~= "Vector3" then
-		return
-	end
-
-	playCashEffect(origin, amount)
+janitor:Add(Packets.packets.CashCollected.listen(function(data)
+	playCashEffect(data.origin, data.amount)
 end), nil, "CashCollected")

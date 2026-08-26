@@ -21,6 +21,7 @@ export type ButtonConfig = {
 	Purchase: PurchaseConfig,
 	Build: BuildConfig,
 	Progression: ProgressionConfig,
+	Properties: { [string]: { [string]: unknown } }?,
 }
 
 local ButtonConfiguration = {}
@@ -57,7 +58,7 @@ ButtonConfiguration.Buttons = {
 	Button4 = Button({
 		Purchase = { Kind = "Basic", Gamepass = "GoldenDropper" },
 		Build = { Items = { "GoldenDropper" } },
-		Progression = { Reveals = {  } },
+		Progression = { Reveals = {} },
 	}),
 	Button5 = Button({
 		Purchase = { Price = 500, Kind = "Basic" },
@@ -101,8 +102,10 @@ ButtonConfiguration.Buttons = {
 	}),
 	Button13 = Button({
 		Purchase = { Price = 1250, Kind = "Basic" },
-		Build = { Items = { "DoorSupport", "DoorSupport2", "WindowsHolder", "WindowsSupport", "WindowsSupport(Right)" } },
-		Progression = { Reveals = {"Button14"} },
+		Build = {
+			Items = { "DoorSupport", "DoorSupport2", "WindowsHolder", "WindowsSupport", "WindowsSupport(Right)" },
+		},
+		Progression = { Reveals = { "Button14" } },
 	}),
 	Button14 = Button({
 		Purchase = { Price = 3800, Kind = "Basic" },
@@ -170,13 +173,15 @@ ButtonConfiguration.Buttons = {
 		Progression = { Reveals = { "Button27", "Button51" } },
 	}),
 	Button27 = Button({
-		Purchase = { Price = 14000,
-		
-		Kind = "Basic" 
-	
-	},
+		Purchase = { Price = 14000, Kind = "Basic" },
 		Build = { Items = { "Teleporter" } },
 		Progression = { Reveals = { "Button28" } },
+		Properties = {
+			["Teleport"] = {
+				CanCollide = false,
+				Transparency = 0.4,
+			},
+		},
 	}),
 	Button28 = Button({
 		Purchase = { Price = 100000, Kind = "Basic" },
@@ -202,6 +207,7 @@ ButtonConfiguration.Buttons = {
 		Purchase = { Price = 70000, Kind = "Basic" },
 		Build = { Items = { "1b", "1g", "1r", "2b", "2g", "2r", "3b", "3g", "3r" } },
 		Progression = { Reveals = { "Button17" } },
+		
 	}),
 	Button33 = Button({
 		Purchase = { Price = 20000, Kind = "Basic" },

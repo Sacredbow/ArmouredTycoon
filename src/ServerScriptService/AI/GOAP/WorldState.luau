@@ -1,14 +1,29 @@
 --!strict
+--[[
+	@class WorldState
 
-local Types = require(script.Parent.Types)
+	@desc
+	GOAP world state utility functions: matching, applying effects, and
+	heuristic distance calculation between states.
+]]
 
-local WorldState = {}
+--// Modules
+
+const Types = require(script.Parent.Types)
+
+--// Types
 
 type WorldState = Types.WorldState
 
-function WorldState.matches(state: WorldState, query: WorldState): boolean
-	for key, expected in query do
-		if state[key] ~= expected then
+--// Module
+
+const WorldState = {}
+
+--// Public API
+
+function WorldState.matches(State: WorldState, Query: WorldState): boolean
+	for Key, Expected in Query do
+		if State[Key] ~= Expected then
 			return false
 		end
 	end
@@ -16,24 +31,24 @@ function WorldState.matches(state: WorldState, query: WorldState): boolean
 	return true
 end
 
-function WorldState.apply(state: WorldState, effects: WorldState): WorldState
-	local nextState = table.clone(state)
-	for key, value in effects do
-		nextState[key] = value
+function WorldState.apply(State: WorldState, Effects: WorldState): WorldState
+	const NextState = table.clone(State)
+	for Key, Value in Effects do
+		NextState[Key] = Value
 	end
 
-	return nextState
+	return NextState
 end
 
-function WorldState.distance(state: WorldState, goal: WorldState): number
-	local misses = 0
-	for key, expected in goal do
-		if state[key] ~= expected then
-			misses += 1
+function WorldState.distance(State: WorldState, Goal: WorldState): number
+	local Misses = 0
+	for Key, Expected in Goal do
+		if State[Key] ~= Expected then
+			Misses += 1
 		end
 	end
 
-	return misses
+	return Misses
 end
 
 return WorldState

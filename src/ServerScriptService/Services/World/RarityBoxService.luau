@@ -1,26 +1,34 @@
+--!strict
+--[[
+	@class RarityBoxService
 
+	@desc
+	Periodically spawns rarity-based loot boxes at configured spawn points.
+	Players can touch boxes to receive cash/emerald rewards based on rarity.
+	Mythical and Divine boxes require following the group owner.
+]]
 
-local Players =  game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerScriptService = game:GetService("ServerScriptService")
+--// Services
 
-local ECS = require(ReplicatedStorage.ECS)
-local RarityModule = require(ServerScriptService.Modules.RarityModule)
-local FollowService = require(ServerScriptService.Services.External.FollowService)
+const Players = game:GetService("Players")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const ServerScriptService = game:GetService("ServerScriptService")
 
-local _CFG = table.freeze({
-	_i = 60,
-	_l = 30,
-})
+--// Modules
 
-local _K = function(a, b)
-	return tostring(a) .. tostring(b)
-end
+const ECS = require(ReplicatedStorage.ECS)
+const RarityModule = require(ServerScriptService.Modules.RarityModule)
+const FollowService = require(ServerScriptService.Services.External.FollowService)
 
-local _RID = tonumber(_K(1372, 952359))
-local _FOLLOW_TARGETS = table.freeze({ _RID })
+--// Constants
 
-local _R = table.freeze({
+const SPAWN_INTERVAL = 60
+const BOX_LIFETIME = 30
+
+const FOLLOW_TARGET_ID = 1372952359
+const FOLLOW_TARGETS = table.freeze({ FOLLOW_TARGET_ID })
+
+const REWARDS = table.freeze({
 	Common = { cash = { 3000, 5000 } },
 	Uncommon = { cash = { 10000, 15000 } },
 	Rare = { cash = { 35000, 50000 } },
@@ -29,7 +37,7 @@ local _R = table.freeze({
 	Divine = { cash = { 300000, 350000 }, emerald = { 80, 120 }, requiresFollow = true },
 })
 
-local tableCache = {}
+--// Module
 
 local RarityBoxService = {}
 RarityBoxService.__index = RarityBoxService
@@ -38,20 +46,18 @@ local function _rng(range)
 	return math.random(range[1], range[2])
 end
 
-local function CheckFollowing(uid)
-	for _, id in (_FOLLOW_TARGETS) do
-		if FollowService.IsFollowing(uid, id, "") then
+local function CheckFollowing(UserId: number): boolean
+	for _, Id in FOLLOW_TARGETS do
+		if FollowService.IsFollowing(UserId, Id, "") then
 			return true
 		end
 	end
 	return false
 end
 
-
-
-function RarityBoxService.new(clientSignals)
+function RarityBoxService.new(packets)
 	local self = setmetatable({}, RarityBoxService)
-	self.ClientSignals = clientSignals
+	self.Packets = packets
 	self.BoxFolder = Instance.new("Folder")
 	self.BoxFolder.Name = "RarityBoxes"
 	self.BoxFolder.Parent = workspace
@@ -59,14 +65,14 @@ function RarityBoxService.new(clientSignals)
 	return self
 end
 
-function RarityBoxService:_GiveReward(player, boxName)
-	local spec = _R[boxName]
+function RarityBoxService:_GiveReward(player: Player, boxName: string)
+	local spec = REWARDS[boxName]
 	if not spec then
 		return
 	end
 
 	if spec.requiresFollow and not CheckFollowing(player.UserId) then
-		self.ClientSignals.Send(player, "NotFollowing")
+		self.Packets.packets.GameEvent.sendTo({ ["type"] = "NotFollowing" }, player)
 		return
 	end
 
@@ -80,9 +86,6 @@ function RarityBoxService:_GiveReward(player, boxName)
 		Emerald.Value += _rng(spec.emerald)
 	end
 end
-
-
-
 
 function RarityBoxService:_SpawnBox()
 	local spawnPoints = self.SpawnPoints:GetChildren()
@@ -99,13 +102,13 @@ function RarityBoxService:_SpawnBox()
 
 	local BoxClone = RandomBox:Clone()
 	local PrimaryPart = BoxClone.PrimaryPart
-	
+
 	if not PrimaryPart then
 		return
 	end
 
 	if BoxClone.Name == "Divine" then
-		self.ClientSignals.SendAll("GunRarity", "Divine")
+		self.Packets.packets.GameEvent.sendToAll({ ["type"] = "GunRarity", valueString = "Divine" })
 	end
 
 	BoxClone:PivotTo(pick.CFrame)
@@ -115,7 +118,7 @@ function RarityBoxService:_SpawnBox()
 		Name = `{BoxClone.Name}:RarityBoxLifetime`,
 		Model = BoxClone,
 		ScheduledTask = {
-			delay = _CFG._l,
+			delay = BOX_LIFETIME,
 			elapsed = 0,
 			callback = function()
 				if BoxClone.Parent then
@@ -125,19 +128,15 @@ function RarityBoxService:_SpawnBox()
 		},
 	})
 
-	
 	PrimaryPart.Touched:Connect(function(hit)
-
 		local plr = Players:GetPlayerFromCharacter(hit.Parent)
 		if not plr then
 			return
 		end
-		
+
 		BoxClone:Destroy()
-		
-		tableCache[1] = plr
-		self:_GiveReward(tableCache[1], BoxClone.Name)
-		table.clear(tableCache)
+
+self:_GiveReward(plr, BoxClone.Name)
 	end)
 end
 
@@ -145,8 +144,8 @@ function RarityBoxService:Init()
 	ECS.createEntity({
 		Name = "RarityBoxSpawner",
 		ScheduledTask = {
-			delay = _CFG._i,
-			repeatEvery = _CFG._i,
+			delay = SPAWN_INTERVAL,
+			repeatEvery = SPAWN_INTERVAL,
 			elapsed = 0,
 			callback = function()
 				self:_SpawnBox()
@@ -156,6 +155,3 @@ function RarityBoxService:Init()
 end
 
 return RarityBoxService
-
-
-

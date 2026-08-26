@@ -1,11 +1,26 @@
 --!strict
+--[[
+	@class Action
 
-local Types = require(script.Parent.Types)
+	@desc
+	Factory for GOAP actions. Each action carries a cost, preconditions,
+	effects, an optional scoring function, and a run callback.
+]]
 
-local Action = {}
+--// Modules
+
+const Types = require(script.Parent.Types)
+
+--// Types
 
 type Action = Types.Action
 type WorldState = Types.WorldState
+
+--// Module
+
+const Action = {}
+
+--// Constructor
 
 function Action.new(config: {
 	name: string,

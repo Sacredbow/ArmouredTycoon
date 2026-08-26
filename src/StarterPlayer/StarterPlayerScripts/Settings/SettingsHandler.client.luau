@@ -1,4 +1,6 @@
-﻿repeat task.wait() until game:IsLoaded()
+
+repeat task.wait() 
+until game:IsLoaded()
 -- NewSettingsHandler - handles all option interactions for the NewSettings GUI
 -- Services
 local playersService = game:GetService("Players")
@@ -557,6 +559,11 @@ yesBtn.MouseButton1Click:Connect(function()
 	resetToDefaults()
 end)
 
+
+
+
+
+
 noBtn.MouseEnter:Connect(function() PlaySound("Roblox GUI - Hover 01") end)
 noBtn.MouseButton1Click:Connect(function()
 	PlaySound("Roblox GUI - Call Accept")
@@ -581,3 +588,4 @@ end)
 script:SetAttribute("Loaded", true)
 
 
+ 

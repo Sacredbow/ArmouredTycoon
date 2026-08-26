@@ -1,6 +1,23 @@
-local TweenService = game:GetService("TweenService")
-local CollectionService = game:GetService("CollectionService")
-local RunService = game:GetService("RunService")
+--!strict
+--[[
+	@class BuildAssemble
+
+	@desc
+	Procedural build/deassemble animation system for tycoon items.
+	Creates flying-piece assembly effects with staggered timing,
+	adaptive piece counts, and smooth fading transitions.
+
+	Play: Animates parts from scattered positions → final target CFrame.
+	Deassemble: Animates parts from current CFrame → scattered positions.
+]]
+
+--// Services
+
+const TweenService = game:GetService("TweenService")
+const CollectionService = game:GetService("CollectionService")
+const RunService = game:GetService("RunService")
+
+--// Module
 
 local BuildAssemble = {}
 
