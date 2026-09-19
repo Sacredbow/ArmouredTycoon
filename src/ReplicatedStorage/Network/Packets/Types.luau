@@ -108,6 +108,12 @@ export type FriendBoostPayload = {
 	percent: number,
 }
 
+export type BuildAssemblePayload = {
+	item: Instance,
+	duration: number?,
+	mode: string?,
+}
+
 export type KOTHAnnouncementPayload = {
 	playerName: string,
 	teamColor: Color3,

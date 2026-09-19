@@ -9,7 +9,9 @@
 
 --// Modules
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local WeaponUIState = require(script.Parent.Parent.UI.WeaponUIState)
+local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
 
 local CrosshairController = {}
 CrosshairController.__index = CrosshairController
@@ -95,13 +97,14 @@ function CrosshairController:destroy()
 end
 
 function CrosshairController:update(weaponData: any, toolEquip: boolean, aiming: boolean, weaponName: string)
+	local isThird = self:_isThirdPerson()
 	local active = toolEquip
 		and weaponData
 		and weaponData.Type == "Gun"
 		and not (aiming and self:_isSniper(weaponData, weaponName))
 
 	local state = if active
-		then `active:{if self:_isShotgun(weaponData, weaponName) then "shotgun" else "rifle"}:{if self:_isThirdPerson() then "third" else "first"}`
+		then `active:{if self:_isShotgun(weaponData, weaponName) then "shotgun" else "rifle"}:{if isThird then "third" else "first"}`
 		else "hidden"
 
 	if self._lastState ~= state then
@@ -112,10 +115,10 @@ function CrosshairController:update(weaponData: any, toolEquip: boolean, aiming:
 	WeaponUIState.publishCrosshair(self._player, {
 		visible = active == true,
 		kind = if active and shotgun then "shotgun" elseif active then "rifle" else "none",
-		mode = if self:_isThirdPerson() then "third" else "first",
+		mode = if isThird then "third" else "first",
 	})
 
-	if active then
+	if active and isThird then
 		self:ensure()
 	else
 		self:destroy()
@@ -135,8 +138,12 @@ end
 --// Internal Helpers
 
 function CrosshairController:_isThirdPerson(): boolean
-	-- RuntimeSettings is not available here directly; let the caller pass it in.
-	-- We check the player's CameraMode as a heuristic.
+	local ok, val = pcall(function()
+		return RuntimeSettings.GetBoolean("Third Person", true)
+	end)
+	if ok and typeof(val) == "boolean" then
+		return val
+	end
 	return self._player.CameraMode == Enum.CameraMode.Classic
 end
 

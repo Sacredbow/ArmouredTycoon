@@ -2,7 +2,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local EnvironmentShared = require(ReplicatedStorage.EnvironmentShared)
+local EnvironmentShared = require(ReplicatedStorage.Shared.EnvironmentShared)
 
 local EnvironmentSchedule = {}
 EnvironmentSchedule.__index = EnvironmentSchedule

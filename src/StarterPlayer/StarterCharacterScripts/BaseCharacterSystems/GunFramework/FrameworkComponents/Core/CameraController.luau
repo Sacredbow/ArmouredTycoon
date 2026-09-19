@@ -79,6 +79,7 @@ function CameraController:updateThirdPersonSetting()
 end
 
 function CameraController:applyCameraMode()
+	self:updateThirdPersonSetting()
 	if self._thirdPerson then
 		self._player.CameraMode = Enum.CameraMode.Classic
 	else
@@ -122,7 +123,7 @@ function CameraController:headMovement(toolEquip: boolean, aiming: boolean, weap
 	end
 
 	local cameraDirection = self._humanoidRootPart.CFrame:toObjectSpace(self._camera.CFrame).lookVector
-	if not self._neck then
+	if not self._neck or not self._torso then
 		return
 	end
 

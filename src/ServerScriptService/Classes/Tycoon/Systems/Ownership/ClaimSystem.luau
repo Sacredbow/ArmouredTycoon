@@ -19,7 +19,7 @@ const ServerScriptService = game:GetService("ServerScriptService")
 const ECS = require(ReplicatedStorage.ECS)
 const Packets = require(ReplicatedStorage.Network.Packets)
 const OnboardingDefinitions = require(ReplicatedStorage.Progression.Onboarding.OnboardingDefinitions)
-const BuildAssemble = require(ServerScriptService.Utilities.BuildAssemble)
+const BuildAssemble = require(ReplicatedStorage.Libraries.BuildAssemble)
 const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 const PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
 

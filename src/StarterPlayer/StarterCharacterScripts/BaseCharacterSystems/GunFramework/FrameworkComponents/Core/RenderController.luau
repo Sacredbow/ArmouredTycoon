@@ -118,6 +118,8 @@ function RenderController:step(deltaTime: number)
 	local equip = ctx.equipController
 	local camera = self._camera
 
+	ctx.state.halfStep = not ctx.state.halfStep
+
 	-- Camera spring recoil
 	camera.CFrame = camera.CFrame * CFrame_Angles(ctx.cameraSpring.p.x, ctx.cameraSpring.p.y, ctx.cameraSpring.p.z)
 
@@ -168,17 +170,6 @@ function RenderController:step(deltaTime: number)
 		end
 	end
 
-	-- AnimPart follows camera
-	local animPart = viewModel.PrimaryPart
-	if animPart then
-		animPart.CFrame = camera.CFrame * ctx.nearZ * ctx.bipodCF * equip:getMainCF() * ctx.gunbobcf * ctx.aimcf
-	end
-
-	-- Weapon model positioning
-	if not animData or not animData.GunModelFixed then
-		weaponInHand:SetPrimaryPartCFrame(animPart.CFrame * equip:getGunCF())
-	end
-
 	-- Movement bob
 	local charspeed = ctx.state.charspeed
 	if ctx.state.running then
@@ -225,6 +216,19 @@ function RenderController:step(deltaTime: number)
 			TweenService:Create(camera, ctx.aimTween, { FieldOfView = 70 }):Play()
 		end
 		ctx.maincf = ctx.maincf:Lerp((animData and animData.MainCFrame or CFrame_new()) * ctx.recoilcf * sway:inverse(), 0.2)
+	end
+
+	equip:setMainCF(ctx.maincf)
+
+	-- AnimPart follows camera
+	local animPart = viewModel.PrimaryPart
+	if animPart then
+		animPart.CFrame = camera.CFrame * ctx.nearZ * ctx.bipodCF * ctx.maincf * ctx.gunbobcf * ctx.aimcf
+	end
+
+	-- Weapon model positioning
+	if not animData or not animData.GunModelFixed then
+		weaponInHand:SetPrimaryPartCFrame(animPart.CFrame * equip:getGunCF())
 	end
 
 	-- Scope reticle parallax

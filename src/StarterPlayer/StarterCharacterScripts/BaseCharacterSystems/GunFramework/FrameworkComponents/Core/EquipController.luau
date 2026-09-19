@@ -33,6 +33,38 @@ const ArmModel = Engine:WaitForChild("ArmModel") :: any
 const AttModels = Engine:WaitForChild("AttModels") :: any
 const AttModules = Engine:WaitForChild("AttModules") :: any
 const Events = Engine:WaitForChild("Events") :: any
+const Mods = Engine:WaitForChild("Modules") :: any
+
+local Ultil: any
+local ok, utilModule = pcall(function()
+	return require(Mods:WaitForChild("Utilities"))
+end)
+if ok then
+	Ultil = utilModule
+else
+	Ultil = {
+		Weld = function(part0: BasePart, part1: BasePart)
+			local motor = Instance.new("Motor6D")
+			motor.Name = part1.Name
+			motor.Part0 = part0
+			motor.Part1 = part1
+			motor.C0 = CFrame.new()
+			motor.C1 = part1.CFrame:ToObjectSpace(part0.CFrame)
+			motor.Parent = part0
+			return motor
+		end,
+		WeldComplex = function(part0: BasePart, part1: BasePart, name: string)
+			local motor = Instance.new("Motor6D")
+			motor.Name = name
+			motor.Part0 = part0
+			motor.Part1 = part1
+			motor.C0 = CFrame.new()
+			motor.C1 = part1.CFrame:ToObjectSpace(part0.CFrame)
+			motor.Parent = part0
+			return motor
+		end,
+	}
+end
 
 --// Constants
 
@@ -248,7 +280,7 @@ function EquipController:resetMods()
 end
 
 function EquipController:loadAttachment(weapon: any)
-	local attachments = AttachmentController.load(weapon, self._weaponData, self._modTable, self._attModels, self._attModules, nil)
+	local attachments = AttachmentController.load(weapon, self._weaponData, self._modTable, self._attModels, self._attModules, Ultil)
 
 	self._underBarrelAtt = attachments.underBarrel
 	self._suppressor = attachments.suppressor
@@ -371,16 +403,22 @@ function EquipController:setup(tool: Tool)
 	self:updateGui()
 
 	-- Weld weapon parts
+	local handle = self._weaponInHand:WaitForChild("Handle") :: BasePart
 	for _, key in self._weaponInHand:GetChildren() do
 		if key:IsA("BasePart") and key.Name ~= "Handle" then
 			if key.Name ~= "Bolt" and key.Name ~= "Lid" and key.Name ~= "Slide" then
-				-- Weld to handle
+				Ultil.Weld(handle, key)
 			end
 			if key.Name == "Bolt" or key.Name == "Slide" then
-				-- Complex weld
+				Ultil.WeldComplex(handle, key, key.Name)
 			end
 			if key.Name == "Lid" then
-				-- Hinge weld
+				local hinge = self._weaponInHand:FindFirstChild("LidHinge")
+				if hinge and hinge:IsA("BasePart") then
+					Ultil.Weld(key, hinge)
+				else
+					Ultil.Weld(key, handle)
+				end
 			end
 		end
 	end
@@ -395,22 +433,24 @@ function EquipController:setup(tool: Tool)
 	if self._weaponInHand:FindFirstChild("Nodes") then
 		for _, node in self._weaponInHand.Nodes:GetChildren() do
 			if node:IsA("BasePart") then
+				Ultil.Weld(handle, node)
 				node.Anchored = false
 				node.CanCollide = false
 			end
 		end
 	end
 
-	gunWeld.Part1 = self._weaponInHand:WaitForChild("Handle")
+	gunWeld.Part1 = handle
 	gunWeld.C1 = self._gunCF
 
 	self._weaponInHand.Parent = self._viewModel
 
 	if self._ammo <= 0 and self._weaponData.Type == "Gun" then
-		-- Slide locked back
+		local slide = handle:FindFirstChild("Slide")
+		if slide and slide:IsA("Motor6D") and self._weaponData.SlideEx then
+			slide.C0 = self._weaponData.SlideEx:inverse()
+		end
 	end
-
-	self._animationController:equip()
 
 	-- Update cast controller state
 	self._castController:setWeaponState(self._weaponTool, self._weaponData, self._modTable, self._weaponInHand)

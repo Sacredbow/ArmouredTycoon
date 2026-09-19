@@ -20,7 +20,7 @@ const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 --// Modules
 
-const EnvironmentShared = require(ReplicatedStorage.EnvironmentShared)
+const EnvironmentShared = require(ReplicatedStorage.Shared.EnvironmentShared)
 const EnvironmentSchedule = require(script.EnvironmentSchedule)
 const LightningModule = require(script.LightningModule)
 const ECS = require(ReplicatedStorage.ECS)

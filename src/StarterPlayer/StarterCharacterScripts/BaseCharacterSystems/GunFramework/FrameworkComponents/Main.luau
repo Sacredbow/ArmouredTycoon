@@ -159,7 +159,7 @@ function Main.start(hostScript)
 	local rootPart = char:WaitForChild("HumanoidRootPart")
 	local neck = torso:WaitForChild("Neck")
 	local authToken = Events.AcessId:InvokeServer(plr.UserId) :: typeof(PlayersService.LocalPlayer)
-	
+
 
 	--// Springs
 
@@ -277,6 +277,8 @@ function Main.start(hostScript)
 	local function isThirdPersonCamera(): boolean
 		return RuntimeSettings.GetBoolean("Third Person", true)
 	end
+
+	castController:setThirdPersonCallback(isThirdPersonCamera)
 
 	local function isShotgunWeapon(): boolean
 		local weaponData = equipController:getWeaponData()
@@ -799,11 +801,11 @@ function Main.start(hostScript)
 
 	--// Camera Lean Update
 
-	connect(RunService:BindToRenderStep("Camera Update", 200, function()
+	RunService:BindToRenderStep("Camera Update", 200, function()
 		leanSpring.cornerPeek.t = leanSpring.peekFactor * state.virar
 		local newLeanCF = CFrame.fromAxisAngle(Vector3.new(0, 0, 1), leanSpring.cornerPeek.p)
 		cam.CFrame = cam.CFrame * newLeanCF
-	end))
+	end)
 
 	--// Bind Default Movement Actions
 

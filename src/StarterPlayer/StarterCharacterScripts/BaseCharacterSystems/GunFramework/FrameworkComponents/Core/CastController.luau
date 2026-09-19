@@ -167,7 +167,7 @@ function CastController:createBullet(
 		direction = (target - origin).Unit
 	end
 
-	local bulletCF = CFrame.new(origin, direction)
+	local bulletCF = CFrame.lookAt(origin, origin + direction)
 	local walkMul = self._weaponData.WalkMult * (self._modTable and self._modTable.WalkMult or 1)
 	local spreadAngle
 
@@ -283,7 +283,6 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 			bullet:Destroy()
 			debounce = true
 			cleanup()
-			local authToken = self._userIdToken .. "-" .. self._player.UserId
 			self._events.ShieldHit:FireServer(shieldModel, self._weaponData.Damage or 0)
 			return
 		end

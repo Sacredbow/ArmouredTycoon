@@ -6,7 +6,8 @@ local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
-local EnvironmentShared = require(ReplicatedStorage.EnvironmentShared)
+local EnvironmentShared = require(ReplicatedStorage.Shared.EnvironmentShared)
+
 
 local NatureAudio = {}
 NatureAudio.__index = NatureAudio

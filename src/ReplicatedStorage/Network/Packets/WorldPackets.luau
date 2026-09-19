@@ -9,5 +9,13 @@ return function(ByteNet: any)
 				minutes = ByteNet.optional(ByteNet.int32),
 			}),
 		}),
+
+		BuildAssemble = ByteNet.definePacket({
+			value = ByteNet.struct({
+				item = ByteNet.inst,
+				duration = ByteNet.optional(ByteNet.float32),
+				mode = ByteNet.optional(ByteNet.string),
+			}),
+		}),
 	}
 end

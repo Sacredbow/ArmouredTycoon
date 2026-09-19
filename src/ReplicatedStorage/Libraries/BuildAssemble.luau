@@ -4,11 +4,17 @@
 
 	@desc
 	Procedural build/deassemble animation system for tycoon items.
-	Creates flying-piece assembly effects with staggered timing,
-	adaptive piece counts, and smooth fading transitions.
+	Optimized to run visual piece effects locally on the client to eliminate
+	server physics and replication overhead.
 
-	Play: Animates parts from scattered positions → final target CFrame.
-	Deassemble: Animates parts from current CFrame → scattered positions.
+	When invoked on the server:
+	1. Calculates animation duration.
+	2. Hides final parts during construction.
+	3. Replicates to all clients via ByteNet (Packets.packets.BuildAssemble.sendToAll).
+	4. Waits on the server for the duration, then restores final parts and invokes onComplete.
+
+	When invoked on the client (or via packet reception):
+	Runs procedural flying-piece assembly/deassemble animations locally with TweenService.
 ]]
 
 --// Services
@@ -16,6 +22,7 @@
 const TweenService = game:GetService("TweenService")
 const CollectionService = game:GetService("CollectionService")
 const RunService = game:GetService("RunService")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 --// Module
 
@@ -78,7 +85,13 @@ local function isHelperPart(part: BasePart, options: PlayOptions?): boolean
 		end
 	end
 
-	if options and options.includeHidden == false and part.Transparency >= 1 and part.CanCollide == false and part.CanTouch == true then
+	if
+		options
+		and options.includeHidden == false
+		and part.Transparency >= 1
+		and part.CanCollide == false
+		and part.CanTouch == true
+	then
 		return true
 	end
 
@@ -132,7 +145,6 @@ local function getRenderableParts(item: Instance, options: PlayOptions?): { Base
 
 	return parts
 end
-
 local function getFinalTransparency(part: BasePart): number
 	if part.Name == "Window" then
 		return 0.65
@@ -197,10 +209,8 @@ end
 local function getTiming(parts: { BasePart }): (number, number)
 	local span = getModelSpan(parts)
 	local partCount = #parts
-	local buildDuration = math.min(
-		BASE_BUILD_DURATION + partCount * PART_TIME_SCALE + span * SIZE_TIME_SCALE,
-		MAX_BUILD_DURATION
-	)
+	local buildDuration =
+		math.min(BASE_BUILD_DURATION + partCount * PART_TIME_SCALE + span * SIZE_TIME_SCALE, MAX_BUILD_DURATION)
 	local fadeDuration = math.min(
 		BASE_FADE_IN_DURATION + partCount * PART_TIME_SCALE * 0.45 + span * SIZE_TIME_SCALE * 0.45,
 		MAX_FADE_IN_DURATION,
@@ -240,7 +250,6 @@ local function getPieceOffset(size: Vector3, axis: Enum.Axis, index: number, pie
 
 	return Vector3.new(0, 0, size.Z * offset)
 end
-
 local function createPiece(source: BasePart, size: Vector3, cframe: CFrame): BasePart
 	local piece = Instance.new("Part")
 	piece.Name = source.Name .. "_BuildPiece"
@@ -269,11 +278,7 @@ local function getStartCFrame(target: CFrame, partIndex: number, pieceIndex: num
 	local xOffset = if lane == 0 then 0 else side * sideSpread
 	local topLift = if lane == 0 then 2.6 else 0
 	local yOffset = lift + topLift
-	local lateral = Vector3.new(
-		xOffset,
-		yOffset,
-		((partIndex % 5) - 2) * 1.35
-	)
+	local lateral = Vector3.new(xOffset, yOffset, ((partIndex % 5) - 2) * 1.35)
 	local angle = CFrame.Angles(
 		math.rad((18 + pieceIndex * 3) * side),
 		math.rad((38 + partIndex % 8) * side),
@@ -290,7 +295,9 @@ local function getPieceCountForPart(part: BasePart, partCount: number, options: 
 	end
 
 	local pieceBudget = if options and options.pieceBudget then options.pieceBudget else PIECE_BUDGET
-	local maxPiecesPerPart = if options and options.maxPiecesPerPart then options.maxPiecesPerPart else MAX_PIECES_PER_PART
+	local maxPiecesPerPart = if options and options.maxPiecesPerPart
+		then options.maxPiecesPerPart
+		else MAX_PIECES_PER_PART
 	local budgetedPieces = math.max(1, math.floor(pieceBudget / math.max(partCount, 1)))
 	local desiredPieces = if largestAxis >= 10 then maxPiecesPerPart else math.min(3, maxPiecesPerPart)
 	return math.clamp(math.min(desiredPieces, budgetedPieces), 1, maxPiecesPerPart)
@@ -337,7 +344,52 @@ local function destroyLater(instance: Instance, lifetime: number)
 	end)
 end
 
-function BuildAssemble.Play(item: Instance, onComplete: (() -> ())?, options: PlayOptions?)
+local PacketsInstance: any = nil
+local function getPackets(): any
+	if not PacketsInstance then
+		local ok, result = pcall(function()
+			return require(ReplicatedStorage.Network.Packets)
+		end)
+		if ok then
+			PacketsInstance = result
+		end
+	end
+	return PacketsInstance
+end
+
+function BuildAssemble.CalculateDuration(item: Instance, options: PlayOptions?): number
+	local parts = getRenderableParts(item, options)
+	if #parts == 0 then
+		return 0
+	end
+
+	local buildDuration, _ = getTiming(parts)
+	local timingScale = math.clamp(if options and options.timingScale then options.timingScale else 1, 0.2, 5)
+	local initialDelay = if options and options.initialDelay then options.initialDelay else 0
+	return (buildDuration * timingScale) + initialDelay
+end
+
+function BuildAssemble.HideFinalParts(item: Instance, options: PlayOptions?)
+	local parts = getRenderableParts(item, options)
+	for _, part in ipairs(parts) do
+		if part.Parent then
+			hideFinalPart(part, getFinalTransparency(part), getFinalCanCollide(part))
+		end
+	end
+end
+
+function BuildAssemble.RestoreFinalParts(item: Instance)
+	local parts = item:GetDescendants()
+	for _, descendant in ipairs(parts) do
+		if descendant:IsA("BasePart") then
+			restoreFinalPart(descendant)
+		end
+	end
+	if item:IsA("BasePart") then
+		restoreFinalPart(item)
+	end
+end
+function BuildAssemble.PlayClient(item: Instance, onComplete: (() -> ())?, options: PlayOptions?)
 	local parts = getRenderableParts(item, options)
 	if #parts == 0 then
 		if onComplete then
@@ -355,8 +407,12 @@ function BuildAssemble.Play(item: Instance, onComplete: (() -> ())?, options: Pl
 	local timingScale = math.clamp(if options and options.timingScale then options.timingScale else 1, 0.2, 5)
 	buildDuration *= timingScale
 	fadeInDuration *= timingScale
-	local creationBatchSize = math.max(1, if options and options.creationBatchSize then options.creationBatchSize else DEFAULT_CREATION_BATCH_SIZE)
-	local staggerPortion = math.clamp(if options and options.staggerPortion then options.staggerPortion else 0.48, 0.1, 0.9)
+	local creationBatchSize = math.max(
+		1,
+		if options and options.creationBatchSize then options.creationBatchSize else DEFAULT_CREATION_BATCH_SIZE
+	)
+	local staggerPortion =
+		math.clamp(if options and options.staggerPortion then options.staggerPortion else 0.48, 0.1, 0.9)
 	local initialDelay = if options and options.initialDelay then options.initialDelay else 0
 	local totalDuration = buildDuration + initialDelay
 	local partTargets = {}
@@ -487,7 +543,7 @@ function BuildAssemble.Play(item: Instance, onComplete: (() -> ())?, options: Pl
 	end)
 end
 
-function BuildAssemble.Deassemble(item: Instance, onComplete: (() -> ())?, options: DeassembleOptions?)
+function BuildAssemble.DeassembleClient(item: Instance, onComplete: (() -> ())?, options: DeassembleOptions?)
 	local parts = getRenderableParts(item, options)
 	if #parts == 0 then
 		if onComplete then
@@ -506,8 +562,12 @@ function BuildAssemble.Deassemble(item: Instance, onComplete: (() -> ())?, optio
 	buildDuration *= timingScale
 	fadeDuration *= timingScale
 
-	local creationBatchSize = math.max(1, if options and options.creationBatchSize then options.creationBatchSize else DEFAULT_CREATION_BATCH_SIZE)
-	local staggerPortion = math.clamp(if options and options.staggerPortion then options.staggerPortion else 0.4, 0.1, 0.9)
+	local creationBatchSize = math.max(
+		1,
+		if options and options.creationBatchSize then options.creationBatchSize else DEFAULT_CREATION_BATCH_SIZE
+	)
+	local staggerPortion =
+		math.clamp(if options and options.staggerPortion then options.staggerPortion else 0.4, 0.1, 0.9)
 	local tweensRemaining = 0
 	local completed = false
 	local creationDone = false
@@ -605,6 +665,64 @@ function BuildAssemble.Deassemble(item: Instance, onComplete: (() -> ())?, optio
 	task.delay(buildDuration + 0.35, function()
 		creationDone = true
 		tryFinish()
+	end)
+end
+
+function BuildAssemble.Play(item: Instance, onComplete: (() -> ())?, options: PlayOptions?)
+	if RunService:IsClient() then
+		BuildAssemble.PlayClient(item, onComplete, options)
+		return
+	end
+
+	-- Server-side flow:
+	local duration = BuildAssemble.CalculateDuration(item, options)
+	BuildAssemble.HideFinalParts(item, options)
+
+	local packets = getPackets()
+	if packets and packets.packets and packets.packets.BuildAssemble then
+		packets.packets.BuildAssemble.sendToAll({
+			item = item,
+			duration = duration,
+			mode = "play",
+		})
+	end
+
+	task.delay(duration, function()
+		BuildAssemble.RestoreFinalParts(item)
+		if onComplete then
+			onComplete()
+		end
+	end)
+end
+
+function BuildAssemble.Deassemble(item: Instance, onComplete: (() -> ())?, options: DeassembleOptions?)
+	if RunService:IsClient() then
+		BuildAssemble.DeassembleClient(item, onComplete, options)
+		return
+	end
+
+	-- Server-side flow:
+	local duration = BuildAssemble.CalculateDuration(item, options)
+	BuildAssemble.HideFinalParts(item, options)
+
+	local packets = getPackets()
+	if packets and packets.packets and packets.packets.BuildAssemble then
+		packets.packets.BuildAssemble.sendToAll({
+			item = item,
+			duration = duration,
+			mode = "deassemble",
+		})
+	end
+
+	task.delay(duration, function()
+		if options and options.destroyAfter then
+			if item.Parent then
+				item:Destroy()
+			end
+		end
+		if onComplete then
+			onComplete()
+		end
 	end)
 end
 

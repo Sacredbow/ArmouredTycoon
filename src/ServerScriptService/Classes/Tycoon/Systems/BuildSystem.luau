@@ -16,7 +16,7 @@ const ServerScriptService = game:GetService("ServerScriptService")
 --// Modules
 
 const ECS = require(ReplicatedStorage.ECS)
-const BuildAssemble = require(ServerScriptService.Utilities.BuildAssemble)
+const BuildAssemble = require(ReplicatedStorage.Libraries.BuildAssemble)
 
 --// Internal Utilities
 
