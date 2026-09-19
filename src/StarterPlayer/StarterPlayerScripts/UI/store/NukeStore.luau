@@ -68,11 +68,13 @@ function NukeStore:Start(Packets: any)
 		return
 	end
 
-	self.Started = true
-
+	-- Only mark as started when listeners actually register
+	-- (see NotificationStore:Start for the GameStore Start(nil) flow).
 	if not Packets then
 		return
 	end
+
+	self.Started = true
 
 	self.KOTHConnection = Packets.packets.KOTHAnnouncement.listen(function(Data)
 		self:PushKOTHAnnouncement(Data.playerName, Data.teamColor, Data.minutes)

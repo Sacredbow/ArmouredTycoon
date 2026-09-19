@@ -288,7 +288,7 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 		table.clear(self.ActiveDropperLoops)
 	end
 
-	function Tycoon:_FadeInComplete(Dropper: Instance, DurationOverride: number?)
+	function Tycoon:_FadeInComplete(Dropper: Instance, DurationOverride: number?, OnRevealComplete: (() -> ())?)
 		local Duration = if DurationOverride ~= nil then DurationOverride else 1
 		local Targets = { Dropper }
 
@@ -316,6 +316,13 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 			duration = Duration,
 			elapsed = 0,
 			onComplete = function()
+				-- Runs AFTER the final _ApplyFadeStep pass, so any config
+				-- properties (Transparency, CanCollide, etc.) re-applied here
+				-- are the authoritative final state and are not clobbered.
+				if OnRevealComplete then
+					OnRevealComplete()
+				end
+
 				if Dropper:IsA("BasePart") then
 					return
 				end

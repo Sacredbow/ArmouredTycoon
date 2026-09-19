@@ -10,7 +10,7 @@ local Module = {}
 Module.__index = Module
 
 
-function Module.BasePart(part, properties, tweenInfo, callback)
+function Module.BasePart(part, properties, tweenInfo, callback: () -> ()?)
 	assert(part:IsA("BasePart"), "BasePart: first argument must be a BasePart")
 	assert(type(properties) == "table", "BasePart: properties must be a table")
 
@@ -25,7 +25,7 @@ function Module.BasePart(part, properties, tweenInfo, callback)
 end
 
 
-function Module.Interface(guiObject: GuiBase, properties : {Enum.EasingStyle & Enum.EasingDirection}, tweenInfo : TweenInfo, callback: () -> ())
+function Module.Interface(guiObject: GuiBase, properties : {Enum.EasingStyle & Enum.EasingDirection}, tweenInfo : TweenInfo, callback: () -> ()?)
 	assert(guiObject:IsA("GuiObject"), "Interface: first argument must be a GuiObject")
 	assert(type(properties) == "table", "Interface: properties must be a table")
 
@@ -40,7 +40,7 @@ function Module.Interface(guiObject: GuiBase, properties : {Enum.EasingStyle & E
 end
 
 
-function Module.Tween(instance, properties, tweenInfo, callback)
+function Module.Tween(instance, properties, tweenInfo, callback: () -> ()?)
 	assert(typeof(instance) == "Instance", "Tween: first argument must be an Instance")
 	assert(type(properties) == "table", "Tween: properties must be a table")
 
@@ -55,7 +55,7 @@ function Module.Tween(instance, properties, tweenInfo, callback)
 end
 
 
-function Module.Model(model : Model, targetCFrame : CFrame, tweenInfo : TweenInfo, callback)
+function Module.Model(model : Model, targetCFrame : CFrame, tweenInfo : TweenInfo, callback: () -> ()?)
 	assert(model:IsA("Model"), "Model: first argument must be a Model")
 	assert(model.PrimaryPart, "Model: Model must have a PrimaryPart")
 	assert(typeof(targetCFrame) == "CFrame", "Model: targetCFrame must be a CFrame")

@@ -152,14 +152,14 @@ return function(Tycoon: any)
 		end
 
 		for _, Stage in self.Stages:GetChildren() do
-			Template = Stage:FindFirstChild(ItemName, true)
+			Template = Stage:FindFirstChild(ItemName)
 			if Template then
 				return Template
 			end
 		end
 
 		if self.Components then
-			Template = self.Components:FindFirstChild(ItemName, true)
+			Template = self.Components:FindFirstChild(ItemName)
 			if Template then
 				return Template
 			end
@@ -190,17 +190,31 @@ return function(Tycoon: any)
 		self:_CacheMovedItem(Item)
 		Item.Parent = self.PurchasedItems
 
+		local ApplyConfigProperties: (() -> ())? = nil
+
 		if Options and Options.buttonConfig then
 			local Config = Options.buttonConfig
 			if Config.Properties then
-				for PartName, Properties in Config.Properties do
-					local Part = Item:FindFirstChild(PartName)
-					if Part then
-						for PropName, PropValue in Properties do
-							Part[PropName] = PropValue
+				ApplyConfigProperties = function()
+					for PartName, Properties in Config.Properties do
+						local Part = Item:FindFirstChild(PartName)
+						if Part then
+							for PropName, PropValue in Properties do
+								local ok, err = pcall(function()
+									Part[PropName] = PropValue
+								end)
+								if not ok then
+									warn(`[Tycoon] Failed to set {PropName} on "{PartName}" in "{Item.Name}": {err}`)
+								end
+							end
 						end
 					end
 				end
+
+				-- Apply immediately so assemble pieces use the configured
+				-- Color/Material/etc. Transparency/CanCollide are re-applied
+				-- after the reveal finishes (see _FadeInComplete callback).
+				ApplyConfigProperties()
 			end
 		end
 
@@ -216,10 +230,10 @@ return function(Tycoon: any)
 		})
 
 		if Options and Options.playEffects == false then
-			self:_FadeInComplete(Item, 0)
+			self:_FadeInComplete(Item, 0, ApplyConfigProperties)
 		else
 			BuildAssemble.Play(Item, function()
-				self:_FadeInComplete(Item, 0)
+				self:_FadeInComplete(Item, 0, ApplyConfigProperties)
 			end)
 		end
 	end

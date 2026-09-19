@@ -18,6 +18,7 @@ const ServerScriptService = game:GetService("ServerScriptService")
 const ECS = require(ReplicatedStorage.ECS)
 const RocketSystem = require(script.Parent.Parent.Combat.Rocket)
 const ValidatePromptRange = require(script.Parent.Parent.Parent.Utilities.ValidatePromptRange)
+const Notify = require(script.Parent.Parent.Parent.Utilities.Notify)
 
 --// Constants
 
@@ -49,13 +50,16 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 		ActivateNuke.Triggered:Connect(function(Player: Player)
 			if Player ~= self.Owner then
 				warn(`[Tycoon] {Player.Name} attempted to activate another player's nuke in {self.Model.Name}`)
+				Notify(Player, "error", "Only the tycoon owner can launch this nuke.")
 				return
 			end
 			if not ValidatePromptRange(Player, ActivateNuke) then
 				warn(`[Tycoon] {Player.Name} activated nuke prompt outside allowed range in {self.Model.Name}`)
+				Notify(Player, "info", "Move closer to launch the nuke.")
 				return
 			end
 			if Debounce then
+				Notify(Player, "info", "The nuke launcher is recharging.")
 				return
 			end
 

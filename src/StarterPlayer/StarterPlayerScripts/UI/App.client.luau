@@ -49,7 +49,7 @@ local function enableRobloxBackpack()
 			end)
 
 			if ok then
-				debugPrint("Roblox backpack enabled from React root", "attempt", attempt)
+				
 				return
 			end
 
@@ -61,42 +61,17 @@ local function enableRobloxBackpack()
 	end)
 end
 
--- Keep MainInterface enabled (the new Currency module uses its CurrencyFrame).
--- Only hide the old PlayerInterface buttons that React replaces.
-local function hideOldInterfaceChildren(root: Instance)
-	local mainInterface
-	if root.Name == "MainInterface" and root:IsA("ScreenGui") then
-		mainInterface = root
-	else
-		mainInterface = root:FindFirstChild("MainInterface")
-		if not (mainInterface and mainInterface:IsA("ScreenGui")) then
-			return
-		end
-	end
-
-	local playerInterface = mainInterface:FindFirstChild("PlayerInterface")
-	if playerInterface then
-		for _, child in ipairs(playerInterface:GetChildren()) do
-			if child:IsA("GuiObject") then
-				child.Visible = false
-			end
-		end
-	end
-end
-
 local existingRoot = playerGui:FindFirstChild("ArmouredReactUI")
 if existingRoot then
 	debugPrint("Destroying existing ArmouredReactUI root before remount")
 	existingRoot:Destroy()
 end
 
-hideOldInterfaceChildren(playerGui)
 if CUSTOM_INVENTORY_ENABLED then
 	disableRobloxBackpack()
 else
 	enableRobloxBackpack()
 end
-local childConnection = playerGui.ChildAdded:Connect(hideOldInterfaceChildren)
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ArmouredReactUI"
@@ -111,23 +86,7 @@ local root = ReactRoblox.createRoot(screenGui)
 root:render(React.createElement(App))
 debugPrint("Rendered React app")
 
--- Initialize the Workspace-based HUD (currency display, etc.)
-type ComponentModule = {
-	Init: () -> (),
-}
-
-task.spawn(function()
-	for _, Module in script.Parent.components.Interface:GetChildren() do
-		if Module:IsA("ModuleScript") then
-			local result = require(Module) :: ComponentModule
-			result.Init()  
-		end
-		
-	end
-end)
-
 script.Destroying:Connect(function()
-	childConnection:Disconnect()
 	root:unmount()
 	if screenGui.Parent then
 		screenGui:Destroy()

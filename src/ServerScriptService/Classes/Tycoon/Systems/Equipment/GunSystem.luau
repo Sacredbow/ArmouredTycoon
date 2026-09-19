@@ -16,6 +16,7 @@ const ServerStorage = game:GetService("ServerStorage")
 --// Modules
 
 const ValidatePromptRange = require(script.Parent.Parent.Parent.Utilities.ValidatePromptRange)
+const Notify = require(script.Parent.Parent.Parent.Utilities.Notify)
 
 --// Module
 
@@ -37,17 +38,20 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 			ProximityPrompt.Triggered:Connect(function(Player: Player)
 				if Player ~= self.Owner then
 					warn(`[Tycoon] {Player.Name} attempted to collect a weapon from {self.Model.Name}`)
+					Notify(Player, "error", "Only the tycoon owner can collect this weapon.")
 					return
 				end
 				if not ValidatePromptRange(Player, ProximityPrompt) then
 					warn(`[Tycoon] {Player.Name} activated gun prompt outside allowed range in {self.Model.Name}`)
+					Notify(Player, "info", "Move closer to collect this weapon.")
 					return
 				end
 
 				const GunName = GunModel.Name
 				const Character = Player.Character
 				if Player.Backpack:FindFirstChild(GunName) or Player.StarterGear:FindFirstChild(GunName) or (Character and Character:FindFirstChild(GunName)) then
-					return
+					    Notify(Player, "info", "You already have this weapon.")
+					    return
 				end
 
 				const Gun = ServerStorage.Guns:FindFirstChild(GunName)

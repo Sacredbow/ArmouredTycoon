@@ -22,6 +22,7 @@ const OnboardingDefinitions = require(ReplicatedStorage.Progression.Onboarding.O
 const BuildAssemble = require(ReplicatedStorage.Libraries.BuildAssemble)
 const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 const PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+const Notify = require(script.Parent.Parent.Parent.Utilities.Notify)
 
 --// Module
 
@@ -44,6 +45,7 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 				return
 			end
 			if self.PlayerService:OwnsTycoon(Player) then
+				Notify(Player, "info", "You already own a tycoon.")
 				return
 			end
 			if not self.Owner then
@@ -73,32 +75,32 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 		TitleLabel.Text = Player.Name .. "'s Tycoon"
 		Door.Transparency = 0.6
 
-		self:_AssignTeam(Player)
+		--self:_AssignTeam(Player)
 
-		const ClaimBuildRoots = {
-			self.Stages,
-			self.Droppers,
-			self.GunModels,
-			self.Components,
-		}
-		local ClaimBuildIndex = 0
-		local function PlayNextClaimBuild()
-			ClaimBuildIndex += 1
-			const ClaimBuildRoot = ClaimBuildRoots[ClaimBuildIndex]
-			if not ClaimBuildRoot then
-				return
-			end
+		--const ClaimBuildRoots = {
+		--	self.Stages,
+		--	self.Droppers,
+		--	self.GunModels,
+		--	self.Components,
+		--}
+		--local ClaimBuildIndex = 0
+		--local function PlayNextClaimBuild()
+		--	ClaimBuildIndex += 1
+		--	const ClaimBuildRoot = ClaimBuildRoots[ClaimBuildIndex]
+		--	if not ClaimBuildRoot then
+		--		return
+		--	end
 
-			BuildAssemble.Play(ClaimBuildRoot, PlayNextClaimBuild, {
-				includeHidden = false,
-				timingScale = 1.85,
-				pieceBudget = 90,
-				maxPiecesPerPart = 1,
-				creationBatchSize = 8,
-				staggerPortion = 0.85,
-			})
-		end
-		PlayNextClaimBuild()
+		--	BuildAssemble.Play(ClaimBuildRoot, PlayNextClaimBuild, {
+		--		includeHidden = false,
+		--		timingScale = 1.85,
+		--		pieceBudget = 90,
+		--		maxPiecesPerPart = 1,
+		--		creationBatchSize = 8,
+		--		staggerPortion = 0.85,
+		--	})
+		--end
+		--PlayNextClaimBuild()
 
 		const Spawn = self.MainItems:FindFirstChild("TycoonSpawn") :: BasePart?
 		if Spawn then

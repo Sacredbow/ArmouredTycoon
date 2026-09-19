@@ -75,23 +75,25 @@ function StatsStore.new(): StatsStore
 	self.Changed = Signal.new()
 	self.Janitor = Janitor.new()
 	self.LeaderstatsJanitor = Janitor.new()
+	self.StatSyncConnected = false
 	self.Destroyed = false
 
 	return self
 end
 
 function StatsStore:Start(Packets: any)
-	if self.Started then
-		return
+	if not self.Started then
+		self.Started = true
+		self:HydrateFromLeaderstats()
+		self:BindLeaderstats()
+
+		self.Janitor:Add(self.LeaderstatsJanitor, "Destroy", "Leaderstats")
 	end
 
-	self.Started = true
-	self:HydrateFromLeaderstats()
-	self:BindLeaderstats()
-
-	self.Janitor:Add(self.LeaderstatsJanitor, "Destroy", "Leaderstats")
-
-	if Packets then
+	-- StatSync registration is independent of the started flag: GameStore
+	-- calls Start(nil) first, then Start(Packets) once the network is ready.
+	if Packets and not self.StatSyncConnected then
+		self.StatSyncConnected = true
 		self.Janitor:Add(Packets.packets.StatSync.listen(function(Data)
 			self:SetStat(Data.stat, Data.value)
 		end), nil, "StatSync")
@@ -207,6 +209,7 @@ export type StatsStore = typeof(setmetatable({} :: {
 	Changed: any,
 	Janitor: any,
 	LeaderstatsJanitor: any,
+	StatSyncConnected: boolean,
 	Destroyed: boolean,
 	Started: boolean,
 

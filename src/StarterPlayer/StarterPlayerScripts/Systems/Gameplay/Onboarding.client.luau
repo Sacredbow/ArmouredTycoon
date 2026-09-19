@@ -26,6 +26,7 @@ const ReplicatedStorage = game:GetService("ReplicatedStorage")
 const RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
 const Packets = require(ReplicatedStorage.Network.Packets)
 const OnboardingDefinitions = require(ReplicatedStorage.Progression.Onboarding.OnboardingDefinitions)
+const GameStore = require(script.Parent.Parent.Parent.UI.store.GameStore)
 
 --// Constants
 
@@ -63,6 +64,7 @@ type BeamEntry = {
 local ActiveBeams: { [string]: BeamEntry } = {}
 local DoorBeamsEnabled = false
 local ClaimedDoorKeys: { [string]: boolean } = {}
+local LastTutorialMessage: string? = nil
 
 local function ButtonDirectionsEnabled(): boolean
 	return RuntimeSettings.GetBoolean("Allow Button Directions", true)
@@ -70,7 +72,7 @@ end
 
 local buttonDirectionsEnabled = ButtonDirectionsEnabled()
 
---// Internal Utilities — Beam System
+--// Internal Utilities â€” Beam System
 
 local function DestroyBeamEntry(Entry: BeamEntry)
 	if Entry.beam then
@@ -136,7 +138,7 @@ local function DisplaceAllBeams()
 	table.clear(ActiveBeams)
 end
 
---// Internal Utilities — Tycoon / Door Resolution
+--// Internal Utilities â€” Tycoon / Door Resolution
 
 local function GetHRP(): BasePart?
 	const Character = Player.Character
@@ -200,7 +202,7 @@ local function ResolveSignalTarget(Target: any?): BasePart?
 	return nil
 end
 
---// Internal Methods — Beam Controller
+--// Internal Methods â€” Beam Controller
 
 local function GetPlayerHRP()
 	return GetHRP()
@@ -254,7 +256,7 @@ local function SetupTycoonBeams()
 	end
 end
 
---// Bootstrap — Runtime Hooks
+--// Bootstrap â€” Runtime Hooks
 
 RuntimeSettings.Observe("Allow Button Directions", function()
 	buttonDirectionsEnabled = ButtonDirectionsEnabled()
@@ -295,6 +297,22 @@ end)
 Packets.packets.Tutorial.listen(function(Data: TutorialData)
 	const NewMessage = Data.type
 	const Target = Data.target
+
+	local TutorialMessage = if NewMessage == "TycoonAvailable"
+		then "Find an unclaimed tycoon and touch its door to claim it."
+		elseif NewMessage == OnboardingStep.ClaimComplete.Message
+		then OnboardingStep.ClaimComplete.Message
+		elseif NewMessage == OnboardingStep.PurchaseButton.Message
+		then OnboardingStep.PurchaseButton.Message
+		elseif NewMessage == OnboardingStep.ClaimMoney.Message
+		then OnboardingStep.ClaimMoney.Message
+		elseif NewMessage == OnboardingStep.Completed.Message
+		then OnboardingStep.Completed.Message
+		else nil
+	if TutorialMessage and TutorialMessage ~= LastTutorialMessage then
+		LastTutorialMessage = TutorialMessage
+		GameStore.get():PushTutorialNotification(TutorialMessage)
+	end
 
 	if NewMessage == "TycoonClaimed" then
 		MarkTycoonClaimed(Target)

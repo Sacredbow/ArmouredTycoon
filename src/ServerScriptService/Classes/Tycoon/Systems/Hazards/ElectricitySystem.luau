@@ -59,6 +59,7 @@ return function(Tycoon, _Dependencies: { [string]: any })
 			prompt.Triggered:Connect(function(player)
 				if player ~= self.Owner then
 					warn(`[Electricity] {player.Name} attempted to use another player's fuse box in {self.Model.Name}`)
+					SendToast(player, "error", "Only the tycoon owner can restore power.")
 					return
 				end
 				if not ValidatePromptRange(player, prompt) then

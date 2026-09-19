@@ -1,17 +1,20 @@
 --!strict
---[[
-	@class Store
-
-	@desc
-	Central re-export hub for all sub-store modules.
-	Consumers should import from this module rather than individual stores.
-]]
 
 local GameStore = require(script.GameStore)
+local StatsStore = require(script.StatsStore)
+local ProfileStore = require(script.ProfileStore)
+local NotificationStore = require(script.NotificationStore)
+local NPCStore = require(script.NPCStore)
+local NukeStore = require(script.NukeStore)
 local useGameStore = require(script.useGameStore)
 
 return {
 	GameStore = GameStore,
+	StatsStore = StatsStore,
+	ProfileStore = ProfileStore,
+	NotificationStore = NotificationStore,
+	NPCStore = NPCStore,
+	NukeStore = NukeStore,
 	useGameStore = useGameStore,
 }
 

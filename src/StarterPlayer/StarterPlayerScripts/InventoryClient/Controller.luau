@@ -64,7 +64,7 @@ local function setBackpackEnabled(enabled: boolean)
 			end)
 
 			if ok then
-				debugPrint("Roblox backpack CoreGui enabled =", enabled, "attempt", attempt)
+	
 				return
 			end
 
@@ -341,7 +341,6 @@ function InventoryController:_refreshTools()
 	end)
 
 	self._items = items
-	debugPrint("Inventory refreshed. Tool count =", #items)
 	self._changed:Fire()
 end
 

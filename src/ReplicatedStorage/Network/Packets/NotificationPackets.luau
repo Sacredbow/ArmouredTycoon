@@ -15,6 +15,7 @@ return function(ByteNet: any)
 				type = ByteNet.string,
 				message = ByteNet.optional(ByteNet.string),
 				duration = ByteNet.optional(ByteNet.float32),
+				RequiresFade = ByteNet.optional(ByteNet.bool),
 			}),
 		}),
 

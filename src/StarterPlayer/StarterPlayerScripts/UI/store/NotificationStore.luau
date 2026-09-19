@@ -8,8 +8,11 @@
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer :: Player
 
 local Signal = require(ReplicatedStorage.Packages.signal)
+local Actions = require(ReplicatedStorage.Utilities.Actions)
 
 --// Types
 
@@ -47,15 +50,45 @@ function NotificationStore:Start(Packets: any)
 		return
 	end
 
-	self.Started = true
-
+	-- GameStore calls Start(nil) first, then Start(Packets) once the network
+	-- is ready. Only mark as started when listeners actually register,
+	-- otherwise the nil call would permanently skip registration.
 	if not Packets then
 		return
 	end
 
+	self.Started = true
+	print(self.Started)
+	
+	
+	type ControlsManager = {
+		Disable: () -> (), 
+		Enable: () -> ()
+
+	}
+	type PlayerModule = {
+		GetControls: (self : PlayerModule) -> ControlsManager ,
+		
+	}
+	
+
+
 	-- Listen for Notification packets
 	self.NotificationConnection = Packets.packets.Notification.listen(function(Data)
 		self:PushNotification(Data.type, Data.message or "")
+		if Data.RequiresFade then
+			Actions.FadeScreen(0.5, 0.4, 2, "Classic", Color3.fromRGB(0, 0, 0))
+			local PlayerScripts = Player:WaitForChild("PlayerScripts") :: typeof(Player.PlayerScripts)
+			local PlayerModule = require(PlayerScripts:WaitForChild("PlayerModule")) :: ModuleScript & PlayerModule
+			
+		
+			local Controls = PlayerModule:GetControls()
+			Controls:Disable()
+			
+			task.wait(2)
+			Controls:Enable()
+			
+		end
 	end)
 
 	-- Listen for Weather packets (for weather-change notifications)

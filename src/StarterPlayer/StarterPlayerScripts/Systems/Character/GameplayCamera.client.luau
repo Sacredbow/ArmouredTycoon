@@ -10,7 +10,7 @@ local SettingsConfig = require(ReplicatedStorage.Modules.SettingsManager.Setting
 local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
 local ClientRuntimeState = require(ReplicatedStorage.Modules.ClientRuntimeState)
 
-local player = Players.LocalPlayer
+local player = Players.LocalPlayer :: Player
 
 local ACS_AIMING_ATTRIBUTE = "ACS_Aiming"
 
@@ -172,15 +172,7 @@ local function setAimLockedFacing(character: Model?, humanoid: Humanoid, camera:
 	root.CFrame = root.CFrame:Lerp(target, expAlpha(18, deltaTime))
 end
 
-local function printDebugState(mode: CameraMode, hasWeapon: boolean, aiming: boolean)
-	local state = `{mode}:weapon={hasWeapon}:aim={aiming}`
-	if state == lastDebugState then
-		return
-	end
 
-	lastDebugState = state
-	print("[GameplayCamera]", state)
-end
 
 local function setCameraMode(mode: Enum.CameraMode)
 	if player.CameraMode ~= mode then
@@ -224,7 +216,6 @@ local function updateCamera(deltaTime: number)
 	local hasWeapon = hasEquippedAcsWeapon(character)
 	if not hasWeapon then
 		RuntimeSettings.Set('CameraControllerOwnsOffset', false)
-		printDebugState(THIRD_PERSON, false, false)
 		setAimLockedFacing(character, humanoid, camera, false, deltaTime)
 		applyMouseBehavior(THIRD_PERSON, false)
 		setCameraMode(Enum.CameraMode.Classic)
@@ -240,7 +231,6 @@ local function updateCamera(deltaTime: number)
 	local baseFov = getBaseFov()
 	local targetFov = baseFov + (if aiming then profile.aimFovDelta else 0)
 
-	printDebugState(mode, hasWeapon, aiming)
 	applyCameraSubject(camera, humanoid)
 	applyZoom(mode, aiming, profile)
 	applyMouseBehavior(mode, hasWeapon)

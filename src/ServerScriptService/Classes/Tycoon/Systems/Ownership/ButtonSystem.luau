@@ -20,6 +20,7 @@ const Packets = require(ReplicatedStorage.Network.Packets)
 const ButtonConfiguration = require(script.Parent.Parent.Parent.Configuration.ButtonConfiguration)
 const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 const PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+const Notify = require(script.Parent.Parent.Parent.Utilities.Notify)
 
 --// Constants
 
@@ -126,7 +127,15 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 			end
 
 			const Player = Players:GetPlayerFromCharacter(Hit.Parent)
-			if not Player or self.Owner ~= Player then
+			if not Player then
+				return
+			end
+			if not self.Owner then
+				Notify(Player, "info", "Claim this tycoon before buying buttons.")
+				return
+			end
+			if self.Owner ~= Player then
+				Notify(Player, "error", "Only the tycoon owner can buy buttons.")
 				return
 			end
 
@@ -162,6 +171,7 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 		end
 
 		if not self:_CheckDependencies(Config) then
+			Notify(Player, "info", "Purchase the required buttons first.")
 			warn("Dependencies not met for:", Button.Name)
 			return
 		end
@@ -187,7 +197,7 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 				ProfileManager.AddCash(Player, -Price)
 				self:_ApplyPurchasedButton(Button)
 			else
-				Packets.packets.Notification.sendTo({ ["type"] = "error", message = "Not enough cash" }, Player)
+				Notify(Player, "error", "Not enough cash for this button.")
 			end
 		end
 	end

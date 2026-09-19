@@ -23,6 +23,7 @@ const ECS = require(ReplicatedStorage.ECS)
 const Packets = require(ReplicatedStorage.Network.Packets)
 const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 const PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+const Notify = require(script.Parent.Parent.Parent.Utilities.Notify)
 
 --// Micro-Optimisations
 
@@ -116,6 +117,7 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 
 		Request.Triggered:Connect(function(Player: Player)
 			if Player ~= self.Owner then
+				Notify(Player, "error", "Only the tycoon owner can collect this cash.")
 				return
 			end
 
@@ -125,6 +127,7 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 
 			local FinalAmount = self.CollectorAmount
 			if FinalAmount <= 0 then
+				Notify(Player, "info", "There is no cash to collect yet.")
 				return
 			end
 

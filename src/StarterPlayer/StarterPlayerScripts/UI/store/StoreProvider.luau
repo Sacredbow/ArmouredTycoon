@@ -13,9 +13,13 @@ local e = React.createElement
 
 local function StoreProvider(props)
 	local store = GameStore.get()
-	if not (RunService:IsStudio() and not RunService:IsRunning()) then
+
+	React.useEffect(function()
+		if RunService:IsStudio() and not RunService:IsRunning() then
+			return
+		end
 		store:Start()
-	end
+	end, { store })
 
 	return e(StoreContext.Provider, {
 		value = store,

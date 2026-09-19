@@ -9,7 +9,7 @@ local TweenService = game:GetService('TweenService')
 local Packets = require(ReplicatedStorage.Network.Packets)
 local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
 
-local EnvironmentShared = require(ReplicatedStorage.Shared.EnvironmentShared)
+local EnvironmentShared = require(ReplicatedStorage.Shared.World.EnvironmentShared)
 local NatureAudio = require(script.NatureAudio)
 local Rain = require(script.WindConstructor.RainModule)
 local WindConstructor = require(script.WindConstructor)

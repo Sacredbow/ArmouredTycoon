@@ -174,7 +174,7 @@ ButtonConfiguration.Buttons = {
 	}),
 	Button27 = Button({
 		Purchase = { Price = 14000, Kind = "Basic" },
-		Build = { Items = { "Teleporter" } },
+		Build = { Items = { "Teleporter", "Teleporter2"} },
 		Progression = { Reveals = { "Button28" } },
 		Properties = {
 			["Teleport"] = {
@@ -290,7 +290,7 @@ ButtonConfiguration.Buttons = {
 		Progression = { Reveals = { "Button50" } },
 	}),
 	Button50 = Button({
-		Purchase = { Price = 800000, Kind = "Basic" },
+		Purchase = { Price = 80000, Kind = "Basic" },
 		Build = { Items = { "MoneyDuplicator3" } },
 		Progression = { Reveals = { "Button25", "Button48", "Button49" } },
 	}),

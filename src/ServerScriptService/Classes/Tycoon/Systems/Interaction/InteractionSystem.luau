@@ -9,6 +9,7 @@
 
 --// Services
 
+const Players = game:GetService("Players")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
 const ServerScriptService = game:GetService("ServerScriptService")
 
@@ -16,6 +17,7 @@ const ServerScriptService = game:GetService("ServerScriptService")
 
 const ReloadConfig = require(script.Parent.ReloadConfig)
 const ValidatePromptRange = require(script.Parent.Parent.Parent.Utilities.ValidatePromptRange)
+const Notify = require(script.Parent.Parent.Parent.Utilities.Notify)
 
 --// Module
 
@@ -71,10 +73,12 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 				(ProximityPrompt :: ProximityPrompt).Triggered:Connect(function(Player: Player)
 					if Player ~= self.Owner then
 						warn(`[Tycoon] {Player.Name} attempted to use another player's Lakester in {self.Model.Name}`)
+						Notify(Player, "error", "Only the tycoon owner can reload here.")
 						return
 					end
 					if not ValidatePromptRange(Player, ProximityPrompt :: ProximityPrompt) then
 						warn(`[Tycoon] {Player.Name} activated prompt outside allowed range in {self.Model.Name}`)
+						Notify(Player, "info", "Move closer to reload your weapon.")
 						return
 					end
 					ReloadConfig.onPromptTriggered(Player)
@@ -83,5 +87,7 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 			end
 		end
 	end
+	
+
 end
 

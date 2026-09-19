@@ -89,7 +89,6 @@ export type TycoonInstance = typeof(setmetatable({}, Tycoon)) & {
 	TemplateCache: { [string]: Instance? },
 	ArmourVest1: Instance,
 	ArmourVest2: Instance,
-	NPC_IdleAnimation: Instance,
 	Activation: Instance,
 	VisualEffects: Instance,
 	Rocket: Model,
@@ -252,7 +251,6 @@ function Tycoon.new(TycoonModel: Model, PlayerService: any, PurchaseService: any
 
 	self.ArmourVest1 = Assets.CharacterItems.Armour.Armour1
 	self.ArmourVest2 = Assets.CharacterItems.Armour.Armour2
-	self.NPC_IdleAnimation = Assets:WaitForChild("Animations").NPC_Idle
 	self.Activation = Assets["Visual Effects"].Activation
 	self.VisualEffects = Assets["Visual Effects"]
 	self.Rocket = (self.Components :: Folder):FindFirstChild("Rocket") :: Model
