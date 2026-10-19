@@ -164,6 +164,16 @@ return function(Tycoon: any)
 				return Template
 			end
 		end
+		
+		--If it's not found from here then, it's nested in a folder
+		
+		for _, nestedObject : Instance in self.Stages:GetDescendants() do
+			if nestedObject.Name == ItemName then
+				
+				Template = nestedObject
+				return Template
+			end
+		end
 
 		warn(`[Tycoon] Template not found for "{ItemName}" in tycoon "{self.Model.Name}"`)
 		return nil

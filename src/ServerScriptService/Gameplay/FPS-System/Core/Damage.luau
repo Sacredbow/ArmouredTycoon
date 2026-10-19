@@ -96,19 +96,32 @@ end)
 local function ValidateShieldHealth(Player: Player, ShieldModel: Model)
 	-- The player is allowed to keep the shield only while its health is above 0.
 	if ShieldUsers[Player] and ShieldUsers[Player] <= 0 then
+		print(`[SERVER-Shield] Shield DESTROYED! — player: '{Player.Name}', health reached 0, removing shield model`)
 		ShieldUsers[Player] = nil
 		ShieldModel:Destroy()
+	else
+		print(`[SERVER-Shield] Shield still standing — player: '{Player.Name}', remaining health: {ShieldUsers[Player] or 0}`)
 	end
 end
 
-local function ShieldDamage(Player: Player, ShieldModel: Model, Damage: number)
+local function ShieldDamage(Player: Player, ShieldModel : Model, Damage: number)
 	-- Register the player if not already in the table.
+	
+	if not ShieldModel then
+		warn("Could not find ShieldModel")
+		return
+	end
 	if not ShieldUsers[Player] then
 		ShieldUsers[Player] = SHIELD_BASE_HEALTH
+		print(`[SERVER-Shield] New shield user registered — player: '{Player.Name}', base health: {SHIELD_BASE_HEALTH}`)
 	end
+
+	print(`[SERVER-Shield] ShieldDamage — player: '{Player.Name}', damage: {Damage}, shield health before: {ShieldUsers[Player]}`)
 
 	-- Clamp so the shield never goes negative.
 	ShieldUsers[Player] = math_max(0, ShieldUsers[Player] - Damage)
+
+	print(`[SERVER-Shield] Shield health after: {ShieldUsers[Player]}`)
 
 	ValidateShieldHealth(Player, ShieldModel)
 
@@ -119,24 +132,49 @@ local function ShieldDamage(Player: Player, ShieldModel: Model, Damage: number)
 		local CounterText = CounterGUI and CounterGUI:FindFirstChild("TextLabel") :: TextLabel
 		if CounterText then
 			CounterText.Text = tostring(ShieldUsers[Player] or 0)
+			print(`[SERVER-Shield] Counter UI updated to: {ShieldUsers[Player]}`)
+		else
+			print(`[SERVER-Shield] Counter found but TextLabel missing — could not update UI`)
 		end
+	else
+		print(`[SERVER-Shield] No Counter found on shield model — UI not updated`)
 	end
 end
 
 -- Server entry point for shield hits. Validates that the shield actually
 -- belongs to the target player's character before applying damage.
-function HandleShieldHit(Player: Player, ShieldModel: Model, Damage: number)
+function HandleShieldHit(Player: Player, weaponData : ModuleScript, ShieldModel:  Model)
+
+	
+local Damage = weaponData.LimbDamage[1]
 	if typeof(Damage) ~= "number" or Damage ~= Damage or Damage <= 0 then
+		print(`[SERVER-Shield] REJECTED — damage validation failed (typeof: {typeof(Damage)}, value: {Damage})`)
 		return
 	end
 
 	-- Only allow damaging a shield that is currently equipped by the player.
-	local character = Player.Character
-	if not character or ShieldModel.Parent ~= character then
+	
+	if not ShieldModel then
+print("could not find shield model")
 		return
 	end
 
-	ShieldDamage(Player, ShieldModel, Damage)
+	local targetCharacter = ShieldModel.Parent
+	
+if not targetCharacter then
+	print("Could not find targetcharacter when trying to validate shield hit")
+end
+
+
+local targetPlayer = Players:GetPlayerFromCharacter(targetCharacter)
+
+if not targetPlayer then 
+	print("Not a valid player")
+	return
+end
+	
+	print(`[SERVER-Shield] VALIDATED — shield belongs to player's character, applying damage...`)
+	ShieldDamage(targetPlayer,ShieldModel, Damage)
 end
 --// Armour
 
@@ -306,13 +344,18 @@ function HandleDamageRequest(
 		return
 	end
 
+	local secureModifiers = Security.SecureModifiers(player, modifiers)
+	if not secureModifiers then
+		return
+	end
+
 	CalculateDamage(
 		player,
 		targetHumanoid,
 		distance,
 		hitType,
 		weaponSettings :: Types.WeaponSettings,
-		modifiers :: Types.ModifierSettings
+		secureModifiers :: Types.ModifierSettings
 	)
 end
 

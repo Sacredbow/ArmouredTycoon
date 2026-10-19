@@ -44,7 +44,7 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 			if not Player then
 				return
 			end
-			if self.PlayerService:OwnsTycoon(Player) then
+			if self.PlayerService:OwnsTycoon(Player) and self.Owner ~= Player then
 				Notify(Player, "info", "You already own a tycoon.")
 				return
 			end
@@ -265,6 +265,7 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 		end
 
 		self:_StopAllDropperLoops()
+		self:_StopAllMoneyDuplicatorLoops()
 		self:_RestoreMovedItems()
 
 		for _, Item in self.PurchasedItems:GetChildren() do

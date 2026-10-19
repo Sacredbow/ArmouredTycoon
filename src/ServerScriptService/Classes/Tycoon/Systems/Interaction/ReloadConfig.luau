@@ -46,23 +46,35 @@ function ReloadConfig.onPromptTriggered(Player: Player)
 		return
 	end
 
-	for _, Child in Character:GetChildren() do
-		if Child:IsA("Tool") then
-			local SettingsModule = Child:FindFirstChild("ACS_Settings")
-			local ClientState = Child:FindFirstChild("ACS_Client")
-			local StoredValue = ClientState and ClientState:FindFirstChild("Stored")
-			local TotalMagsValue = ClientState and ClientState:FindFirstChild("TotalMags")
+	local function processTool(Child: Instance)
+		if not Child:IsA("Tool") then
+			return
+		end
+		local SettingsModule = Child:FindFirstChild("ACS_Settings")
+		local ClientState = Child:FindFirstChild("ACS_Client")
+		local StoredValue = ClientState and ClientState:FindFirstChild("Stored")
+		local TotalMagsValue = ClientState and ClientState:FindFirstChild("TotalMags")
 
-			if SettingsModule and StoredValue and TotalMagsValue and StoredValue:IsA("NumberValue") and TotalMagsValue:IsA("NumberValue") then
-				local GunSettings = require(SettingsModule) :: GunSettingsType
-				local CompatibleAmmo = Universal or GunSettings.BulletType == BulletType
+		if SettingsModule and StoredValue and TotalMagsValue and StoredValue:IsA("NumberValue") and TotalMagsValue:IsA("NumberValue") then
+			local GunSettings = require(SettingsModule) :: GunSettingsType
+			local CompatibleAmmo = Universal or GunSettings.BulletType == BulletType
 
-				if GunSettings.Type == "Gun" and CompatibleAmmo then
-					StoredValue.Value = TotalMagsValue.Value
-					Events.Refil:FireClient(Player, Child, Infinite, Stored)
-					RefillSound:Play()
-				end
+			if GunSettings.Type == "Gun" and CompatibleAmmo then
+				StoredValue.Value = TotalMagsValue.Value
+				Events.Refil:FireClient(Player, Child, Infinite, Stored)
+				RefillSound:Play()
 			end
+		end
+	end
+
+	for _, Child in Character:GetChildren() do
+		processTool(Child)
+	end
+
+	local Backpack = Player:FindFirstChildOfClass("Backpack")
+	if Backpack then
+		for _, Child in Backpack:GetChildren() do
+			processTool(Child)
 		end
 	end
 end

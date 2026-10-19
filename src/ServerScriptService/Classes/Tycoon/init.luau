@@ -82,6 +82,7 @@ export type TycoonInstance = typeof(setmetatable({}, Tycoon)) & {
 	MovedItems: { [any]: any },
 	ActiveDropperLoops: { [any]: any },
 	AppliedUpgraders: { [any]: any },
+	MoneyDuplicatorLoops: { [any]: boolean },
 	ItemEntities: { [any]: any },
 	ButtonEntities: { [any]: any },
 	PurchasedButtonLookup: { [string]: boolean },
@@ -120,6 +121,7 @@ export type TycoonInstance = typeof(setmetatable({}, Tycoon)) & {
 	-- Production / collector (existing mixins)
 	_SetupUpgraders: (self: TycoonInstance) -> (),
 	_StopAllDropperLoops: (self: TycoonInstance) -> (),
+	_StopAllMoneyDuplicatorLoops: (self: TycoonInstance) -> (),
 	_SetupAmmoArea: (self: TycoonInstance, dropper: Instance) -> (),
 	_SetupCollector: (self: TycoonInstance) -> (),
 	_QueueCollectorDisplayUpdate: (self: TycoonInstance, force: boolean?) -> (),
@@ -244,6 +246,7 @@ function Tycoon.new(TycoonModel: Model, PlayerService: any, PurchaseService: any
 	self.MovedItems = {}
 	self.ActiveDropperLoops = {}
 	self.AppliedUpgraders = {}
+	self.MoneyDuplicatorLoops = {}
 	self.ItemEntities = {}
 	self.ButtonEntities = {}
 	self.PurchasedButtonLookup = {}

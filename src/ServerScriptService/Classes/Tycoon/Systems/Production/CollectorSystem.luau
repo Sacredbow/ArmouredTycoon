@@ -162,6 +162,7 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 			ECS.createEntity({
 				Name = `{self.Model.Name}:CollectorCooldown`,
 				Tycoon = self,
+				
 				ScheduledTask = {
 					delay = Cooldown,
 					elapsed = 0,

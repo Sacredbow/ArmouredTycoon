@@ -312,6 +312,9 @@ Packets.packets.Tutorial.listen(function(Data: TutorialData)
 	if TutorialMessage and TutorialMessage ~= LastTutorialMessage then
 		LastTutorialMessage = TutorialMessage
 		GameStore.get():PushTutorialNotification(TutorialMessage)
+		if NewMessage == OnboardingStep.Completed.Message then
+			GameStore.get():PushTutorialNotification(TutorialMessage, 3)
+		end
 	end
 
 	if NewMessage == "TycoonClaimed" then

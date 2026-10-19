@@ -340,6 +340,9 @@ local function MenuRouter(props: MenuRouterProps)
 		if ok and result then
 			if result.success then
 				store:PushNotification("success", tostring(result.message))
+				if action == "Rebirth" then
+					setCanRebirth(false)
+				end
 				setModal("None")
 				setBlur(0)
 			else

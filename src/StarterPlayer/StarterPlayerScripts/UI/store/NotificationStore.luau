@@ -63,7 +63,7 @@ function NotificationStore:Start(Packets: any)
 	
 	type ControlsManager = {
 		Disable: () -> (), 
-		Enable: () -> ()
+		Enable: () -> (),
 
 	}
 	type PlayerModule = {
@@ -125,9 +125,9 @@ function NotificationStore:PushNotification(Type: string, Message: string, Durat
 	self.Changed:Fire()
 end
 
-function NotificationStore:PushTutorialNotification(Message: string)
+function NotificationStore:PushTutorialNotification(Message: string, duration: number)
 	self:ClearNotificationsByKind("tutorial")
-	self:PushNotification("tutorial", Message, 0)
+	self:PushNotification("tutorial", Message, duration or 0)
 end
 
 function NotificationStore:ClearNotificationsByKind(Kind: string)

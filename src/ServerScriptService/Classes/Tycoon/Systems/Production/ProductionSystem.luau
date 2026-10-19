@@ -24,6 +24,7 @@ const ReplicatedStorage = game:GetService("ReplicatedStorage")
 const ServerScriptService = game:GetService("ServerScriptService")
 const TweenService = game:GetService("TweenService")
 const CollectionService = game:GetService("CollectionService")
+const TweenManager = require(ReplicatedStorage.Modules.TweenManager)
 
 --// Modules
 
@@ -88,6 +89,11 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 	function Tycoon:_ApplyFadeStep(Descendant: Instance, Progress: number)
 		if Descendant:IsA("Texture") then
 			Descendant.Transparency = 0.45
+		end
+		
+		if Descendant:IsA("Sound") then
+			print("true")
+			Descendant:Play()
 		end
 
 		if Descendant:IsA("ParticleEmitter") and not CollectionService:HasTag(Descendant, "SelfEnabling") then
@@ -288,6 +294,12 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 		table.clear(self.ActiveDropperLoops)
 	end
 
+	function Tycoon:_StopAllMoneyDuplicatorLoops()
+		if self.MoneyDuplicatorLoops then
+			table.clear(self.MoneyDuplicatorLoops)
+		end
+	end
+
 	function Tycoon:_FadeInComplete(Dropper: Instance, DurationOverride: number?, OnRevealComplete: (() -> ())?)
 		local Duration = if DurationOverride ~= nil then DurationOverride else 1
 		local Targets = { Dropper }
@@ -329,6 +341,11 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 
 				self:_ApplyUpgraderBonus(Dropper)
 				self:_StartDropperLoop(Dropper)
+
+				-- Start MoneyDuplicator energy bar loop
+				if string.sub(Dropper.Name, 1, 15) == "MoneyDuplicator" then
+					self:MoneyDuplicator(Dropper)
+				end
 			end
 		})
 	end
@@ -360,11 +377,126 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 			TweenService:Create(Neon, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), { Transparency = 0 }):Play()
 		end
 	end
+	
+	local function CalculateTargetSize(object : BasePart, x : number, y : number, z : number): (Vector3, CFrame)
+		local targetSize = object.Size + Vector3.new(x, y, z)
+		local targetCFrame = object.CFrame * CFrame.new(-x / 2, y, z)
+		return targetSize, targetCFrame
+	end
+
+	type MoneyDuplicator = {
+		EnergyBar : BasePart
+	}
+
+	function Tycoon:MoneyDuplicator(Object : Instance & MoneyDuplicator, Duration :number?)
+		const EnergyBar = Object.EnergyBar
+
+		-- Prevent overlapping cycles
+		if self.MoneyDuplicatorLoops[Object] then
+			return
+		end
+
+		self.MoneyDuplicatorLoops[Object] = true
+
+		local originalSize = EnergyBar.Size
+		local originalCFrame = EnergyBar.CFrame
+		local upDuration = Duration or 12.5
+		local downDuration = 3
+
+		local upTargetSize, upTargetCFrame = CalculateTargetSize(EnergyBar, 18.16, 0, 0)
+
+		-- Color gradient: red -> terra cotta -> amber -> yellow -> green
+		local colorStops = {
+			Color3.fromRGB(255, 0, 0),
+			Color3.fromRGB(226, 114, 91),
+			Color3.fromRGB(255, 191, 0),
+			Color3.fromRGB(255, 255, 0),
+			Color3.fromRGB(0, 255, 0),
+		}
+
+		local function lerpColor(t: number): Color3
+			local segments = #colorStops - 1
+			local scaled = t * segments
+			local index = math.floor(scaled)
+			if index >= segments then
+				return colorStops[#colorStops]
+			end
+			local frac = scaled - index
+			return colorStops[index + 1]:Lerp(colorStops[index + 2], frac)
+		end
+
+		local function runCycle()
+			if not EnergyBar.Parent or not self.MoneyDuplicatorLoops[Object] then
+				return
+			end
+
+			-- Reset to bottom state at start of each cycle
+			EnergyBar.Size = originalSize
+			EnergyBar.CFrame = originalCFrame
+			EnergyBar.Color = colorStops[1]
+
+			-- Track fill progress for color interpolation
+			local progressValue = Instance.new("NumberValue")
+			progressValue.Value = 0
+
+			local colorConn = progressValue.Changed:Connect(function(value)
+				if EnergyBar.Parent and self.MoneyDuplicatorLoops[Object] then
+					EnergyBar.Color = lerpColor(value)
+				end
+			end)
+
+			-- Up tween: grow the energy bar upward over 12.5 seconds (linear)
+			local sizeTween = TweenService:Create(EnergyBar,
+				TweenInfo.new(upDuration, Enum.EasingStyle.Linear),
+				{ Size = upTargetSize, CFrame = upTargetCFrame }
+			)
+
+			local colorTween = TweenService:Create(progressValue,
+				TweenInfo.new(upDuration, Enum.EasingStyle.Linear),
+				{ Value = 1 }
+			)
+
+
+			sizeTween:Play()
+			colorTween:Play()
+
+			sizeTween.Completed:Once(function()
+				colorConn:Disconnect()
+				progressValue:Destroy()
+
+				if not EnergyBar.Parent or not self.MoneyDuplicatorLoops[Object] then
+					return
+				end
+
+				-- Award 2500 cash when the energy bar is completely full
+				self:_AddCollectorAmount(2500)
+
+				-- Down tween: shrink back to original over 3 seconds (linear)
+				local downTween = TweenService:Create(EnergyBar,
+					TweenInfo.new(downDuration, Enum.EasingStyle.Linear),
+					{ Size = originalSize, CFrame = originalCFrame, Color = colorStops[1] }
+				)
+				downTween:Play()
+
+				downTween.Completed:Once(function()
+					if not EnergyBar.Parent or not self.MoneyDuplicatorLoops[Object] then
+						return
+					end
+
+				-- Schedule next cycle
+				task.spawn(runCycle)
+				end)
+			end)
+		end
+
+		runCycle()
+	end
 
 	--// Internal Methods
 
 	function Tycoon:_SetupUpgraders()
 		self.ActiveDropperLoops = self.ActiveDropperLoops or {}
 		self.AppliedUpgraders = self.AppliedUpgraders or {}
+		self.MoneyDuplicatorLoops = self.MoneyDuplicatorLoops or {}
 	end
 end

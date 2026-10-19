@@ -13,15 +13,30 @@ local ContentProvider = game:GetService("ContentProvider")
 local Lighting = game:GetService("Lighting")
 local SoundService = game:GetService("SoundService")
 
+local PlayerScripts = player:WaitForChild("PlayerScripts") :: typeof(player.PlayerScripts)
+local PlayerModule = require(PlayerScripts:WaitForChild("PlayerModule")) :: ModuleScript & PlayerModule
+
+
+local Controls = PlayerModule:GetControls()
+
+type ControlsManager = {
+	Disable: () -> (), 
+	Enable: () -> (),
+
+}
+type PlayerModule = {
+	GetControls: (self : PlayerModule) -> ControlsManager ,
+
+}
+
 
 local BackgroundBlur = Lighting.BackgroundBlur
 
 ClientRuntimeState.SetHasLoaded(player, false)
 
-humanoid.WalkSpeed = 0
-humanoid.JumpHeight = 0
-local currentJump = humanoid.JumpPower
-humanoid.JumpPower = 0
+
+Controls:Enable()
+
 
 local RotationManger = require(script.RotationManager)
 local InitManager = require(script.InitManager)
@@ -31,8 +46,7 @@ local SubtitlesGUI = playerGUI.SubtitlesGUI
 local Subtitles = SubtitlesGUI.Subtitles
 local sound = SoundService.SFX.UserInterface.Interactions.TextSound
 local BaseCharSys = character:WaitForChild("BaseCharacterSystems")
-local ACSFramework = BaseCharSys.GunFramework.ACSFramework
-ACSFramework.Enabled = false
+
 
 local PlayerInterface = playerGUI.MainInterface.PlayerInterface
 
@@ -423,13 +437,10 @@ end)
 
 
 PlayButton.MouseButton1Click:Connect(function()
-	
+	Controls:Enable()
 	Camera.CameraType = Enum.CameraType.Custom
-	humanoid.WalkSpeed = 16
-	humanoid.JumpHeight = 8
-	humanoid.JumpPower = currentJump
 	ClientRuntimeState.SetHasLoaded(player, true)
-	ACSFramework.Enabled = true
+	
 	Subtitles.TextTransparency = 1
 
 	for _, v in (playerGUI:GetChildren()) do

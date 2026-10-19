@@ -12,7 +12,7 @@ local Janitor = require(ReplicatedStorage.Packages.janitor)
 
 local function IsStudio()
 	-- Returns if the player is in studio.
-	return RunService:IsStudio() and "Test7" or "live119"
+	return RunService:IsStudio() and "Test7" or "live109"
 end
 
 

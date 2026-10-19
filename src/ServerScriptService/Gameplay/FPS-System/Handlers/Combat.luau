@@ -36,8 +36,10 @@ const MAX_GRENADE_THROW_DISTANCE = 300
 --// Public API
 
 function Bind()
-	Events.ShieldHit.OnServerEvent:Connect(function(player: Player, shieldModel: Model?, damage: number)
-		Damage.HandleShieldHit(player, shieldModel, damage)
+	Events.ShieldHit.OnServerEvent:Connect(function(player: Player, weaponData, shieldModel: Model)
+	
+		print(`[SERVER-Shield] ShieldHit remote received — player: '{player.Name} shield: {shieldModel.Name}, fullname: {shieldModel:GetFullName()}`)
+		Damage.HandleShieldHit(player, weaponData, shieldModel)
 	end)
 
 	Events.Damage.OnServerInvoke = function(

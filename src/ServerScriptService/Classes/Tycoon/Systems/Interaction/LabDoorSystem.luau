@@ -21,7 +21,7 @@ const TweenManager = require(ReplicatedStorage.Modules.TweenManager) :: any
 
 --// Constants
 
-const OPEN_OFFSET = 13.5
+const OPEN_OFFSET = 12
 const CLOSE_DELAY = 2.5
 const TWEEN_INFO = TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 
@@ -51,13 +51,13 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 		--// Constants
 		const BaseDoorCFrame = DoorPart.CFrame
 		const OpenCFrame = BaseDoorCFrame * CFrame.new(OPEN_OFFSET, 0, 0)
-		const CloseCFrame = BaseDoorCFrame * CFrame.new(-OPEN_OFFSET, 0, 0)
 
 		--// Door State Machine
 		type DoorState = "Closed" | "Open"
 		local DoorState: DoorState = "Closed"
 		local SequenceToken = 0
 		local PendingCloseEntity = nil :: any?
+		local ActiveTween = nil :: any?
 
 		local function CancelPendingClose()
 			if PendingCloseEntity then
@@ -92,8 +92,13 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 			DoorState = Target
 			CancelPendingClose()
 
-			const TargetCFrame = if Target == "Open" then OpenCFrame else CloseCFrame
-			TweenManager.Model(Door, TargetCFrame, TWEEN_INFO)
+			if ActiveTween then
+				ActiveTween:Cancel()
+				ActiveTween = nil
+			end
+
+			const TargetCFrame = if Target == "Open" then OpenCFrame else BaseDoorCFrame
+			ActiveTween = TweenManager.Model(Door, TargetCFrame, TWEEN_INFO)
 		end
 
 		local function ScheduleClose()

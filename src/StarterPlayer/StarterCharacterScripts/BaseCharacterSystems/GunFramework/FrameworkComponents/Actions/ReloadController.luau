@@ -60,6 +60,12 @@ function ReloadController.finishMagazineReload(weaponData: WeaponData, state: Am
 		ammo = weaponData.Ammo
 	end
 
+	local maxAmmo = weaponData.Ammo
+	if min(weaponData.IncludeChamberedBullet, false) then
+		maxAmmo += 1
+	end
+	ammo = math.min(ammo, maxAmmo)
+
 	return {
 		ammo = math.max(ammo, 0),
 		storedAmmo = math.max(storedAmmo, 0),

@@ -40,7 +40,8 @@ function Module.Interface(guiObject: GuiBase, properties : {Enum.EasingStyle & E
 end
 
 
-function Module.Tween(instance, properties, tweenInfo, callback: () -> ()?)
+
+function Module.Tween<T>(instance:  T, properties, tweenInfo, callback: () -> ()?)
 	assert(typeof(instance) == "Instance", "Tween: first argument must be an Instance")
 	assert(type(properties) == "table", "Tween: properties must be a table")
 

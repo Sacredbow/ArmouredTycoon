@@ -83,7 +83,7 @@ local function setWind(weather: EnvironmentShared.WeatherState)
 
 	WindConstructor.Apply(weather)
 
-	local pressure = math.clamp((weather.windSpeed * weather.windPower - 10) / 35, 0, 1)
+	local pressure = math.clamp((weather.windSpeed * weather.windPower - 3) / 32, 0, 1)
 	TweenService:Create(
 		windBlur,
 		TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
@@ -137,7 +137,7 @@ RunService.Heartbeat:Connect(function(deltaTime)
 	end
 
 	local standingStill = humanoid.MoveDirection.Magnitude < 0.08
-	local pressureScale = if standingStill then 0.09 else 0.042
-	local push = horizontalWind * math.clamp(deltaTime * pressureScale, 0, if standingStill then 0.09 else 0.045)
+	local pressureScale = if standingStill then 0.25 else 0.12
+	local push = horizontalWind * math.clamp(deltaTime * pressureScale, 0, if standingStill then 0.25 else 0.12)
 	root.AssemblyLinearVelocity += Vector3.new(push.X, 0, push.Z)
 end)

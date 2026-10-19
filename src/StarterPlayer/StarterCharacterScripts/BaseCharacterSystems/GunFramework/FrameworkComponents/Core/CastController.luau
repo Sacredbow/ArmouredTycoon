@@ -94,12 +94,23 @@ function CastController:setThirdPersonCallback(callback: (() -> boolean)?)
 end
 
 function CastController:checkForShield(hitPart: Instance): Model?
-	-- Shield children have no children of their own, so the hit part's parent
-	-- is always the Shield model itself.
+	print(`[CLIENT-Shield] checkForShield called — hitPart name: '{hitPart.Name}', className: {hitPart.ClassName}, parent name: '{hitPart.Parent and hitPart.Parent.Name or "nil"}'`)
+	-- Fast path: shield parts are direct children of the Shield model.
 	local parent = hitPart.Parent
 	if parent and parent:IsA("Model") and parent.Name == "Shield" then
+		print(`[CLIENT-Shield] Was it a shield? true — found via direct parent (parent name: '{parent.Name}')`)
 		return parent
 	end
+
+	-- Fallback: tolerate parts nested deeper inside a Shield model
+	-- (matches the Hitmarker module's own FindFirstAncestor check).
+	local ancestor = hitPart:FindFirstAncestor("Shield")
+	if ancestor and ancestor:IsA("Model") then
+		print(`[CLIENT-Shield] Was it a shield? true — found via ancestor search (ancestor name: '{ancestor.Name}')`)
+		return ancestor
+	end
+
+	print(`[CLIENT-Shield] Was it a shield? false — no Shield model found in hierarchy`)
 	return nil
 end
 
@@ -275,15 +286,18 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 		local hitInstance = raycastResult.Instance
 		local hitParent = hitInstance and hitInstance.Parent
 
+		print(`[CLIENT-Shield] RAYCAST HIT — instance: '{hitInstance.Name}' (class: {hitInstance.ClassName}), parent: '{hitParent and hitParent.Name or "nil"}' (class: {hitParent and hitParent.ClassName or "nil"})`)
+
 		-- If the bullet hit a shield, damage the shield instead of the player.
 		-- Checked before the IGNORE_NAMES filter because shield parts are named
 		-- "Armor" and would otherwise be skipped by the raycast.
 		local shieldModel = self:checkForShield(hitInstance)
 		if shieldModel and self._weaponData then
+			print(`[CLIENT-Shield] RANGED shield hit detected! Shield model: '{shieldModel.Name}', firing ShieldHit to server with damage: {self._weaponData.Damage or 0}`)
 			bullet:Destroy()
 			debounce = true
 			cleanup()
-			self._events.ShieldHit:FireServer(shieldModel, self._weaponData.Damage or 0)
+			self._events.ShieldHit:FireServer(self._weaponData, shieldModel)
 			return
 		end
 
@@ -334,11 +348,16 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 		end
 
 		-- Hit!
+		print(`[CLIENT-Shield] NOT a shield — bullet hit a normal target. Instance: '{raycastResult.Instance.Name}' (class: {raycastResult.Instance.ClassName}), proceeding to humanoid damage check`)
 		bullet:Destroy()
 		debounce = true
 		cleanup()
 
-		HitMod.HitEffect(self._ignoreModel, raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
+		-- Hit resolution (damage / shield) must never be blocked by an error
+		-- inside the visual-effect module, so run it defensively.
+		pcall(function()
+			HitMod.HitEffect(self._ignoreModel, raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
+		end)
 		self._events.HitEffect:FireServer(raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
 
 		local hitPart = raycastResult.Instance
@@ -347,6 +366,7 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 		local foundHuman, targetHumanoid = self:checkForHumanoid(raycastResult.Instance)
 
 		if foundHuman and targetHumanoid and targetHumanoid.Health > 0 and self._weaponData then
+			print(`[CLIENT-Shield] NOT a shield — humanoid hit! target part: '{hitPart.Name}', humanoid health: {targetHumanoid.Health}, sending normal damage to server`)
 			local authToken = self._userIdToken .. "-" .. self._player.UserId
 
 			if hitPart.Name == "Head" or hitPart.Parent.Name == "Top" or hitPart.Parent.Name == "Headset"
@@ -439,23 +459,32 @@ function CastController:meleeCast()
 		return
 	end
 
-	HitMod.HitEffect(self._ignoreModel, raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
+	-- Same as the ranged path: a visual-effect error must never block
+	-- melee damage or shield hit resolution.
+	pcall(function()
+		HitMod.HitEffect(self._ignoreModel, raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
+	end)
 	self._events.HitEffect:FireServer(raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
 
 	local hitPart = raycastResult.Instance
 
 	-- If the melee hit a shield, damage the shield instead of the player.
+	print(`[CLIENT-Shield] MELEE HIT — hitPart: '{hitPart.Name}' (class: {hitPart.ClassName}), parent: '{hitPart.Parent and hitPart.Parent.Name or "nil"}'`)
 	local shieldModel = self:checkForShield(hitPart)
 	if shieldModel and self._weaponData then
+		print(`[CLIENT-Shield] MELEE shield hit detected! Shield model: '{shieldModel.Name}', firing ShieldHit to server with damage: {self._weaponData.Damage or 0}`)
 		local authToken = self._userIdToken .. "-" .. self._player.UserId
-		self._events.ShieldHit:FireServer(shieldModel, self._weaponData.Damage or 0)
+		self._events.ShieldHit:FireServer(self._weaponData, shieldModel)
 		return
 	end
+	print(`[CLIENT-Shield] Was it a shield? false — proceeding to normal melee damage`)
 
 	local foundHuman, targetHumanoid = self:checkForHumanoid(raycastResult.Instance)
 	if not foundHuman or targetHumanoid.Health <= 0 then
+		print(`[CLIENT-Shield] MELEE — no valid humanoid found (foundHuman: {foundHuman}), melee damage cancelled`)
 		return
 	end
+	print(`[CLIENT-Shield] MELEE — humanoid hit! target part: '{hitPart.Name}', humanoid health: {targetHumanoid.Health}, sending normal melee damage to server`)
 
 	local authToken = self._userIdToken .. "-" .. self._player.UserId
 

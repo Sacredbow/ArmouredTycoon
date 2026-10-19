@@ -204,8 +204,8 @@ function GameStore:PushNotification(Kind: string, Message: string, Duration: num
 	self.NotificationStore:PushNotification(Kind, Message, Duration)
 end
 
-function GameStore:PushTutorialNotification(Message: string)
-	self.NotificationStore:PushTutorialNotification(Message)
+function GameStore:PushTutorialNotification(Message: string, duration: number)
+	self.NotificationStore:PushTutorialNotification(Message, duration)
 end
 
 function GameStore:ClearNotificationsByKind(Kind: string)

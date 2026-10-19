@@ -534,7 +534,10 @@ function Main.start(hostScript)
 			setShooting = setShooting,
 			setMouseDown = setMouseDown,
 			isMouseDown = function() return state.mouse1down end,
-			fireRound = fireRound,
+			fireRound = function()
+				fireRound()
+				shotState.ammo = equipController:getAmmo()
+			end,
 			firePumpRound = function()
 				if not weaponData then return end
 				Events.Atirar:FireServer(equipController:getWeaponTool(), equipController:getSuppressor(), equipController:getFlashHider())

@@ -84,7 +84,7 @@ return function(Tycoon: any, _Dependencies: { [string]: any })
 		ButtonConfiguration.ApplyVisual(Button, Config)
 
 		if ButtonConfiguration.GetKind(Config) == "Rebirth" then
-			Button:Destroy()
+			
 			self:_UpdateRebirthAvailability()
 			return
 		end

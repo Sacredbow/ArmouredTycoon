@@ -67,6 +67,35 @@ function CompareSettings(clientSettings: any, serverSettings: any): boolean
 		and clientSettings.HeadDamage[2] == serverSettings.HeadDamage[2]
 end
 
+function SecureModifiers(player: Player, modifiers: any): Types.ModifierSettings?
+	if type(modifiers) ~= "table" then
+		BanPlayer(player, "damage request with non-table modifiers")
+		return nil
+	end
+
+	local damageMod = modifiers.DamageMod
+	local minDamageMod = modifiers.minDamageMod
+
+	-- All ACS attachments use DamageMod in [0.1, 1.0] (Suppressor=0.85, rest=1.0)
+	-- Clamp to prevent exploiters from inflating damage multipliers
+	if typeof(damageMod) ~= "number" or damageMod ~= damageMod then
+		damageMod = 1
+	else
+		damageMod = math.clamp(damageMod, 0.1, 1.0)
+	end
+
+	if typeof(minDamageMod) ~= "number" or minDamageMod ~= minDamageMod then
+		minDamageMod = 1
+	else
+		minDamageMod = math.clamp(minDamageMod, 0.1, 1.0)
+	end
+
+	return {
+		DamageMod = damageMod,
+		minDamageMod = minDamageMod,
+	}
+end
+
 function SecureSettings(player: Player, gun: Tool?, clientSettings: any): boolean
 	if not gun then
 		BanPlayer(player, "damage request with missing weapon")
@@ -122,6 +151,7 @@ return {
 	IsAuthorized = IsAuthorized,
 	CompareSettings = CompareSettings,
 	SecureSettings = SecureSettings,
+	SecureModifiers = SecureModifiers,
 	Init = Init,
 }
 
