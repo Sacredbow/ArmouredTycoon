@@ -3,11 +3,13 @@
 	@class Runner
 
 	@desc
-	ECS system runner. Registers a set of systems and steps them each
-	frame with a shared context (world, component map, dt, elapsed).
-	Each system is wrapped in pcall so a failing system does not
-	cascade into the rest of the frame.
+	Planck-backed ECS scheduler. Keeps the existing shared-context system
+	interface while giving server and client loops deterministic phase ordering.
 ]]
+
+--// Modules
+
+local Planck = require(script.Parent.Parent.Packages.Planck)
 
 --// Types
 
@@ -25,8 +27,6 @@ type System = (context: Context) -> ()
 local Runner = {}
 Runner.__index = Runner
 
---// Constructor
-
 function Runner.new(name: string, world: any, Components: { [string]: number })
 	return setmetatable({
 		_name = name,
@@ -34,11 +34,11 @@ function Runner.new(name: string, world: any, Components: { [string]: number })
 		_components = Components,
 		_systems = {},
 		_elapsed = 0,
-		_connection = nil,
+		_scheduler = nil,
+		_phase = nil,
+		_context = nil,
 	}, Runner)
 end
-
---// Public API
 
 function Runner:AddSystem(name: string, system: System)
 	table.insert(self._systems, {
@@ -66,22 +66,52 @@ function Runner:Step(dt: number)
 end
 
 function Runner:Start(Signal)
-	if self._connection then
+	if self._scheduler then
 		return
 	end
 
-	self._connection = Signal:Connect(function(dt)
-		self:Step(dt)
-	end)
+	const Scheduler = Planck.Scheduler.new()
+	const Phase = Planck.Phase.new(`{self._name} ECS`)
+
+	-- Run the phase from the supplied RunService signal.
+	Scheduler:insert(Phase, Signal)
+
+	-- Planck computes delta time for the frame clock once. All ECS systems
+	-- then receive the same context and elapsed time for deterministic ordering.
+	Scheduler:addSystem(function()
+		const Dt = Scheduler:getDeltaTime()
+		self._elapsed += Dt
+		self._context = {
+			world = self._world,
+			Components = self._components,
+			dt = Dt,
+			elapsed = self._elapsed,
+		}
+	end, Phase)
+
+	for _, System in self._systems do
+		Scheduler:addSystem(function()
+			if not self._context then
+				return
+			end
+
+			System.run(self._context)
+		end, Phase)
+	end
+
+	self._scheduler = Scheduler
+	self._phase = Phase
 end
 
 function Runner:Stop()
-	if not self._connection then
+	if not self._scheduler then
 		return
 	end
 
-	self._connection:Disconnect()
-	self._connection = nil
+	self._scheduler:cleanup()
+	self._scheduler = nil
+	self._phase = nil
+	self._context = nil
 end
 
 return Runner

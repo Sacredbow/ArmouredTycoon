@@ -115,7 +115,7 @@ function NPCStore:Destroy()
 	self.Started = false
 
 	if self.NPCConnection then
-		self.NPCConnection:Disconnect()
+		self.NPCConnection()
 		self.NPCConnection = nil
 	end
 

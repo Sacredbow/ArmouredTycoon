@@ -14,22 +14,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
-local function packetsNamespaceReady(): boolean
-	local storage = ReplicatedStorage:FindFirstChild("BytenetStorage")
-	local namespaceValue = storage and storage:FindFirstChild("ArmouredTycoon")
-	return namespaceValue ~= nil and namespaceValue:IsA("StringValue") and namespaceValue.Value ~= ""
-end
-
-if not packetsNamespaceReady() then
-	return
-end
-
-local packetsOk, Packets = pcall(function()
-	return require(ReplicatedStorage.Network.Packets)
-end)
-if not packetsOk then
-	return
-end
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+local Packets = PacketBootstrap.Get()
 
 local ShootingStarTemplate = ReplicatedStorage.Assets["Visual Effects"]:FindFirstChild("ShootingStar")
 if not ShootingStarTemplate then

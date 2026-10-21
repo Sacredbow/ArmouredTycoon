@@ -8,9 +8,6 @@
 ]]
 
 local State = {
-	-- Generated once per server run; used to authenticate combat requests.
-	AuthToken = "",
-
 	-- ECS entity id for each player's active weapon rig / stance entity.
 	WeaponRigEntities = {} :: { [Player]: number },
 

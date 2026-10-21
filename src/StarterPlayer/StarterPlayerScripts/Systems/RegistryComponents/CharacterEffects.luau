@@ -1,9 +1,6 @@
 --!strict
 
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local ECS = require(ReplicatedStorage.ECS)
 local Runtime = require(script.Parent:WaitForChild("Runtime"))
 
 type Context = {
@@ -36,15 +33,8 @@ local function destroyLater(instance: Instance, lifetime: number)
 	end)
 end
 
-local function schedule(delay: number, callback: () -> (), name: string?)
-	ECS.createEntity({
-		Name = name or "CharacterEffectScheduledTask",
-		ScheduledTask = {
-			delay = delay,
-			elapsed = 0,
-			callback = callback,
-		},
-	})
+local function schedule(delay: number, callback: () -> (), _name: string?)
+	task.delay(delay, callback)
 end
 
 local function updateFlashPoints(weapon: Model, enabled: boolean)

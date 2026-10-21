@@ -7,6 +7,11 @@
 	on a timed interval. Cleans up orphaned or invalid controllers.
 ]]
 
+--// Modules
+
+const ServerScriptService = game:GetService("ServerScriptService")
+const NPCRegistry = require(ServerScriptService.AI.NPCRegistry)
+
 --// Module
 
 return function(context: any)
@@ -15,12 +20,8 @@ return function(context: any)
 	local dt = context.dt
 
 	for Entity, NPCUpdate in World:query(Components.NPCUpdate) do
-		const Controller = NPCUpdate.controller
+		const Controller = NPCRegistry.Get(NPCUpdate.npcEntity or Entity)
 		if not Controller or not Controller.NPC or not Controller.NPC.Parent then
-			if Controller then
-				Controller.StateThreadRunning = false
-				Controller.ECSEntity = nil
-			end
 			World:delete(Entity)
 			continue
 		end

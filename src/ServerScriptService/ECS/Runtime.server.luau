@@ -28,8 +28,6 @@ const WeaponRigSystem = require(ServerECS.Systems.Combat.WeaponRigSystem)
 
 const LifetimeSystem = require(ServerECS.Systems.Tycoon.LifetimeSystem)
 const ProductionTickSystem = require(ServerECS.Systems.Tycoon.ProductionTickSystem)
-const RevealSystem = require(ServerECS.Systems.Tycoon.RevealSystem)
-const RocketFlightSystem = require(ServerECS.Systems.Tycoon.RocketFlightSystem)
 const ScheduledTaskSystem = require(ServerECS.Systems.Tycoon.ScheduledTaskSystem)
 
 --// World Systems
@@ -41,6 +39,7 @@ const TransformSyncSystem = require(ServerECS.Systems.World.TransformSyncSystem)
 --// AI Systems
 
 const NPCUpdateSystem = require(ServerECS.Systems.AI.NPCUpdateSystem)
+const AntiCheatSystem = require(ServerECS.Systems.AI.AntiCheatSystem)
 
 --// Runner Initialization
 
@@ -49,9 +48,8 @@ RunnerInstance:AddSystem("DamageSystem", DamageSystem)
 RunnerInstance:AddSystem("EnvironmentClockSystem", EnvironmentClockSystem)
 RunnerInstance:AddSystem("LifetimeSystem", LifetimeSystem)
 RunnerInstance:AddSystem("NPCUpdateSystem", NPCUpdateSystem)
-RunnerInstance:AddSystem("RevealSystem", RevealSystem)
+RunnerInstance:AddSystem("AntiCheatSystem", AntiCheatSystem)
 RunnerInstance:AddSystem("ProductionTickSystem", ProductionTickSystem)
-RunnerInstance:AddSystem("RocketFlightSystem", RocketFlightSystem)
 RunnerInstance:AddSystem("ScheduledTaskSystem", ScheduledTaskSystem)
 RunnerInstance:AddSystem("StanceAnimationSystem", StanceAnimationSystem)
 RunnerInstance:AddSystem("TimedEmitterSystem", TimedEmitterSystem)

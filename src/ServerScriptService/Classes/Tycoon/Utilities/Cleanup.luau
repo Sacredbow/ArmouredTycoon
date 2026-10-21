@@ -22,4 +22,3 @@ function Cleanup.destroyLater(Instance: Instance, Lifetime: number)
 end
 
 return Cleanup
-

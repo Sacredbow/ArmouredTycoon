@@ -310,14 +310,14 @@ function EquipController:setup(tool: Tool)
 	self._cameraController:applyCameraMode()
 
 	self._weaponTool = tool
-	self._weaponData = require(tool:FindFirstChild("ACS_Settings"))
+	self._weaponData = table.clone(require(tool:FindFirstChild("ACS_Settings")))
 	self._animData = require(tool:FindFirstChild("ACS_Animations"))
 
 	self._weaponAnimator = WeaponAnimator.new(self._animData)
 	self._weaponInHand = gunModelCheck:Clone()
 	self._weaponInHand.PrimaryPart = self._weaponInHand:WaitForChild("Handle")
 
-	self._events.Equip:FireServer(tool, 1, self._weaponData, self._animData)
+	self._events.Equip:FireServer(tool, 1)
 
 	-- Clone viewmodel arms
 	self._viewModel = self._armModel:WaitForChild("Arms"):Clone()

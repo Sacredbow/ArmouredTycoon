@@ -202,12 +202,12 @@ function NotificationStore:Destroy()
 	self.Started = false
 
 	if self.NotificationConnection then
-		self.NotificationConnection:Disconnect()
+		self.NotificationConnection()
 		self.NotificationConnection = nil
 	end
 
 	if self.WeatherConnection then
-		self.WeatherConnection:Disconnect()
+		self.WeatherConnection()
 		self.WeatherConnection = nil
 	end
 

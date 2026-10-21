@@ -8,22 +8,8 @@ local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 
 local CameraShaker = require(ReplicatedStorage.Libraries.CameraShaker)
-local function packetsNamespaceReady(): boolean
-	local storage = ReplicatedStorage:FindFirstChild("BytenetStorage")
-	local namespaceValue = storage and storage:FindFirstChild("ArmouredTycoon")
-	return namespaceValue ~= nil and namespaceValue:IsA("StringValue") and namespaceValue.Value ~= ""
-end
-
-if not packetsNamespaceReady() then
-	return
-end
-
-local packetsOk, Packets = pcall(function()
-	return require(ReplicatedStorage.Network.Packets)
-end)
-if not packetsOk then
-	return
-end
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+local Packets = PacketBootstrap.Get()
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera

@@ -19,6 +19,7 @@ const ServerStorage = game:GetService("ServerStorage")
 --// Modules
 
 const ECS = require(ReplicatedStorage.ECS)
+const NPCRegistry = require(game:GetService("ServerScriptService").AI.NPCRegistry)
 const Config = require(script.Parent.Config)
 const AvoidFrontBlockState = require(script.Parent.Parent.States.AvoidFrontBlockState)
 const DeadState = require(script.Parent.Parent.States.DeadState)
@@ -149,11 +150,15 @@ function NPCData:_StartStateLoop()
                 Name = `{self.Name}:NPCUpdate`,
                 Model = self.NPC,
                 NPCUpdate = {
-                        controller = self,
+                        npcEntity = 0,
                         interval = self.Config.UpdateInterval,
                         elapsed = 0,
                 },
         })
+        NPCRegistry.Register(self.ECSEntity, self)
+        local Update = ECS.get(self.ECSEntity, "NPCUpdate")
+        Update.npcEntity = self.ECSEntity
+        ECS.set(self.ECSEntity, "NPCUpdate", Update)
 end
 
 function NPCData:_ConnectDied()
@@ -179,9 +184,8 @@ function NPCData:_ConnectDied()
                         ScheduledTask = {
                                 delay = self.Config.RespawnDelay,
                                 elapsed = 0,
-                                callback = function()
-                                        self:CharacterPool()
-                                end,
+                                kind = "NPCRespawn",
+                                npcEntity = self.ECSEntity,
                         },
                 })
         end)
@@ -228,6 +232,7 @@ end
 
 function NPCData:CharacterPool()
         if self.ECSEntity then
+                NPCRegistry.Unregister(self.ECSEntity)
                 ECS.deleteEntity(self.ECSEntity)
                 self.ECSEntity = nil
         end

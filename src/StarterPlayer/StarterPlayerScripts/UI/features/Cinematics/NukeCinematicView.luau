@@ -3,6 +3,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
 
 local React = require(ReplicatedStorage.Packages.react)
 
@@ -11,42 +12,13 @@ local useSpringBinding = require(script.Parent.Parent.Parent.hooks.useSpringBind
 
 local e = React.createElement
 local localPlayer = Players.LocalPlayer
-local cachedPackets = nil
-local nextPacketsRetryAt = 0
-
-local function packetsNamespaceReady(): boolean
-	local storage = ReplicatedStorage:FindFirstChild("BytenetStorage")
-	local namespaceValue = storage and storage:FindFirstChild("ArmouredTycoon")
-	return namespaceValue ~= nil and namespaceValue:IsA("StringValue") and namespaceValue.Value ~= ""
-end
 
 local function getPackets()
 	if RunService:IsStudio() and not RunService:IsRunning() then
 		return nil
 	end
-
-	if not packetsNamespaceReady() then
-		return nil
-	end
-
-	if os.clock() < nextPacketsRetryAt then
-		return nil
-	end
-
-	if not cachedPackets then
-		local ok, result = pcall(function()
-			return require(ReplicatedStorage.Network.Packets)
-		end)
-		if not ok then
-			nextPacketsRetryAt = os.clock() + 2
-			return nil
-		end
-		cachedPackets = result
-	end
-
-	return cachedPackets
+	return PacketBootstrap.TryGet()
 end
-
 local CLICK_BATCH_INTERVAL = 0.18
 local CALLSIGNS = {
 	"KEEP CLICKING",
@@ -181,7 +153,7 @@ local function NukeCinematicView(props)
 	local chargeProgress = useSpringBinding(math.clamp(currentScore / 100, 0, 1), 20, 0)
 
 	React.useEffect(function()
-		if not nuke or nuke.action == "End" then
+		if not nuke or not nuke.mashOpen or (nuke.role ~= "launcher" and nuke.role ~= "defender") then
 			return nil
 		end
 
@@ -190,6 +162,9 @@ local function NukeCinematicView(props)
 		task.spawn(function()
 			while alive do
 				task.wait(CLICK_BATCH_INTERVAL)
+				if not alive then
+					break
+				end
 				local count = localClicks.current
 				local now = os.clock()
 				local window = now - lastFlush.current
@@ -211,8 +186,9 @@ local function NukeCinematicView(props)
 
 		return function()
 			alive = false
+			localClicks.current = 0
 		end
-	end, { if nuke then nuke.sessionId else "" })
+	end, { if nuke then nuke.sessionId else "", if nuke then nuke.mashOpen else false, if nuke then nuke.role else nil })
 
 	if not nuke then
 		return nil
@@ -221,7 +197,7 @@ local function NukeCinematicView(props)
 	local launcherScore = nuke.launcherScore or 0
 	local defenderScore = nuke.defenderScore or 0
 	local ownScore = if nuke.role == "launcher" then launcherScore else defenderScore
-	local mashActive = nuke.action == "MashStart" or launcherScore > 0 or defenderScore > 0
+	local mashActive = nuke.mashOpen and (nuke.role == "launcher" or nuke.role == "defender")
 	local resultActive = nuke.action == "Result"
 	local won = resultActive and nuke.winnerName == localPlayer.Name
 	local rangeText = ""
@@ -311,7 +287,9 @@ local function NukeCinematicView(props)
 			Visible = mashActive and not resultActive,
 			ZIndex = 80,
 			[React.Event.Activated] = function()
-				localClicks.current += 1
+				if mashActive then
+					localClicks.current += 1
+				end
 			end,
 		}, {
 			Aspect = e("UIAspectRatioConstraint", { AspectRatio = 1 }),

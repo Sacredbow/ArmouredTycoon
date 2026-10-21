@@ -10,7 +10,7 @@
 
 	Responsibilities:
 	- Payload sanity checks (finite numbers, typed tables) before any logic
-	- Authorization token + weapon-settings validation via FPSSecurity
+	- Equipped weapon and server settings validation via FPSSecurity
 	- Head / torso / limb damage with distance falloff
 	- Armour penetration (helmet / vest) read defensively from ACS_Client
 	- Team rules (no team-kill, or scaled team damage from GameRules)
@@ -21,12 +21,14 @@
 
 const Players = game:GetService("Players")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const Workspace = game:GetService("Workspace")
 
 --// Modules
 
 const ECS = require(ReplicatedStorage.ECS)
 const Types = require(script.Parent.Types)
 const Security = require(script.Parent.Security)
+const ShotAuthority = require(script.Parent.ShotAuthority)
 const State = require(script.Parent.State)
 
 --// Micro-Optimisations
@@ -34,17 +36,17 @@ const State = require(script.Parent.State)
 const math_max = math.max
 const math_min = math.min
 const math_floor = math.floor
-const math_clamp = math.clamp
 const math_random = math.random
 
 --// Constants
 
 const FALLOFF_DIVISOR = 25
 const MIN_ARMOUR_DAMAGE = 0.5
-const SELF_DAMAGE_MAX = 500
 const HEAD_HIT_TYPE = 1
 const TORSO_HIT_TYPE = 2
 const SHIELD_BASE_HEALTH = 750
+const MAX_DAMAGE_DISTANCE = 7000
+const MELEE_DISTANCE_BUFFER = 6
 
 --// Internal Utilities
 
@@ -84,98 +86,73 @@ end
 
 
 --// Shield detection
---(Player = 750, Base value)
+-- Each equipped shield owns its own health; weak keys release destroyed models.
+local ShieldHealthByModel: { [Model]: number } = setmetatable({}, { __mode = "k" })
 
-local ShieldUsers: {[Player]: number} = {}
+local function ShieldDamage(shieldModel: Model, damage: number)
+	local health = math_max(0, (ShieldHealthByModel[shieldModel] or SHIELD_BASE_HEALTH) - damage)
+	if health <= 0 then
+		ShieldHealthByModel[shieldModel] = nil
+		shieldModel:Destroy()
+		return
+	end
+	ShieldHealthByModel[shieldModel] = health
 
--- Clean up shield state when a player leaves to avoid a memory leak.
-Players.PlayerRemoving:Connect(function(player: Player)
-	ShieldUsers[player] = nil
-end)
-
-local function ValidateShieldHealth(Player: Player, ShieldModel: Model)
-	-- The player is allowed to keep the shield only while its health is above 0.
-	if ShieldUsers[Player] and ShieldUsers[Player] <= 0 then
-		print(`[SERVER-Shield] Shield DESTROYED! — player: '{Player.Name}', health reached 0, removing shield model`)
-		ShieldUsers[Player] = nil
-		ShieldModel:Destroy()
-	else
-		print(`[SERVER-Shield] Shield still standing — player: '{Player.Name}', remaining health: {ShieldUsers[Player] or 0}`)
+	local counter = shieldModel:FindFirstChild("Counter")
+	local counterGui = counter and counter:FindFirstChild("SurfaceGui")
+	local counterText = counterGui and counterGui:FindFirstChild("TextLabel")
+	if counterText and counterText:IsA("TextLabel") then
+		counterText.Text = tostring(health)
 	end
 end
 
-local function ShieldDamage(Player: Player, ShieldModel : Model, Damage: number)
-	-- Register the player if not already in the table.
-	
-	if not ShieldModel then
-		warn("Could not find ShieldModel")
+-- Damage comes from the server's equipped weapon settings, never client data.
+function HandleShieldHit(player: Player, shieldModel: Model)
+	if typeof(shieldModel) ~= "Instance" or not shieldModel:IsA("Model") or shieldModel.Name ~= "Shield" then
 		return
 	end
-	if not ShieldUsers[Player] then
-		ShieldUsers[Player] = SHIELD_BASE_HEALTH
-		print(`[SERVER-Shield] New shield user registered — player: '{Player.Name}', base health: {SHIELD_BASE_HEALTH}`)
+	local targetCharacter = shieldModel.Parent
+	if not targetCharacter or not targetCharacter:IsA("Model") or not Players:GetPlayerFromCharacter(targetCharacter) then
+		return
 	end
-
-	print(`[SERVER-Shield] ShieldDamage — player: '{Player.Name}', damage: {Damage}, shield health before: {ShieldUsers[Player]}`)
-
-	-- Clamp so the shield never goes negative.
-	ShieldUsers[Player] = math_max(0, ShieldUsers[Player] - Damage)
-
-	print(`[SERVER-Shield] Shield health after: {ShieldUsers[Player]}`)
-
-	ValidateShieldHealth(Player, ShieldModel)
-
-	-- Update the shield's on-model counter (defensively, in case parts are missing).
-	local Counter = ShieldModel:FindFirstChild("Counter")
-	if Counter then
-		local CounterGUI = Counter:FindFirstChild("SurfaceGui")
-		local CounterText = CounterGUI and CounterGUI:FindFirstChild("TextLabel") :: TextLabel
-		if CounterText then
-			CounterText.Text = tostring(ShieldUsers[Player] or 0)
-			print(`[SERVER-Shield] Counter UI updated to: {ShieldUsers[Player]}`)
-		else
-			print(`[SERVER-Shield] Counter found but TextLabel missing — could not update UI`)
+	local character = player.Character
+	if not character or character == targetCharacter then
+		return
+	end
+	local weapon = character:FindFirstChildOfClass("Tool")
+	local settingsModule = weapon and weapon:FindFirstChild("ACS_Settings")
+	if not settingsModule or not settingsModule:IsA("ModuleScript") then
+		return
+	end
+	local success, settings = pcall(require, settingsModule)
+	if not success or type(settings) ~= "table" or type(settings.LimbDamage) ~= "table" then
+		return
+	end
+	local damage = settings.LimbDamage[1]
+	if type(damage) ~= "number" or damage ~= damage or damage <= 0 then
+		return
+	end
+	local attackerRoot = character:FindFirstChild("HumanoidRootPart")
+	local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+	if not attackerRoot or not attackerRoot:IsA("BasePart") or not targetRoot or not targetRoot:IsA("BasePart") then
+		return
+	end
+	local distance = (targetRoot.Position - attackerRoot.Position).Magnitude
+	if distance > MAX_DAMAGE_DISTANCE then
+		return
+	end
+	if settings.Type == "Melee" then
+		local bladeRange = settings.BladeRange
+		if typeof(bladeRange) ~= "number" or distance > bladeRange + MELEE_DISTANCE_BUFFER
+			or not ShotAuthority.AllowMeleeHit(player, weapon, settings) then
+			return
 		end
-	else
-		print(`[SERVER-Shield] No Counter found on shield model — UI not updated`)
-	end
-end
-
--- Server entry point for shield hits. Validates that the shield actually
--- belongs to the target player's character before applying damage.
-function HandleShieldHit(Player: Player, weaponData : ModuleScript, ShieldModel:  Model)
-
-	
-local Damage = weaponData.LimbDamage[1]
-	if typeof(Damage) ~= "number" or Damage ~= Damage or Damage <= 0 then
-		print(`[SERVER-Shield] REJECTED — damage validation failed (typeof: {typeof(Damage)}, value: {Damage})`)
+	elseif settings.Type ~= "Gun" or not ShotAuthority.ConsumeGunHit(player, weapon) then
 		return
 	end
-
-	-- Only allow damaging a shield that is currently equipped by the player.
-	
-	if not ShieldModel then
-print("could not find shield model")
-		return
-	end
-
-	local targetCharacter = ShieldModel.Parent
-	
-if not targetCharacter then
-	print("Could not find targetcharacter when trying to validate shield hit")
+	ShieldDamage(shieldModel, math_min(damage, 200))
 end
 
-
-local targetPlayer = Players:GetPlayerFromCharacter(targetCharacter)
-
-if not targetPlayer then 
-	print("Not a valid player")
-	return
-end
-	
-	print(`[SERVER-Shield] VALIDATED — shield belongs to player's character, applying damage...`)
-	ShieldDamage(targetPlayer,ShieldModel, Damage)
-end
 --// Armour
 
 local function getNumberValue(parent: Instance?, name: string): NumberValue?
@@ -228,6 +205,21 @@ local function applyArmour(
 	end
 
 	return damage
+end
+
+local function HasLineOfSight(attackerCharacter: Model, targetCharacter: Model, origin: Vector3, targetPosition: Vector3): boolean
+	local direction = targetPosition - origin
+	if direction.Magnitude <= 0.01 then
+		return true
+	end
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	raycastParams.FilterDescendantsInstances = { attackerCharacter }
+	local result = Workspace:Raycast(origin, direction, raycastParams)
+	if not result then
+		return true
+	end
+	return result.Instance:IsDescendantOf(targetCharacter)
 end
 
 --// Damage Calculation
@@ -289,13 +281,8 @@ function HandleDamageRequest(
 	player: Player,
 	weapon: Tool?,
 	targetHumanoid: Humanoid?,
-	distance: number,
 	hitType: number,
-	weaponSettings: any,
-	modifiers: any,
-	isSelfDamage: boolean,
-	selfDamageAmount: number,
-	authToken: string
+	modifiers: any
 )
 	local character = player.Character
 	if not character then
@@ -307,45 +294,63 @@ function HandleDamageRequest(
 		return
 	end
 
-	-- Reject non-finite / mis-typed payloads before reaching gameplay logic.
-	if typeof(distance) ~= "number" or distance ~= distance or math.abs(distance) == math.huge then
-		warn(`[FPS.Damage] {player.Name} sent non-finite distance`)
+	-- Reject mis-typed payloads before reaching gameplay logic.
+	if hitType ~= HEAD_HIT_TYPE and hitType ~= TORSO_HIT_TYPE and hitType ~= 3 then
 		return
 	end
-	if typeof(hitType) ~= "number" or type(weaponSettings) ~= "table" or type(modifiers) ~= "table" then
+	if type(modifiers) ~= "table" then
 		warn(`[FPS.Damage] {player.Name} sent invalid damage payload types`)
 		return
 	end
 
-	if not Security.IsAuthorized(player, authToken) then
-		Security.BanPlayer(player, "damage request with incorrect authorization token")
+	local serverSettings = Security.SecureSettings(player, weapon)
+	if not serverSettings then
 		return
 	end
 
-	if isSelfDamage then
-		if typeof(selfDamageAmount) ~= "number" or selfDamageAmount ~= selfDamageAmount then
-			warn(`[FPS.Damage] {player.Name} sent invalid self damage amount`)
+	if typeof(targetHumanoid) ~= "Instance" or not targetHumanoid:IsA("Humanoid")
+		or targetHumanoid == humanoid or targetHumanoid.Health <= 0
+		or not targetHumanoid:IsDescendantOf(workspace) then
+		return
+	end
+
+	local attackerRoot = character:FindFirstChild("HumanoidRootPart")
+	local targetRoot = targetHumanoid.RootPart
+	if not attackerRoot or not attackerRoot:IsA("BasePart") or not targetRoot then
+		return
+	end
+	local distance = (targetRoot.Position - attackerRoot.Position).Magnitude
+	if distance > MAX_DAMAGE_DISTANCE then
+		return
+	end
+	local targetCharacter = targetHumanoid.Parent
+	if not targetCharacter or not targetCharacter:IsA("Model") then
+		return
+	end
+	local targetPart = if hitType == HEAD_HIT_TYPE then targetCharacter:FindFirstChild("Head") else if hitType == TORSO_HIT_TYPE then targetCharacter:FindFirstChild("UpperTorso") or targetRoot else targetRoot
+	if not targetPart or not targetPart:IsA("BasePart") or not HasLineOfSight(character, targetCharacter, attackerRoot.Position, targetPart.Position) then
+		return
+	end
+	if serverSettings.Type == "Melee" then
+		local bladeRange = serverSettings.BladeRange
+		if typeof(bladeRange) ~= "number" or distance > bladeRange + MELEE_DISTANCE_BUFFER then
 			return
 		end
-
-		-- Self-inflicted damage must not register the shooter as their own
-		-- killer; otherwise repeated self-damage + death farms cash/kill credit.
-		queueDamage(nil, humanoid, math_clamp(selfDamageAmount, 0, SELF_DAMAGE_MAX))
-		return
 	end
-
-	if not weapon then
-		Security.BanPlayer(player, "damage request without a weapon")
-		return
-	end
-
-	local settingsValid = Security.SecureSettings(player, weapon, weaponSettings)
-	if not settingsValid or not targetHumanoid then
-		return
-	end
-
 	local secureModifiers = Security.SecureModifiers(player, modifiers)
 	if not secureModifiers then
+		return
+	end
+
+	if serverSettings.Type == "Gun" then
+		if not ShotAuthority.ConsumeGunHit(player, weapon) then
+			return
+		end
+	elseif serverSettings.Type == "Melee" then
+		if not ShotAuthority.AllowMeleeHit(player, weapon, serverSettings) then
+			return
+		end
+	else
 		return
 	end
 
@@ -354,7 +359,7 @@ function HandleDamageRequest(
 		targetHumanoid,
 		distance,
 		hitType,
-		weaponSettings :: Types.WeaponSettings,
+		serverSettings :: Types.WeaponSettings,
 		secureModifiers :: Types.ModifierSettings
 	)
 end

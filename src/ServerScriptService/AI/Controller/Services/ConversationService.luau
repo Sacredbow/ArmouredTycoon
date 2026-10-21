@@ -2,9 +2,11 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 local ConversationOptions = require(script.Parent.ConversationOptions)
 local Packets = require(ReplicatedStorage.Network.Packets)
+local NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
 local Types = require(script.Parent.Parent.Core.Types)
 local WorldQuery = require(script.Parent.WorldQuery)
 
@@ -226,7 +228,16 @@ local function connectRemote()
 
 	remoteConnected = true
 	startMovementTracker()
-	Packets.packets.NPCConversationChoice.listen(function(payload, player: Player?)
+	NetworkGuard.Listen(Packets.packets.NPCConversationChoice, "NPCConversationChoice", {
+	Rate = 8,
+	Burst = 12,
+	Validate = function(payload)
+		return type(payload) == "table"
+			and (payload.action == "Choose" or payload.action == "End")
+			and type(payload.conversationId) == "string" and #payload.conversationId <= 64
+			and (payload.action == "End" or (type(payload.optionId) == "string" and #payload.optionId <= 64))
+	end,
+}, function(payload, player: Player?)
 		if not player then
 			return
 		end

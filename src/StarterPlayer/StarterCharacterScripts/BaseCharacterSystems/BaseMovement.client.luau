@@ -12,13 +12,14 @@ end
 
 local ECS = require(ReplicatedStorage.ECS)
 local CharacterManager = require(ReplicatedStorage.CharacterUtilities.CharacterManager)
+local CharacterRegistry = require(ReplicatedStorage.CharacterUtilities.CharacterRegistry)
 local manager = CharacterManager.new(character)
 local characterEntity = ECS.createEntity({
 	Name = `{player.Name}:Character`,
 	Model = character,
 	Character = character,
-	CharacterManager = manager,
 })
+CharacterRegistry.Register(characterEntity, manager)
 
 -- wasd and arrows feed the same movement snapshot
 local KEY_TO_DIRECTION = {
@@ -95,11 +96,8 @@ UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: 
 	end
 end)
 
-UserInputService.InputEnded:Connect(function(input: InputObject, gameProcessed: boolean)
-	if gameProcessed then
-		return
-	end
-
+UserInputService.InputEnded:Connect(function(input: InputObject, _gameProcessed: boolean)
+	-- Always release held input; UI focus can consume the key-up event.
 	setMoveKeyFromInput(input.KeyCode, false)
 
 	if input.KeyCode == Enum.KeyCode.LeftShift then
@@ -115,6 +113,7 @@ UserInputService.WindowFocusReleased:Connect(function()
 end)
 
 script.Destroying:Connect(function()
+	CharacterRegistry.Unregister(characterEntity)
 	manager:Destroy()
 	ECS.deleteEntity(characterEntity)
 end)

@@ -21,4 +21,10 @@ function InputBindings.bindDefaultActions(contextActionService: ContextActionSer
 	contextActionService:BindAction("ToggleWalk", actionHandler, false, Enum.KeyCode.Z)
 end
 
+function InputBindings.unbindDefaultActions(contextActionService: ContextActionService)
+	contextActionService:UnbindAction("Run")
+	contextActionService:UnbindAction("Stand")
+	contextActionService:UnbindAction("Crouch")
+	contextActionService:UnbindAction("ToggleWalk")
+end
 return InputBindings

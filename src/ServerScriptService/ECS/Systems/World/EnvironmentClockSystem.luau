@@ -3,9 +3,14 @@
 	@class EnvironmentClockSystem
 
 	@desc
-	Advances EnvironmentClock entities — updates lighting via the
-	clock service each tick at the configured time speed.
+	Advances numeric EnvironmentClock state and delegates lighting through
+	the environment module boundary.
 ]]
+
+--// Modules
+
+const ServerScriptService = game:GetService("ServerScriptService")
+const EnvironmentService = require(ServerScriptService.Services.World.EnvironmentService)
 
 --// Module
 
@@ -15,14 +20,8 @@ return function(context: any)
 	local dt = context.dt
 
 	for Entity, Clock in World:query(Components.EnvironmentClock) do
-		const Service = Clock.service
-		if not Service then
-			World:delete(Entity)
-			continue
-		end
-
 		Clock.currentTime = (Clock.currentTime or 0) + (dt * Clock.timeSpeed)
-		Service:_UpdateLighting(Clock.currentTime)
+		EnvironmentService.UpdateLightingFromClock(Clock.currentTime)
 		World:set(Entity, Components.EnvironmentClock, Clock)
 	end
 end

@@ -23,6 +23,7 @@ return {
 	BuildService = {
 		PlacedBuilds = {},
 	},
+	ProcessedReceipts = {}, -- PurchaseId -> Unix timestamp
 	RedeemedCodes = {
 		-- ["CODE"] = redeemedAtUnixTimestamp
 	},

@@ -3,44 +3,25 @@
 	@class FPSSecurity
 
 	@desc
-	Validates client combat requests: authorization tokens, weapon ownership,
-	and settings-table integrity. Replaces the legacy inline SKP_* security logic.
+	Validates client combat requests: equipped weapon ownership and
+	settings-table integrity. Replaces the legacy inline SKP_* security logic.
 ]]
 
---// Services
+--// Types
 
-const ReplicatedStorage = game:GetService("ReplicatedStorage")
-const ServerScriptService = game:GetService("ServerScriptService")
-
---// Modules
-
-const State = require(script.Parent.State)
-const BanSignal = require(ServerScriptService.Signals.BanSignal)
-
---// Engine Folders
-
-const Engine = ReplicatedStorage:WaitForChild("ACS_Engine")
-const Events = Engine:WaitForChild("Events")
-
-
+const Types = require(script.Parent.Types)
 
 --// Public API
 
-function BanPlayer(player: Player, reason: string)
-	warn(`[FPS.Security] {player.Name} — {reason}`)
-	BanSignal:Fire(player, `You were permanently banned for {reason}`)
-end
+local LastRejectWarning: { [Player]: number } = setmetatable({}, { __mode = "k" })
 
-function IsAuthorized(player: Player, authToken: string): boolean
-	-- Defensive guard: a non-string token (e.g. a spoofed table) would be
-	-- coerced by string concatenation; reject it outright instead.
-	if typeof(authToken) ~= "string" then
-		return false
+function RejectRequest(player: Player, reason: string)
+	local now = os.clock()
+	if now - (LastRejectWarning[player] or -math.huge) >= 5 then
+		LastRejectWarning[player] = now
+		warn(`[FPS.Security] Rejected request from {player.Name}: {reason}`)
 	end
-
-	return authToken == State.AuthToken .. "-" .. player.UserId
 end
-
 -- Validates that both settings tables contain the three damage sub-arrays,
 -- so the field-by-field compare below can never index a nil value.
 local function HasDamageArrays(settings: any): boolean
@@ -69,7 +50,7 @@ end
 
 function SecureModifiers(player: Player, modifiers: any): Types.ModifierSettings?
 	if type(modifiers) ~= "table" then
-		BanPlayer(player, "damage request with non-table modifiers")
+		RejectRequest(player, "damage request with non-table modifiers")
 		return nil
 	end
 
@@ -96,62 +77,41 @@ function SecureModifiers(player: Player, modifiers: any): Types.ModifierSettings
 	}
 end
 
-function SecureSettings(player: Player, gun: Tool?, clientSettings: any): boolean
-	if not gun then
-		BanPlayer(player, "damage request with missing weapon")
-		return false
+function SecureSettings(player: Player, gun: Tool?, clientSettings: any?): any?
+	if typeof(gun) ~= "Instance" or not gun:IsA("Tool") then
+		RejectRequest(player, "damage request with invalid weapon")
+		return nil
 	end
 
 	local character = player.Character
-	local backpack = player:FindFirstChildOfClass("Backpack")
-	local ownsWeapon = (character ~= nil and gun:IsDescendantOf(character))
-		or (backpack ~= nil and gun:IsDescendantOf(backpack))
-	if not ownsWeapon then
-		BanPlayer(player, `weapon not owned: {gun:GetFullName()}`)
-		return false
+	if not character or gun.Parent ~= character then
+		RejectRequest(player, "weapon is not equipped")
+		return nil
 	end
 
 	local settingsModule = gun:FindFirstChild("ACS_Settings")
 	if not settingsModule or not settingsModule:IsA("ModuleScript") then
-		BanPlayer(player, `weapon {gun.Name} is missing ACS_Settings`)
-		return false
+		RejectRequest(player, "weapon is missing ACS_Settings")
+		return nil
 	end
 
-	local serverSettings = require(settingsModule) :: ModuleScript
-	if not CompareSettings(clientSettings, serverSettings) then
-		BanPlayer(player, `weapon settings mismatch for {gun.Name}`)
-		return false
+	local success, serverSettings = pcall(require, settingsModule)
+	if not success or type(serverSettings) ~= "table" then
+		RejectRequest(player, "weapon settings could not be loaded")
+		return nil
+	end
+	if clientSettings ~= nil and not CompareSettings(clientSettings, serverSettings) then
+		RejectRequest(player, "weapon settings mismatch")
+		return nil
 	end
 
-	return true
-end
-
---// Event Wiring
-
-function Init()
-	local accessIdRemote = Events:FindFirstChild("AcessId") :: RemoteFunction?
-	if not accessIdRemote then
-		warn("[FPS.Security] AcessId remote not found; auth token requests will fail.")
-		return
-	end
-
-	accessIdRemote.OnServerInvoke = function(player: Player, requestedUserId: number): string
-		if typeof(requestedUserId) ~= "number" or player.UserId ~= requestedUserId then
-			warn(`[FPS.Security] {player.Name} requested a token for user id {tostring(requestedUserId)}; returning empty auth token`)
-			BanPlayer(player, "Configuring data using Exploits")
-			return ""
-		end
-
-		return State.AuthToken
-	end
+	return serverSettings
 end
 
 return {
-	BanPlayer = BanPlayer,
-	IsAuthorized = IsAuthorized,
+	RejectRequest = RejectRequest,
 	CompareSettings = CompareSettings,
 	SecureSettings = SecureSettings,
 	SecureModifiers = SecureModifiers,
-	Init = Init,
 }
 

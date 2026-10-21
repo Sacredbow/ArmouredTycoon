@@ -2,6 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextChatService = game:GetService("TextChatService")
 
 local Janitor = require(ReplicatedStorage.Packages.janitor)
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
 
 local janitor = Janitor.new()
 
@@ -9,29 +10,8 @@ janitor:Add(script.Destroying:Connect(function()
 	janitor:Destroy()
 end), "Disconnect", "Destroying")
 
-local function packetsNamespaceReady(): boolean
-	local storage = ReplicatedStorage:FindFirstChild("BytenetStorage")
-	local namespaceValue = storage and storage:FindFirstChild("ArmouredTycoon")
-	return namespaceValue ~= nil and namespaceValue:IsA("StringValue") and namespaceValue.Value ~= ""
-end
-
 janitor:Add(task.spawn(function()
-	local Packets = nil
-	while not Packets do
-		if packetsNamespaceReady() then
-			local ok, result = pcall(function()
-				return require(ReplicatedStorage.Network.Packets)
-			end)
-			if ok then
-				Packets = result
-			else
-				task.wait(0.5)
-			end
-		else
-			task.wait(0.5)
-		end
-	end
-
+	local Packets = PacketBootstrap.Get()
 	janitor:Add(Packets.packets.NPCSpeech.listen(function(payload)
 		local adornee = payload.adornee
 		local message = payload.message
@@ -48,7 +28,7 @@ janitor:Add(task.spawn(function()
 		end)
 
 		if not success then
-			warn(`[NPCBubble] Failed to display bubble: {err}`)
+			warn("[NPCBubble] Failed to display bubble:", err)
 		end
 	end), true, "NPCSpeech")
 end), true, "StartupThread")

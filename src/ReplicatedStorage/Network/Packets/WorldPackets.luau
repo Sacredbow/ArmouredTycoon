@@ -17,5 +17,13 @@ return function(ByteNet: any)
 				mode = ByteNet.optional(ByteNet.string),
 			}),
 		}),
+
+		DropperVisual = ByteNet.definePacket({
+			value = ByteNet.struct({
+				dropper = ByteNet.inst,
+				spawnPart = ByteNet.inst,
+			}),
+			reliabilityType = "unreliable",
+		}),
 	}
 end

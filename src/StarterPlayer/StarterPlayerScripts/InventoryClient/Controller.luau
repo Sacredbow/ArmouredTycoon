@@ -6,6 +6,7 @@ local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
 
 local Signal = require(ReplicatedStorage.Packages.signal)
 local InventoryShared = require(ReplicatedStorage.CharacterUtilities.Inventory.InventoryShared)
@@ -20,7 +21,7 @@ if not rarityOk then
 	InventoryRarity = nil
 end
 
-local DEBUG_INVENTORY = true
+local DEBUG_INVENTORY = false
 
 export type Snapshot = InventoryShared.InventorySnapshot & {
 	isOpen: boolean,
@@ -310,6 +311,19 @@ function InventoryController:_refreshTools()
 	collectTools(character, true)
 	collectTools(backpack, false)
 
+	local liveKeys = {}
+	for _, entry in ipairs(tools) do
+		local key = entry.tool:GetAttribute("InventoryId")
+		if typeof(key) ~= "string" or key == "" then
+			key = entry.tool.Name
+		end
+		liveKeys[key] = true
+	end
+	for key in pairs(self._toolSlotByName) do
+		if not liveKeys[key] then
+			self._toolSlotByName[key] = nil
+		end
+	end
 	table.sort(tools, function(left, right)
 		return left.tool.Name < right.tool.Name
 	end)
@@ -400,6 +414,10 @@ function InventoryController:Start()
 	self:_refreshTools()
 
 	self._inputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed or UserInputService:GetFocusedTextBox() then
+			return
+		end
+
 		local isToggleKey = TOGGLE_KEYS[input.KeyCode] == true
 		local slot = SLOT_KEYS[input.KeyCode]
 
@@ -510,11 +528,9 @@ function InventoryController:RemoveSelected()
 		return
 	end
 
-	local ok, packets = pcall(function()
-		return require(ReplicatedStorage.Network.Packets)
-	end)
+	local packets = PacketBootstrap.TryGet()
 
-	if not ok or not packets or not packets.packets or not packets.packets.InventoryAction then
+	if not packets or not packets.packets or not packets.packets.InventoryAction then
 		warn("[InventoryClient] InventoryAction packet is unavailable; server removal could not be requested.", packets)
 		return
 	end

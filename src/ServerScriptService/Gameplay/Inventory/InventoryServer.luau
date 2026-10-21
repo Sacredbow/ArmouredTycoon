@@ -1,8 +1,10 @@
 --!strict
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 local Packets = require(ReplicatedStorage.Network.Packets)
+local NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
 local InventoryServer = {}
 InventoryServer.__index = InventoryServer
 
@@ -42,14 +44,28 @@ function InventoryServer:Start()
 		return
 	end
 
-	self._started = true
-	Packets.packets.InventoryAction.listen(function(payload, player: Player)
-	if payload.action == "RemoveTool" then
+	self._disconnect = NetworkGuard.Listen(
+		Packets.packets.InventoryAction,
+		"InventoryAction",
+		{
+			Rate = 8,
+			Burst = 12,
+			Validate = function(payload)
+				return type(payload) == "table" and payload.action == "RemoveTool"
+			end,
+		},
+		function(payload, player)
 			self:_removeTool(player, payload.tool)
-		else
-			warn(`[InventoryServer] {player.Name} sent unknown action: {tostring(payload.action)}`)
 		end
-	end)
+	)
+	self._started = true
 end
 
+function InventoryServer:Destroy()
+	if self._disconnect then
+		self._disconnect()
+		self._disconnect = nil
+	end
+	self._started = false
+end
 return InventoryServer

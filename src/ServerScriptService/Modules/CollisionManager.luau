@@ -14,8 +14,6 @@
 --// Services
 
 const PhysicsService = game:GetService("PhysicsService")
-const ReplicatedStorage = game:GetService("ReplicatedStorage")
-const ECS = require(ReplicatedStorage.ECS)
 
 --// Constants
 
@@ -59,15 +57,8 @@ local CollisionManager: CollisionManager = {}
 
 --// Internal Utilities
 
-local function Schedule(Delay: number, Callback: () -> (), Name: string?)
-	ECS.createEntity({
-		Name = Name or "CollisionManagerScheduledTask",
-		ScheduledTask = {
-			delay = Delay,
-			elapsed = 0,
-			callback = Callback
-		}
-	})
+local function Schedule(Delay: number, Callback: () -> (), _Name: string?)
+	task.delay(Delay, Callback)
 end
 
 local function WatchDescendants(Character: Model, GroupName: string)

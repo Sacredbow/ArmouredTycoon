@@ -4,25 +4,25 @@
 	@class CommerceService
 
 	@desc
-	Handles all in-game commerce — Developer Product receipts, gamepass
+	Handles all in-game commerce â€” Developer Product receipts, gamepass
 	purchases, SWAT gamepass item clicks, and tycoon button gamepass prompts.
 ]]
 
 --// Services
 
-const MarketplaceService = game:GetService("MarketplaceService")
-const CollectionService = game:GetService("CollectionService")
-const Players = game:GetService("Players")
-const ReplicatedStorage = game:GetService("ReplicatedStorage")
-const ServerScriptService = game:GetService("ServerScriptService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 --// Modules
 
-const ECS = require(ReplicatedStorage.ECS)
-const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
-const ProductRewards = require(script.Parent.Handlers.ProductRewards)
-const GearDistribution = require(script.Parent.Handlers.GearDistribution)
-const GamepassCache = require(script.Parent.GamepassCache)
+local ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
+local ProductRewards = require(script.Parent.Handlers.ProductRewards)
+local GearDistribution = require(script.Parent.Handlers.GearDistribution)
+local GamepassCache = require(script.Parent.GamepassCache)
+local TycoonRuntime = require(ServerScriptService.ECS.TycoonRuntime)
+local TycoonFactory = require(ServerScriptService.ECS.TycoonFactory)
 
 --// Types
 
@@ -33,9 +33,7 @@ type ProfileManagerLike = {
 
 type PurchaseHandler = (player: Player, profileManager: ProfileManagerLike) -> Enum.ProductPurchaseDecision
 
-type TycoonPurchaseTarget = {
-	_ApplyPurchasedButton: (self: TycoonPurchaseTarget, button: BasePart) -> (),
-}
+type TycoonPurchaseTarget = number
 
 type PendingPurchase = {
 	tycoon: TycoonPurchaseTarget?,
@@ -45,21 +43,7 @@ type PendingPurchase = {
 
 --// Constants
 
-const DeveloperProducts = {
-	Cash_5000 = 3450461469,
-	Cash_25000 = 3450463123,
-	Cash_50000 = 3450470672,
-	Cash_250000 = 3450465321,
-	Cash_500000 = 3450466129,
-	Emerald_300 = 3496915650,
-	Emerald_750 = 3496916844,
-	Emerald_1250 = 3496917747,
-	Emerald_3500 = 3496918338,
-	Emerald_10000 = 3496921305,
-	ShieldArmour = 3450473810,
-}
-
-const Gamepasses: { [string]: number } = {
+local Gamepasses: { [string]: number } = {
 	RainbowCarpet = 1568782544,
 	X2Cash = 1568972351,
 	SWAT_Gamepass = 1573236427,
@@ -67,62 +51,11 @@ const Gamepasses: { [string]: number } = {
 	GoldenDropper = 1618227062,
 }
 
-const PRODUCT_CASH_REWARDS = {
-	[DeveloperProducts.Cash_5000] = 5000,
-	[DeveloperProducts.Cash_25000] = 25000,
-	[DeveloperProducts.Cash_50000] = 50000,
-	[DeveloperProducts.Cash_250000] = 250000,
-	[DeveloperProducts.Cash_500000] = 500000,
-}
-
-const PRODUCT_EMERALD_REWARDS = {
-	[DeveloperProducts.Emerald_300] = 300,
-	[DeveloperProducts.Emerald_750] = 750,
-	[DeveloperProducts.Emerald_1250] = 1250,
-	[DeveloperProducts.Emerald_3500] = 3500,
-	[DeveloperProducts.Emerald_10000] = 10000,
-}
-
---// Micro-Optimisations
-
-const math_max = math.max
-
---// Internal Utilities
-
-const Schedule = function(Delay: number, Callback: () -> (), Name: string?, RepeatEvery: number?)
-	ECS.createEntity({
-		Name = Name or "CommerceScheduledTask",
-		ScheduledTask = {
-			delay = Delay,
-			elapsed = 0,
-			repeatEvery = RepeatEvery,
-			callback = Callback,
-		},
-	})
+local Schedule = function(Delay: number, Callback: () -> (), _Name: string?, _RepeatEvery: number?)
+	task.delay(Delay, Callback)
 end
 
-const GetLeaderstatValue = function(Player: Player, StatName: string): NumberValue?
-	local Leaderstats = Player:FindFirstChild("leaderstats")
-	if not Leaderstats then
-		return nil
-	end
-
-	local Stat = Leaderstats:FindFirstChild(StatName)
-	if Stat and Stat:IsA("NumberValue") then
-		return Stat
-	end
-
-	return nil
-end
-
-const AddLeaderstat = function(Player: Player, StatName: string, Amount: number)
-	local Stat = GetLeaderstatValue(Player, StatName)
-	if Stat then
-		Stat.Value += Amount
-	end
-end
-
-const ResolveButtonGamepassId = function(Button: BasePart, GamepassKey: string?): number?
+local ResolveButtonGamepassId = function(Button: BasePart, GamepassKey: string?): number?
 	if GamepassKey then
 		return Gamepasses[GamepassKey]
 	end
@@ -132,7 +65,7 @@ end
 
 --// Module
 
-const CommerceService = {}
+local CommerceService = {}
 CommerceService.__index = CommerceService
 
 --// Constructor
@@ -142,7 +75,7 @@ function CommerceService.new(PlayerService: any): any
 	Self.PlayerService = PlayerService
 	Self.ProfileManager = ProfileManager
 	Self.PurchaseHandlers = {} :: { [number]: PurchaseHandler }
-	Self.PendingPurchases = {} :: { [Player]: PendingPurchase }
+	Self.PendingPurchases = setmetatable({}, { __mode = "k" }) :: { [Player]: PendingPurchase }
 	Self.GamepassCache = GamepassCache.new()
 	Self.GamepassCache:RegisterGamepass(Gamepasses.RainbowCarpet, "RainbowCarpet")
 	Self.GamepassCache:RegisterGamepass(Gamepasses.Raygun, "Raygun")
@@ -158,6 +91,9 @@ function CommerceService:Init()
 	self:_SetupProductHandlers()
 	self:_SetupProcessReceipt()
 	self:_SetupGamepassHandlers()
+	Players.PlayerRemoving:Connect(function(Player)
+		self.PendingPurchases[Player] = nil
+	end)
 end
 
 function CommerceService:_GiveShield(Player: Player)
@@ -180,26 +116,41 @@ function CommerceService:_GiveRayGun(Player: Player)
 	GearDistribution.GiveRayGun(Player)
 end
 
---// Internal Methods — Setup
+--// Internal Methods â€” Setup
 
 function CommerceService:_SetupProductHandlers()
-	for ProductId, CashAmount in pairs(PRODUCT_CASH_REWARDS) do
-		self.PurchaseHandlers[ProductId] = function(Player: Player)
-			AddLeaderstat(Player, "Cash", CashAmount)
-			return Enum.ProductPurchaseDecision.PurchaseGranted
-		end
-	end
-
-	for ProductId, EmeraldAmount in pairs(PRODUCT_EMERALD_REWARDS) do
-		self.PurchaseHandlers[ProductId] = function(Player: Player)
-			AddLeaderstat(Player, "Emerald", EmeraldAmount)
-			return Enum.ProductPurchaseDecision.PurchaseGranted
-		end
-	end
-
-	for ProductId, Handler in pairs(ProductRewards) do
+	for ProductId, Handler in ProductRewards do
 		self.PurchaseHandlers[ProductId] = Handler
 	end
+end
+local function IsReceiptSaved(Profile, PurchaseId: string): boolean
+	local SavedData = Profile.LastSavedData
+	if type(SavedData) ~= "table" then
+		return false
+	end
+
+	local SavedReceipts = SavedData.ProcessedReceipts
+	return type(SavedReceipts) == "table" and SavedReceipts[PurchaseId] ~= nil
+end
+
+local function WaitForReceiptSave(Profile, PurchaseId: string): boolean
+	if IsReceiptSaved(Profile, PurchaseId) then
+		return true
+	end
+
+	Profile:Save()
+	local Deadline = os.clock() + 15
+	while os.clock() < Deadline do
+		if IsReceiptSaved(Profile, PurchaseId) then
+			return true
+		end
+		if not Profile:IsActive() then
+			return false
+		end
+		task.wait(0.1)
+	end
+
+	return IsReceiptSaved(Profile, PurchaseId)
 end
 
 function CommerceService:_SetupProcessReceipt()
@@ -209,30 +160,57 @@ function CommerceService:_SetupProcessReceipt()
 			return Enum.ProductPurchaseDecision.NotProcessedYet
 		end
 
+		local Profile = self.ProfileManager.Profiles[Player]
+		if not Profile or not Profile:IsActive() then
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+
 		local Handler = self.PurchaseHandlers[ReceiptInfo.ProductId]
-		if Handler then
+		if not Handler then
+			warn(
+				`[CommerceService] No receipt handler exists for product {ReceiptInfo.ProductId} (purchase {tostring(ReceiptInfo.PurchaseId)})`
+			)
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+
+		local PurchaseId = tostring(ReceiptInfo.PurchaseId)
+		local Receipts = Profile.Data.ProcessedReceipts
+		if Receipts == nil then
+			Receipts = {}
+			Profile.Data.ProcessedReceipts = Receipts
+		elseif type(Receipts) ~= "table" then
+			warn(`[CommerceService] Invalid receipt history for {Player.Name}`)
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+
+		if Receipts[PurchaseId] == nil then
 			local Success, Decision = xpcall(function()
 				return Handler(Player, self.ProfileManager)
 			end, debug.traceback)
 			if not Success then
-				warn(
-					`[CommerceService] Receipt {tostring(ReceiptInfo.PurchaseId)} failed for {Player.Name}:\n{Decision}`
-				)
+				warn(`[CommerceService] Receipt {PurchaseId} failed for {Player.Name}:\n{Decision}`)
 				return Enum.ProductPurchaseDecision.NotProcessedYet
 			end
-			return Decision
+			if Decision ~= Enum.ProductPurchaseDecision.PurchaseGranted then
+				return Enum.ProductPurchaseDecision.NotProcessedYet
+			end
+			Receipts[PurchaseId] = os.time()
 		end
 
-		warn(
-			`[CommerceService] No receipt handler exists for product {ReceiptInfo.ProductId} (purchase {tostring(ReceiptInfo.PurchaseId)})`
-		)
-		return Enum.ProductPurchaseDecision.NotProcessedYet
+		local Success, Saved = xpcall(function()
+			return WaitForReceiptSave(Profile, PurchaseId)
+		end, debug.traceback)
+		if not Success then
+			warn(`[CommerceService] Could not save receipt {PurchaseId} for {Player.Name}:\n{Saved}`)
+			return Enum.ProductPurchaseDecision.NotProcessedYet
+		end
+		return if Saved then Enum.ProductPurchaseDecision.PurchaseGranted
+			else Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 end
-
 function CommerceService:_HandleSWATItemClick(Player: Player, ModelParent: Model, TycoonModel: Model)
 	local OwnedTycoon = self.PlayerService:GetTycoon(Player)
-	if not OwnedTycoon or OwnedTycoon.Model ~= TycoonModel then
+	if not OwnedTycoon or TycoonFactory.getModel(OwnedTycoon) ~= TycoonModel then
 		return
 	end
 
@@ -240,7 +218,21 @@ function CommerceService:_HandleSWATItemClick(Player: Player, ModelParent: Model
 		return
 	end
 
-	if not self.GamepassCache:Has(Player, Gamepasses.SWAT_Gamepass) then
+	local ownership = self.GamepassCache:GetOwnership(Player, Gamepasses.SWAT_Gamepass)
+	if ownership == nil then
+		local success, result = pcall(function()
+			return self.GamepassCache:Refresh(Player, Gamepasses.SWAT_Gamepass)
+		end)
+		if not success then
+			warn(`[CommerceService] SWAT ownership check failed for {Player.Name}: {result}`)
+			return
+		end
+		ownership = result
+	end
+	if ownership == nil or Player.Parent ~= Players then
+		return
+	end
+	if not ownership then
 		MarketplaceService:PromptGamePassPurchase(Player, Gamepasses.SWAT_Gamepass)
 		return
 	end
@@ -354,16 +346,24 @@ function CommerceService:PromptGamepass(
 		return
 	end
 
-	-- If the cache doesn't have this gamepass yet (e.g. Warm hasn't completed),
-	-- do a fresh synchronous check with Roblox before prompting.
-	if not self.GamepassCache:Has(Player, GamepassId) then
-		pcall(function()
-			self.GamepassCache:Refresh(Player, GamepassId)
+	local Ownership = self.GamepassCache:GetOwnership(Player, GamepassId)
+	if Ownership == nil then
+		local Success, Result = pcall(function()
+			return self.GamepassCache:Refresh(Player, GamepassId)
 		end)
+		if not Success then
+			warn(`[CommerceService] Ownership check failed for {Player.Name}, pass {GamepassId}: {Result}`)
+			return
+		end
+		Ownership = Result
 	end
 
-	if self.GamepassCache:Has(Player, GamepassId) then
-		Tycoon:_ApplyPurchasedButton(Button)
+	if Ownership == nil or Player.Parent ~= Players then
+		return
+	end
+
+	if Ownership then
+		TycoonRuntime.applyPurchasedButton(Tycoon, Button)
 		return
 	end
 
@@ -388,7 +388,7 @@ function CommerceService:CompletePendingPurchase(Player: Player, PurchasedGamepa
 	local Tycoon = Data.tycoon
 	local Button = Data.button
 	if Tycoon and Button and Button.Parent then
-		Tycoon:_ApplyPurchasedButton(Button)
+		TycoonRuntime.applyPurchasedButton(Tycoon, Button)
 	end
 
 	self.PendingPurchases[Player] = nil

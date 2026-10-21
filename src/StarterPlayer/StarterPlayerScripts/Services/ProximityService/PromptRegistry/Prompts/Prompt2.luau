@@ -14,6 +14,15 @@ local function stopTweens(data)
 end
 
 function Module:onShown(prompt, inputType, player)
+
+	-- Showing the same prompt twice replaces its previous resource scope.
+	local existing = Module.activePrompts[prompt]
+	if existing then
+		if existing.holdTween then existing.holdTween:Cancel() end
+		if existing.revertTween then existing.revertTween:Cancel() end
+		if existing.clone then existing.clone:Destroy() end
+		Module.activePrompts[prompt] = nil
+	end
 	local PromptClone = script.CustomPrompt:Clone()
 	local gui = PromptClone.CanvasGroup.Frame
 	local textFrame = gui.TextFrame
@@ -84,7 +93,6 @@ function Module:onHidden(Prompt, Player)
 	local canvasGroup = data.clone:FindFirstChild("CanvasGroup")
 	if not canvasGroup then
 		data.clone:Destroy()
-		Module.activePrompts[Prompt] = nil
 		return
 	end
 
@@ -99,8 +107,6 @@ function Module:onHidden(Prompt, Player)
 			data.clone:Destroy()
 		end
 	end)
-
-	Module.activePrompts[Prompt] = nil
 end
 function Module:onTriggered(prompt, player)
 	

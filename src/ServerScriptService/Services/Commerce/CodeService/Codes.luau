@@ -5,10 +5,9 @@
 	@desc
 	Server-authoritative code definitions for CodeService.
 
-	Each code declares a Reward table and its own ExpiresAt (unix timestamp).
-	A global cap (GlobalExpirySeconds) bounds every code as a fallback so no
-	code can outlive the server's global code window. All times are unix via
-	os.time() (never tick()).
+	Each code has a reward and may have its own absolute expiry. A shared
+	seven-day window starts at the first live server boot for this campaign.
+	The campaign start is stored durably and reused after server restarts.
 ]]
 
 --// Types
@@ -25,29 +24,21 @@ export type CodeDefinition = {
 	ExpiresAt: number?,
 }
 
---// Global expiry window (seconds).
--- Applied to any code without an explicit ExpiresAt, and serves as a hard
--- cap on every code regardless of its individual expiry.
-const GlobalExpirySeconds = 7 * 24 * 60 * 60 -- 7 days
-
---// Reference point for the global expiry window (unix timestamp at boot).
-local ReferenceTime = os.time()
+--// Loaded from a durable DataStore marker by CodeService after the release starts.
+--// Codes stay unavailable until the marker is loaded.
+local CampaignStartUnix = 0
+const GlobalExpirySeconds = 7 * 24 * 60 * 60
 
 --// Code definitions
-
--- Edit ExpiresAt per code using unix timestamps, e.g.:
---   ExpiresAt = os.time() + (2 * 24 * 60 * 60), -- 2 days from server boot
 local CODES: { [string]: CodeDefinition } = {
 	R3L3ASE = {
 		Reward = { Cash = 5000 },
-		
 	},
 	FR33MULTI = {
 		Reward = { Multiplier = 1.5 },
 	},
 	STARTER = {
 		Reward = { Cash = 10000 },
-		-- ExpiresAt = os.time() + (1 * 24 * 60 * 60), -- 1 day from boot
 	},
 }
 
@@ -55,13 +46,18 @@ local CODES: { [string]: CodeDefinition } = {
 
 -- Returns the effective expiry (unix timestamp) for a code:
 -- the minimum of its own ExpiresAt and the global expiry cap.
+function SetCampaignStartUnix(value: number)
+	assert(value > 0 and value == math.floor(value), "Campaign start must be a positive Unix timestamp")
+	CampaignStartUnix = value
+end
+
 function GetEffectiveExpiry(CodeName: string): number
 	local Definition = CODES[CodeName]
 	if not Definition then
 		return 0
 	end
 
-	local GlobalExpiry = ReferenceTime + GlobalExpirySeconds
+	local GlobalExpiry = if CampaignStartUnix > 0 then CampaignStartUnix + GlobalExpirySeconds else 0
 	local CodeExpiry = Definition.ExpiresAt or math.huge
 
 	return math.min(CodeExpiry, GlobalExpiry)
@@ -77,6 +73,8 @@ end
 
 return {
 	CODES = CODES,
+	SetCampaignStartUnix = SetCampaignStartUnix,
+	IsCampaignReady = function(): boolean return CampaignStartUnix > 0 end,
 	GlobalExpirySeconds = GlobalExpirySeconds,
 	GetEffectiveExpiry = GetEffectiveExpiry,
 	IsExpired = IsExpired,

@@ -1,0 +1,3581 @@
+ARMOUREDTYCOON — FINAL CODEX SOL REFACTOR SPECIFICATION
+Target repository: Sacredbow/ArmouredTycoon
+Audited main commit: 9647df368402a7104a0535612fdbfb91abcaef3a ("1.5")
+
+ROLE
+You are performing a professional repository-wide refactor of a Roblox/Luau tycoon game.
+This is not a mechanical cleanup pass. Read this entire specification before editing, inspect the relevant code before changing it, and preserve gameplay behavior unless this document explicitly identifies a bug or architectural migration.
+
+PRIMARY OBJECTIVE
+Bring the project toward a high-quality production architecture with:
+- Clear ownership of mutable state.
+- Explicit lifecycle and cleanup.
+- Strong server authority.
+- Compact, typed networking.
+- Measurable performance improvements in Recv, Sent, CPU, and Memory.
+- Idiomatic modern Luau.
+- Minimal unnecessary abstraction.
+- ECS only where ECS is actually a good fit.
+- Completed migrations instead of old/new systems running in parallel.
+- Dead code removed rather than modernized.
+- Stable, testable domain boundaries.
+
+NAMING / STYLE POLICY
+Use PascalCase consistently for first-party:
+- Modules
+- Services
+- Systems
+- Components
+- Classes
+- Types
+- Public methods / public APIs
+- Named domain concepts
+
+Use camelCase for ordinary local variables and parameters when it improves readability.
+Do not perform gratuitous renames that break protocols/assets. For externally visible legacy names (remote names, authored asset names, ACS data fields, etc.), preserve compatibility during migration and remove the compatibility layer only after all first-party callers are migrated.
+
+Examples:
+- ProfileManager
+- NetworkGuard
+- WeaponRuntimeState
+- ProjectileSimulationSystem
+- EnvironmentExposure
+- AcousticGraph
+- RegisterPacket
+- ResolveDamage
+- local player
+- local character
+- local packetData
+
+GENERAL DECISION PRIORITY
+When choosing between two implementations, prioritize:
+1. Correctness
+2. Ownership / lifecycle safety
+3. Server authority / security
+4. Maintainability / readability
+5. Measured performance
+6. Conciseness
+
+Never sacrifice an earlier item merely to make code shorter, cleverer, or more abstract.
+
+======================================================================
+1. NON-NEGOTIABLE ARCHITECTURAL RULES
+======================================================================
+
+1.1 Do not over-engineer.
+Prefer the smallest implementation that provides correct ownership, lifecycle, typing, security, and performance.
+
+1.2 Do not create abstractions that merely forward to Roblox/Luau APIs.
+Examples of bad one-function wrappers:
+- DestroyLater -> task.delay / Destroy
+- FindChild -> FindFirstChild
+- Tween -> TweenService:Create
+- ClampNumber -> math.clamp
+
+An abstraction is justified only when it owns meaningful policy, lifecycle, replacement/cancellation, typing, transactions, or domain behavior.
+
+1.3 Do not convert everything to ECS.
+Use ECS/Jecs for high-cardinality simulation/data-oriented workloads.
+Do not force:
+- UI
+- Services
+- Resource managers
+- Network policy
+- Singleton configuration
+- Plain orchestration
+into ECS without a real reason.
+
+1.4 Do not store OOP/controller/service objects in ECS components just so systems can call methods on them.
+Current examples of the anti-pattern include components carrying:
+- Tycoon objects
+- Controller objects
+- Service objects
+- callbacks/closures
+- StateMachine/controller behavior
+
+Target:
+- Numeric entity IDs
+- Typed plain-data components
+- Behavior owned by systems
+- Roblox Instance references only at explicit integration boundaries
+
+1.5 Keep configuration immutable.
+Do not mutate authored config tables to store runtime values such as current ammo, current state, current ownership, etc.
+
+1.6 One mutable concern = one owner.
+Avoid multiple systems writing:
+- Humanoid.WalkSpeed
+- Camera state
+- Weapon ammo
+- Profile/leaderstat UI values
+- Session phase
+- Environment shelter state
+
+1.7 Finish migrations.
+The codebase repeatedly has old + new systems active simultaneously. Remove displaced architecture after migration succeeds.
+
+======================================================================
+2. TOOLCHAIN / REPOSITORY BASELINE
+======================================================================
+
+Before broad refactors:
+- Choose one toolchain manager. The repo currently has both Aftman and Rokit.
+- Resolve conflicting Rojo versions:
+  - aftman.toml: Rojo 7.7.0
+  - rokit.toml: Rojo 7.6.1
+  - README: Rojo 7.6.1
+- Pin StyLua if the project uses it.
+- Add a StyLua config.
+- Strengthen Selene beyond only `std = "roblox"` where useful.
+- Establish reproducible commands for:
+  - install
+  - build
+  - format/check formatting
+  - lint
+  - typecheck
+  - tests
+- Add CI.
+- Add first-party regression tests. Existing test files in the tree are dependency tests, not game tests.
+- Keep Story files as manual/smoke UI surfaces but do not treat them as the only test suite.
+
+Do not mix massive formatting-only diffs with behavioral refactors where avoidable.
+
+======================================================================
+3. DELETE / QUARANTINE DEAD CODE BEFORE MODERNIZING IT
+======================================================================
+
+Repository search indicates the following are orphaned or effectively dead and should be verified, then deleted/quarantined instead of refactored:
+
+- ServerScriptService/AI/GOAP/*
+  No consumer found outside the GOAP folder itself.
+
+- ServerScriptService/Services/World/EnvironmentService/WeatherModule.luau
+  Legacy server weather implementation; current EnvironmentService does not use it.
+
+- ReplicatedStorage/Modules/NotificationModule.luau
+  No consumer found.
+
+- StarterPlayer/.../Systems/Networking/NetworkState.client.luau
+  Runs automatically but no consumer uses GetStat; WeaponState listener is effectively no-op.
+
+- Old ServerStorage SettingsHandler path
+  No live source-side loader found; the project has a newer Settings UI path.
+
+- Dead UI/migration files previously identified:
+  HUDView
+  StatPill
+  useAnimatedNumber if only used by dead StatPill
+  useBouncyBinding
+  InterfaceKit.UseSpringTween if unused
+  Shop/init and store/init if truly unreferenced
+  Settings route stubs returning nil
+  other dead migration stubs after verification
+
+- ProjectileCastSystem
+  It is registered, but the active ACS path currently does not create the projectile ECS components it expects. Either complete the migration or delete the dead scheduled system. Do not keep a system running over an empty migration path.
+
+Delete first; do not spend time “improving” unreachable code.
+
+======================================================================
+4. DATA / COMMERCE / PROFILE CORRECTNESS
+======================================================================
+
+4.1 ProductRewards / ProfileManager call style
+A P0 mismatch was identified:
+- ProfileManager functions are dot-style.
+- ProductRewards had colon-style invocation in relevant paths.
+This can shift arguments so the module table becomes the player argument and may still return PurchaseGranted even when the operation did not correctly apply.
+
+Fix all reward handlers to call APIs using the correct call convention.
+Do not acknowledge a purchase until the reward commit is known to be durable/successful.
+
+4.2 Developer product receipt idempotency
+CommerceService.ProcessReceipt needs a durable PurchaseId idempotency ledger.
+DataTemplate did not contain a proper receipt-history structure.
+
+Required behavior:
+- Check PurchaseId against durable processed-receipt state.
+- Apply reward transaction.
+- Persist processed receipt / durable transaction state.
+- Only then return PurchaseGranted.
+- Make duplicate receipt delivery safe.
+- Avoid granting twice across retries/server restarts.
+
+4.3 PlayerRuntimeState shallow-copy bug
+DefaultState contains nested GamepassOwnership = {}.
+`table.clone(DefaultState)` only shallow clones, causing nested shared state between players.
+
+
+This is not only a theoretical shallow-copy issue. It matches an observed multiplayer symptom:
+
+- Player A joins and owns a gamepass / SWAT-related entitlement.
+- PlayerRuntimeState for Player A writes ownership into GamepassOwnership.
+- Player B joins afterward and does not own that gamepass.
+- Because the nested GamepassOwnership table is shared by the shallow DefaultState clone, Player B can observe Player A's cached ownership.
+- Commerce/GamepassCache may therefore treat Player B as already owning the item/pass, causing incorrect \"already owned\" behavior or granting/allowing gated interactions.
+
+Gamepass ownership must be isolated per Player. Never share a mutable ownership map between player runtime states.
+
+Required fix:
+- Construct a fresh GamepassOwnership = {} for every newly created player state.
+- Audit every other nested mutable field in default runtime/profile/session templates for the same shallow-clone problem.
+- Keep GamepassCache keyed semantically by (Player, GamepassId), never by one shared ownership table.
+- Refresh ownership from MarketplaceService when required, but do not let another player's cached value affect the result.
+- Ensure PlayerRemoving clears all per-player ownership/cache state.
+
+Required regression test:
+1. Start a multiplayer server with at least two players.
+2. Player A owns a tested gamepass.
+3. Player B does not own it.
+4. Join A first, allow GamepassCache:Warm(A) to complete.
+5. Join B afterward and allow GamepassCache:Warm(B) to complete.
+6. Assert GamepassCache:Has(A, PassId) == true.
+7. Assert GamepassCache:Has(B, PassId) == false.
+8. Verify Player B is prompted normally rather than being treated as \"already owned\".
+9. Repeat with join order reversed and with player leave/rejoin.
+10. Verify ownership remains isolated for SWAT, RainbowCarpet, Raygun, X2Cash, and any other registered pass.
+
+Also review PromptGamepass:
+- If the cache is not known yet, a fresh MarketplaceService ownership check may be required before deciding \"already owned\".
+- Do not silently swallow Refresh failures and then treat an unknown cache state as authoritative.
+- Prefer an explicit ownership cache state if useful: Unknown / Owned / NotOwned rather than conflating \"false\" with \"not loaded yet\".
+Deep-create mutable nested structures per player.
+
+4.4 PlayerRuntimeState ownership
+Tycoon-scoped runtime state should not accidentally become whole-player-session state.
+ResetTycoonState exists and resets Multiplier/Power/Armour/CanRebirth during tycoon cleanup.
+However:
+- ArmourEquipped can remain true across ordinary character death/respawn while the vest model is destroyed with the old character.
+Reset/reconcile armour on character lifecycle.
+
+4.5 RarityBox economy boundary
+RarityBoxService should not mutate leaderstats Cash/Emerald directly.
+All economy mutation should go through ProfileManager / one economy authority.
+
+4.6 Stat transport duplication
+Current values can flow through:
+- leaderstats ValueObjects
+- ByteNet StatSync
+- Profile Replica for overlapping fields
+
+UI should not consume duplicate representations for the same state.
+If leaderstats are required for Roblox leaderboard display, keep them for that purpose, but choose one deliberate UI transport.
+
+4.7 Code expiry bug
+CodeService currently defines a “global seven-day expiry” from:
+`ReferenceTime = os.time()` at server boot.
+Codes without absolute ExpiresAt therefore get a fresh seven-day window each server restart.
+
+Use an absolute configured Unix epoch or explicit campaign expiry, not server uptime.
+
+======================================================================
+5. NETWORK ARCHITECTURE / BYTENETMAX
+======================================================================
+
+5.1 Canonical network layer
+ReplicatedStorage/Network/Packets is the canonical first-party network contract.
+Complete migration away from ACS_Engine.Events/legacy RemoteEvents where practical.
+
+5.2 ByteNetMax version
+Pinned package:
+`elitriare/bytenet-max@0.2.5`
+
+Important API facts from the bundled source:
+- packet reliabilityType is `"reliable"` or `"unreliable"`
+- default is reliable
+- client packet `.send(data)`
+- server packet `.sendTo(...)`, `.sendToList(...)`, `.sendToAll(...)`, `.sendToAllExcept(...)`
+- `.listen(callback)`
+- queries use `.invoke`
+- `.listen(callback)` returns a cleanup/disconnect FUNCTION, not an RBXScriptConnection
+
+Correct:
+```luau
+local Disconnect = Packet.listen(function(Data)
+	...
+end)
+
+Disconnect()
+```
+
+Incorrect:
+```luau
+local Connection = Packet.listen(...)
+Connection:Disconnect()
+```
+
+Audit all ByteNet listener cleanup accordingly.
+
+5.3 Existing ByteNetMax transport limiter
+ByteNetMax 0.2.5 already has transport-level inbound protection in the server processor:
+- incoming data must be a buffer
+- max buffer size
+- token bucket based on bytes
+- default MAX_BUFFER_SIZE is ~4096
+- byte refill budget approximately 4 KB/s unless configured otherwise
+
+Do not incorrectly state that ByteNet has no rate limiter.
+
+However this is not enough:
+one accepted buffer can contain many tiny logical messages.
+
+5.4 Add first-party NetworkGuard
+Do not fork/edit ByteNetMax for project-specific action thresholds.
+
+Add a first-party boundary such as:
+`Server/Networking/NetworkGuard.luau`
+
+Responsibilities:
+- Per-player aggregate logical action budget
+- Per-packet token bucket
+- Burst allowance
+- Semantic validation hooks
+- Player/session validation
+- Metrics for accepted/dropped requests
+- Cleanup on PlayerRemoving
+- Optional severity/telemetry escalation
+
+Concept:
+ByteNet transport protection -> NetworkGuard -> gameplay handler
+
+Rate limiting is primarily resource protection and trust-boundary enforcement.
+A threshold violation normally means:
+- drop/reject
+- increment telemetry
+not automatic permanent ban.
+
+5.5 Do not use a client-obtainable auth token as authority
+Current ACS AcessId/AuthToken model is not meaningful authority because the client can obtain/use the token.
+Remove this architecture.
+Server should derive authority from:
+- player identity
+- equipped Tool/server state
+- server-known weapon config
+- validated action context
+- validated target/context
+
+5.6 Reliable vs unreliable
+Keep reliable for important discrete transitions:
+- equip/unequip
+- inventory mutations
+- purchase results
+- profile/commerce state
+- final nuke result
+- committed state changes
+
+Use unreliable for frequently replaced presentation state where packet loss is superseded by the next update:
+- laser transforms
+- high-rate aim orientation
+- transient cosmetic positions
+- intermediate score displays where final state is separately reliable
+
+Do not mark everything unreliable blindly.
+
+5.7 Minimize payloads
+Do not send whole stable config tables per shot/event.
+Current ACS examples needing redesign include:
+- ServerBullet(origin, direction, weaponData, modifierTable)
+- HitEffect including whole weaponData
+- Damage huge positional payloads with client settings/modifiers/token
+- Equip with broad authored config data
+
+Server/client should already know stable configuration by weapon identity.
+Packets should carry only compact changing intent/state.
+
+5.8 Prefer relevance over sendToAll
+`sendToAll()` is valid for rare genuinely global events.
+Do not use it as the default.
+
+Audit:
+- NPCSpeech
+- BuildAssemble
+- combat presentation
+- world effects
+- other nearby-only events
+
+Use spatial/relevance lists where frequency/traffic makes it worthwhile.
+
+5.9 Do not manually add another buffer serialization layer on top of ByteNetMax without profiling.
+ByteNetMax already serializes compactly with buffers.
+
+Consider usage of the Bit32 library when trying to represent items with a single integer.
+
+======================================================================
+6. ACS / COMBAT CLIENT REFACTOR
+======================================================================
+
+6.1 Target architecture
+Current client decomposition is directionally better than old monoliths, but Main/Equip/Render/Camera/UI still duplicate ownership.
+
+Make Main a true bootstrap/orchestrator:
+- wiring
+- lifetime
+- top-level feature composition
+not the owner of dozens of mutable weapon fields.
+
+6.2 One WeaponRuntimeState
+Current state is duplicated across:
+- Main
+- EquipController
+- mutable weaponData/config
+- WeaponUIState
+- legacy HUD adapter
+- animation/server representations
+
+Create one typed runtime state separate from immutable WeaponConfig.
+
+Example:
+```luau
+export type WeaponRuntimeState = {
+	Ammo: number,
+	ReserveAmmo: number,
+	FireMode: FireMode,
+	IsReloading: boolean,
+	IsAiming: boolean,
+	IsJammed: boolean,
+	Generation: number,
+}
+```
+
+6.3 Equip must be transactional
+Current setup can partially mutate state and then early-return.
+
+Target:
+1. Validate Tool/classification/config/resources.
+2. Build temporary dependencies/resources.
+3. Only when all required invariants succeed, commit to equipped runtime state.
+4. Return explicit success/failure.
+5. On failure, cleanup temporary resources.
+
+Do not set “equipped=true” before construction succeeds.
+
+6.4 Cleanup correctness
+Known bug:
+Main.cleanupCharacter calls InputBindings.unbindDefaultActions(...) but InputBindings defines only bindDefaultActions.
+Fix API mismatch.
+
+Teardown must explicitly clean:
+- ContextActionService bindings
+- bipod/weapon actions
+- render bindings
+- mousewheel/raw input if owned
+- packet listeners
+- animations
+- visuals
+- temporary Instances
+- camera overrides
+- sensitivity/FOV overrides
+
+Use one resource owner/Janitor per character/equip lifecycle.
+Teardown must be idempotent.
+
+6.5 Avoid global render-step names
+`BindToRenderStep("Camera Update")` is too global/conflict-prone.
+If BindToRenderStep is still needed, use unique lifecycle-owned names or one centralized render owner.
+
+6.6 Remove stale delayed callbacks
+Main has delayed equip work that checks only `isEquipped`; an old weapon callback can act on a newly equipped weapon.
+Use generation/session tokens.
+
+Pattern:
+```luau
+local Generation = Runtime.Generation
+
+task.delay(0.5, function()
+	if Runtime.Generation ~= Generation then
+		return
+	end
+	...
+end)
+```
+
+6.7 Consolidate camera ownership
+Current camera logic overlaps:
+- Main
+- CameraController
+- RenderController
+- duplicate third-person/lean/spring state
+
+Choose one camera authority.
+
+6.8 Stop creating Tweens every render frame
+RenderController creates FOV Tweens during rendering.
+HeadMovement also creates Tweens repeatedly.
+
+Change to state-transition-driven behavior:
+ADS false -> true: create/start transition once
+ADS true -> true: no new Tween
+
+For continuous motion, use direct dt-based smoothing rather than spawning Tweens every frame.
+
+6.9 Stop GetDescendants in hot render paths
+RenderController repeatedly searches weapon descendants for SightMark/LaserPoint.
+Cache references during equip/model setup.
+
+6.10 Use dt-based smoothing
+Avoid fixed-alpha lerps that make behavior FPS dependent.
+Use dt-aware interpolation where applicable.
+
+6.11 CurrentCamera can change
+Do not permanently capture Workspace.CurrentCamera once and assume it never changes.
+Handle replacement where relevant.
+
+6.12 Animation architecture
+There is a half-migration:
+- WeaponAnimator exists
+- Fire path calls into it
+- no meaningful Evaluate usage
+- RenderController still performs legacy CFrame animation
+- Utilities/State appears to be another leftover architecture
+
+Pick one animation architecture, finish migration, delete displaced path.
+
+6.13 Projectile architecture
+Current CastController still creates physical/local bullet state with per-projectile Heartbeat work.
+ProjectileCastSystem exists but active ACS does not create its ECS components.
+
+Choose one architecture.
+Preferred direction for high-cardinality projectiles:
+- data-oriented projectile simulation
+- one shared simulation update
+- local visual rendering
+- no controller objects/closures stored in ECS
+
+Do not claim ECS is inherently faster; profile.
+
+6.14 Raycast ignore/context duplication
+Main and CastController maintain separate ignore concepts.
+Create one explicit RaycastContext/ignore owner with dedupe/caching.
+Do not allow comments to claim lists are shared when they are not.
+
+6.15 HitResolver duplication
+CastController also performs direct hit/humanoid lookup.
+Choose one hit-resolution authority and delete the duplicate after tests.
+
+6.16 Melee ignored-part recursion
+Prefer bounded iterative continuation over unbounded recursive tracing.
+
+6.17 Client projectile visual architecture
+Current invisible physical bullet + separate visual tracer is unnecessarily complex.
+Consolidate into a data-driven local simulation/visual path without changing gameplay tuning.
+
+6.18 Crosshair
+Crosshair updates store/UI every frame even if state is unchanged.
+Make presentation update state-change-driven where possible.
+
+6.19 WeaponUI migration
+WeaponUIState -> ClientRuntimeState/React and WeaponHudAdapter -> legacy GUI duplicate formatting/state.
+Finish React/runtime migration and retire legacy adapter.
+Unify firemode naming/formatting.
+
+6.20 Fall damage
+FallDamage belongs to character/health domain, not gun framework.
+Move it out of ACS.
+Server independently validates outcome.
+Avoid generic `find<T> :: any` style helpers.
+
+6.21 Attachment configs
+Validate authored attachment data.
+Do not assume arbitrary module fields always exist.
+
+6.22 Naming cleanup
+Internally migrate poor/legacy names such as:
+- AcessId
+- Refil
+- Atirar
+- Ultil
+- virar
+- sentado
+- aimming
+- Supressor
+
+Preserve external protocol compatibility temporarily if required, then remove compatibility after all first-party callers migrate.
+
+6.23 RefillMag
+No first-party FireServer caller was found earlier.
+Verify reachability.
+Remove unused remote attack surface or replace with server-authorized reload state.
+
+6.24 Surrender
+Optional victim/state manipulation needs contextual validation.
+Remove if unused or make authoritative.
+
+6.25 Stance
+Validate against allowed enum/range, not merely `typeof(number)`.
+
+6.26 Equipment mode idempotency
+Repeated equip must not duplicate SWeapon/AnimBase or other rig resources.
+Make equip state-driven/idempotent.
+
+6.27 ACS debug logging
+Remove/gate shield and hit-path prints before performance profiling.
+
+======================================================================
+7. SERVER COMBAT AUTHORITY
+======================================================================
+
+7.1 Damage
+Current client sends far too much:
+- target data
+- weapon settings
+- modifier data
+- auth token
+etc.
+
+Server should derive authoritative stable config from:
+- equipped server-known Tool
+- server weapon config
+- server equipment state
+
+Client sends compact intent/context only.
+
+7.2 Validate:
+- attacker alive/state
+- equipped weapon ownership
+- target validity
+- plausible hit context
+- distance/context
+- team rules
+- fire/reload state
+- packet rate
+
+7.3 Shield
+Do not trust client-supplied weaponData to derive shield outcome.
+Server derives damage/config.
+
+7.4 Cosmetic remotes
+Whizz/Suppression/SVLaser/etc. require:
+- ownership/state validation
+- rate policy
+- compact payloads
+- relevance filtering
+
+======================================================================
+8. MOVEMENT / CHARACTER OWNERSHIP
+======================================================================
+
+Current overlap:
+- CharacterManager/BaseMovement writes WalkSpeed
+- ACS tracks running/walking and writes WalkSpeed
+- StanceController writes WalkSpeed
+
+This is a major ownership conflict.
+
+Target:
+One locomotion authority resolves final movement values.
+Combat/stance publishes modifiers/constraints.
+Movement domain applies final WalkSpeed/state.
+
+User preference:
+Do not preserve CharacterManager OOP merely because it exists.
+If ECS/data-oriented movement is cleaner, migrate intentionally.
+Do not store CharacterManager OOP object as an ECS component.
+
+Input bug:
+InputBegan/InputEnded both respecting gameProcessed can leave held keys stuck if key-down was recorded but release is consumed by UI.
+For held state, cleanup/release should not be skipped simply because gameProcessed is true.
+
+Spawn protection:
+Existing delayed callback reads `player.Character` later.
+Capture exact Character/Humanoid or generation so an old timer cannot mutate a replacement character.
+
+Verify future-character spawn protection behavior; do not overclaim without tests.
+
+======================================================================
+9. ECS / JECS
+======================================================================
+
+Pinned:
+`ukendio/jecs@0.1.0`
+
+Do not assume APIs from newer/different Jecs versions.
+The bundled query API supports normal:
+```luau
+for Entity, Component in World:query(...) do
+```
+Do not use assumed `:cached()` unless the pinned library actually supports it.
+
+Current anti-patterns:
+- Producer component stores Tycoon object
+- Reveal stores Tycoon/targets/onComplete callback
+- RocketFlight stores Rocket object
+- NPCUpdate stores controller/StateMachine
+- EnvironmentClock stores Service
+- CharacterManager component stores manager object
+- ScheduledTask stores arbitrary callbacks/closures
+
+Target components:
+- plain typed data
+- IDs
+- timestamps
+- numeric state
+- compact Instance refs only where needed at boundary
+
+Systems own behavior.
+
+Generic ScheduledTask:
+Useful but currently used broadly for domain behavior.
+For high-cardinality simulation, prefer domain-specific timer components.
+Rare orchestration delays can remain ordinary lifecycle-scoped tasks outside ECS.
+
+Runner:
+Creates a small Context table and pcall/xpcall boundaries per system.
+Do not micro-optimize this before larger issues.
+Profile first.
+
+======================================================================
+10. RBXOBSERVERS / INSTANCE LIFECYCLE
+======================================================================
+
+RbxObservers is a good fit for this project as the Roblox Instance lifecycle boundary.
+
+Use it for dynamic:
+- CollectionService tags
+- character/Instance appearance/disappearance
+- attributes where setup/cleanup should pair automatically
+- acoustic/environment authored tags
+- prompt/tag lifecycle
+- ECS registration boundaries
+
+Do not use it for:
+- ordinary static one-time traversal
+- profile/network state
+- UI store state
+- numeric ECS simulation
+- every decorative object
+
+The project already uses Janitor.
+Do not add Trove just to pair with RbxObservers.
+Use:
+RbxObservers -> per-observed-instance Janitor -> cleanup return function
+
+Example:
+```luau
+local StopObserving = Observers.observeTag("ElectricityParts", function(Instance)
+	if not Instance:IsA("BasePart") then
+		warn(`ElectricityParts tag applied to non-BasePart: {Instance:GetFullName()}`)
+		return
+	end
+
+	local Janitor = Janitor.new()
+
+	Janitor:Add(Instance.Touched:Connect(function(Hit)
+		HandleElectricityTouch(Instance, Hit)
+	end))
+
+	return function()
+		Janitor:Destroy()
+	end
+end, { workspace })
+```
+
+RbxObservers is particularly appropriate for:
+- WindShake current manual GetTagged/GetInstanceAddedSignal/GetInstanceRemovedSignal logic
+- ElectricityParts
+- future AcousticZone/AcousticPortal/AcousticNode registration
+- custom prompt lifecycle if tags are intentionally used
+- Instance -> ECS registration boundaries
+
+When using observeTag, runtime-check the Instance type. Do not assume a tag guarantees BasePart.
+
+======================================================================
+11. TYCOON LIFECYCLE / MEMORY / CORRECTNESS
+======================================================================
+
+11.1 Button lifecycle memory leak
+`PurchaseDebounceByButton` is a strong table keyed by BasePart.
+Purchased buttons are destroyed and rebirth creates new button clones.
+Old destroyed keys can remain forever.
+
+Fix:
+- do not retain destroyed button keys
+- cleanup on purchase/removal
+- or use lifecycle-owned/weak state where semantics permit
+
+11.2 Button ECS entity retention
+`_ApplyPurchasedButton()` destroys purchased button Instances but leaves:
+`ButtonEntities[Button]`
+and corresponding ECS entity alive until full tycoon cleanup.
+
+Delete entity + remove map entry at purchase time.
+
+11.3 BuildAssemble retention
+`FinalStateByPart` is a module-global strong Instance-key map.
+Some destruction/deassemble paths may not restore/remove entries.
+Do not let destroyed Instances remain strongly referenced.
+
+Prefer animation-operation-local state rather than global state.
+
+11.4 BuildService LastRequests leak
+`BuildService.LastRequests[player]` is populated by remote calls.
+It is cleared in ClearPlayer/rebirth but normal player removal does not necessarily clear it.
+Ensure PlayerRemoving cleanup.
+
+Audit all Player-keyed service maps for equivalent cleanup.
+
+11.5 Claim/onboarding stale owner task
+ClaimSystem has delayed onboarding work that can read current `self.Owner` after ownership turnover.
+Use owner/session generation tokens and owned connections.
+
+11.6 LabDoor
+Known typo:
+two Touched OnEntered paths; one OnExited connection incorrectly uses Touched where Magnitude2.TouchEnded is likely intended.
+Fix after verifying authored geometry.
+
+QuickZone is unrelated; do not invent a QuickZone migration for this.
+
+11.7 BuildService warning
+There is an unconditional warning before casting/using BuildAction RemoteFunction.
+Replace with validation/assertion, not unconditional production warning.
+
+11.8 TemplateCache collision
+BuildSystem caches:
+`TemplateCache[Obj.Name] = Obj`
+Duplicate names overwrite each other.
+Dependency check can disagree with `_FindTemplate()` hierarchy search.
+
+Use stable identifiers or scope-aware lookup.
+
+11.9 Build state capture mismatch
+CaptureItemState captures some fields that RestoreItemState does not restore (e.g. Sound state), while restore checks some fields that capture does not store (e.g. prompt ActionText).
+Make capture/restore schema symmetric and typed.
+
+11.10 Production fade
+ProductionSystem Reveal fade path repeatedly Plays sound and prints during heartbeat/step.
+Trigger one-time transition effects once, not every frame.
+
+11.11 Dropper visuals
+Server currently creates/tweens cosmetic dropper Parts.
+Move recurring purely cosmetic dropper visuals client-side via small event/seed.
+Server owns economy result only.
+
+11.12 Electricity correctness
+Current hazard checks `PlayerRuntimeState.HasPower(player)` on the person touching the hazard.
+Power is conceptually tycoon/world state; do not make the victim’s own power flag determine whether another tycoon’s hazard is active.
+Model power ownership correctly.
+
+Electricity delayed callbacks resolve `player.Character` later.
+Use captured character/generation.
+
+The “disarm” callback destroys Tool Instances and hidden weapon rig objects.
+This is much broader than a temporary disarm.
+Make inventory/weapon mutation intentional and domain-owned.
+
+Notification currently can target self.Owner even when another player was affected.
+Notify correct participant.
+
+Modernize BodyVelocity if behavior can be preserved with current constraint APIs.
+
+11.13 Armour respawn
+ArmourEquipped resets on tycoon cleanup but not ordinary character respawn.
+Vest disappears with the old character.
+Reconcile/reset flag on character lifecycle.
+
+11.14 Touched connections
+Lasers, armour, electricity, buttons, etc. create many long-lived Touched connections.
+Give each tycoon/Instance behavior an explicit lifecycle owner.
+RbxObservers + Janitor may be appropriate for tagged dynamic parts.
+
+11.15 Appearance
+Do not convert one-time color traversal into observers unless parts are genuinely dynamic.
+One-time traversal is simpler when lifecycle does not require observing.
+
+11.16 BuildAssemble networking
+Client-side procedural visual generation is the right direction.
+However:
+- `sendToAll` should be relevance-aware if traffic justifies it
+- server hide/restore Transparency/CanCollide property changes themselves replicate
+Account for that in Recv/Sent profiling.
+
+======================================================================
+12. ROCKET / NUKE
+======================================================================
+
+Preserve previously completed lifecycle fixes if already applied:
+- centralized idempotent session finalizer
+- freeze/unfreeze correctness
+- stale delayed cleanup protection
+- tycoon ownership generation/lifecycle token
+Do not regress these.
+
+Additional findings:
+
+12.1 Mash math
+Mash begins around 20 seconds in a 50-second flight, giving ~30 seconds.
+Score clamps to 0..100.
+Moderate activity can saturate both players, and defender wins ties.
+Current mechanic may fail to distinguish stronger input.
+
+Do not tune gameplay numbers during structural refactor unless explicitly asked.
+But separate scoring model from transport and make it testable.
+
+12.2 Click batching
+Client batching ~0.18 s is a good networking pattern.
+Keep batched intent.
+Server owns score.
+
+12.3 Anti-autoclick
+Do not permanently punish based on network-arrival CPS heuristics alone.
+Jitter/batching affects timing.
+Prefer server contribution caps / semantic rate policy.
+Rate anomalies can feed telemetry.
+
+12.4 Spectator UI
+Score packets are global and UI infers mash activity from score/action, so spectators can see giant mash controls even though server ignores them.
+Packet/session state needs participant role and explicit mash-open state.
+
+12.5 Phase inference
+Terminal Phase can overwrite action before mash actually ends.
+Store explicit MashOpen/Phase state.
+
+12.6 Concurrency
+Server supports sessions map but client NukeStore is essentially a single cinematic state.
+Either:
+- enforce globally one nuclear event
+or
+- implement true multi-session client model with explicit priority
+Do not accidentally support server concurrency with single global camera/lighting state.
+
+12.7 Freeze ownership
+Do not use a naive Humanoid -> bool map if concurrent locks are possible.
+Prefer locomotion authority + token/ref-count lock semantics.
+
+12.8 Cooldown
+Cooldown currently begins when prompt opens, before valid target commit.
+Start long cooldown only on committed launch; use a short pending-target timeout separately.
+
+12.9 Pending launch authority
+Do not rely on a synchronous RocketActivated boolean as the only authorization.
+Use explicit pending launch/session record.
+
+12.10 NukeTarget sender
+No first-party source-controlled `NukeTarget.send(...)` was found in the earlier audit.
+Verify whether UI is embedded in place/ServerStorage assets.
+Move important executable scripts into source control.
+
+12.11 RocketFlightSystem
+Appears dead/incomplete:
+expects Rocket.isLaunched / Rocket:UpdateSpeed(dt), with no matching creation/implementation found.
+Delete unless intentionally completing migration.
+Do not force cinematic rocket visuals into ECS.
+
+12.12 Client-rendered rocket
+Server should own outcome/session timing.
+Client can render deterministic visual rocket path from source/target/start timestamp.
+
+12.13 Presentation mismatch
+`deathRange` appears presentation-only while actual consequence is economy/reset.
+Rename/align semantics.
+Deflected path visual should match outcome.
+
+12.14 Global impact effects
+Do not flash/shake every player equally regardless of distance.
+Scale presentation by relevance/distance.
+
+12.15 NukePackets
+Current giant optional struct should become typed packets by responsibility:
+- reliable lifecycle/session start
+- reliable result/end
+- click batch intent
+- possibly unreliable score/presentation update
+
+12.16 Startup readiness
+Nuke cinematic/store can fail permanently if packet namespace is not ready at startup.
+Use one central packet readiness/bootstrap path.
+
+12.17 Store merging
+Do not merge omitted fields into one global current session without session ID validation.
+
+======================================================================
+13. UI REFACTOR
+======================================================================
+
+Current UI has three overlapping eras:
+- React UI
+- legacy MainInterface
+- NewSettings / old settings islands
+
+Target domain-first structure similar to:
+
+UI/
+  Bootstrap.client.luau
+  App.luau
+  App/
+    AppShell.luau
+    ModalHost.luau
+    UiNavigation.luau
+    Layers.luau
+  Design/
+    Theme.luau
+    Format.luau
+    Components/
+    Hooks/
+  State/
+    StoreProvider.luau
+    StatsStore.luau
+    ProfileStore.luau
+    Hooks/
+  Features/
+    Combat/
+    Inventory/
+    Shop/
+    Codes/
+    Profile/
+    Progression/
+    Rebirth/
+    Dialogue/
+    Notifications/
+    KOTH/
+    Nuke/
+  Legacy/
+    LegacyCurrencyBridge.luau
+    SettingsBridge.luau
+
+Do not recreate this exact folder tree mechanically if source relationships suggest a simpler equivalent.
+
+13.1 MenuRouter
+Currently a god component handling:
+- modal/menu state
+- tabs
+- codes
+- profile
+- quests
+- daily
+- rebirth
+- settings
+- blur
+- touch sprint
+- thumbnails
+- level-up
+- game events
+- marketplace prompts
+- chat
+- profile/tycoon actions
+- keyboard
+- legacy currency bridge
+
+Split by real feature responsibilities.
+App shell owns navigation/layers, not commerce/profile behavior.
+
+13.2 Feature taxonomy
+Do not place features under folders merely based on where they render.
+KOTH and WeaponCrosshair are not inherently “HUD domain”.
+Prefer domain-first.
+
+13.3 Legacy Currency
+Move imperative PlayerGui/RenderStepped bridge under Legacy and retire it once React path is authoritative.
+
+13.4 Settings
+SettingsPanel currently stubbed/nil while route exists.
+Remove fake route or implement a deliberate bridge.
+Do not keep old Settings + NewSettings + React route ambiguity.
+
+13.5 InterfaceKit
+Too broad.
+Corner/TitleLine return nil despite use.
+Either implement required primitives or remove.
+Do not make InterfaceKit a dumping ground for sound/tween/format/hook behavior.
+
+13.6 Animation hooks
+Multiple animation systems exist:
+- useSpringBinding
+- useBouncyBinding
+- useAnimatedNumber
+- InterfaceKit tween/spring helpers
+- manual animation loops
+
+Choose one small intentional animation approach.
+Do not create one RenderStepped connection per trivial hook if a shared scheduler/React-native approach is cleaner.
+
+13.7 GameStore
+Currently overloaded:
+- singleton
+- lifecycle
+- aggregate snapshot
+- compatibility facade
+- packets/actions
+
+Separate concerns.
+Avoid every sub-store mutation invalidating one whole global snapshot.
+
+13.8 StoreProvider
+Current context/provider is not meaningfully consumed while hooks read singleton directly.
+Choose one:
+- real provider/context
+or
+- explicit singleton store architecture
+Do not pretend both are active.
+
+13.9 Stats duplication
+StatsStore duplicates Level/Experience from Profile.
+Choose one owner.
+
+13.10 Nuke/KOTH store
+NukeStore should not own KOTH.
+Split.
+
+13.11 NotificationStore
+Store should own state, not long-running visual side effects/waits.
+Move presentation timing/effects to component/controller/lifecycle layer.
+
+13.12 InventoryView
+Large file with many responsibilities.
+Split only into meaningful domain components; do not atomize into useless micro-files.
+
+13.13 Quests/Daily/Rebirth
+Align folders/components with domain routes.
+Do not export unrelated views from one generic file.
+
+13.14 Layers
+App currently mounts sibling features with independent ZIndex behavior.
+Create semantic layers:
+- HUD
+- Interaction
+- Modal
+- Notification
+- Cinematic
+
+13.15 Inventory double-system
+CUSTOM_INVENTORY_ENABLED=false appears to affect CoreGui toggling, while React InventoryView may still mount.
+Ensure exactly one inventory presentation/control path.
+
+13.16 Debug
+React debug flag should be disabled in production.
+
+======================================================================
+14. INVENTORY
+======================================================================
+
+14.1 `_toolSlotByName` retention bug
+Inventory client assigns slots by InventoryId/name and never releases mappings when tools disappear.
+Over a long session, removed unique tools can reserve all eight slots.
+
+Rebuild/reconcile the mapping from currently live inventory state or explicitly release slots.
+
+14.2 gameProcessed ordering
+Current input handles toggle/slot/equip before honoring gameProcessed.
+Typing/focused UI can trigger inventory controls.
+
+Apply input policy intentionally.
+
+14.3 Inventory server
+InventoryAction RemoveTool validates:
+- Tool type
+- ownership in Backpack/Character
+Good baseline.
+Add NetworkGuard policy and typed action schema rather than arbitrary future actions.
+
+14.4 Client classification
+Inventory client infers weapon stats through broad config field scanning and fallbacks.
+Prefer explicit shared presentation metadata/weapon schema after ACS config cleanup.
+Avoid maintaining heuristics forever.
+
+======================================================================
+15. PROXIMITY / ONBOARDING
+======================================================================
+
+15.1 Custom prompt lifecycle
+Current PromptRegistry and Prompt1/Prompt2/SurfacePrompt create:
+- GUI clone
+- TextButton
+- Tween connections
+- optional Beam/Highlight
+per show.
+
+Make show idempotent.
+One prompt -> one owned resource scope.
+A second show must cleanup/replace prior state.
+
+15.2 PromptEffect duplicate resources
+CreateBeam can create duplicate named Attachments/Beam if show occurs twice before hide.
+DestroyBeam finds only one by name.
+Use explicit per-prompt owned references/Janitor.
+
+15.3 Onboarding listener leak
+Onboarding.client destroys its own Script when tutorial completes but does not disconnect:
+- ByteNet Tutorial listener
+- RuntimeSettings observer
+- CharacterAdded connection
+
+Destroying the Script does not automatically remove ByteNet callback storage.
+Own all resources and disconnect before completion/destruction.
+
+15.4 Onboarding beam cost
+Beam.Segments = 500 and multiple unclaimed-tycoon beams may exist.
+Reduce to the minimum visually justified value after profiling.
+Do not assume 500 is free.
+
+15.5 Server onboarding
+Lifecycle delayed tasks/connections must validate owner/session generation so old onboarding work cannot act on a new owner.
+
+======================================================================
+16. ENVIRONMENT / RAIN
+======================================================================
+
+Keep:
+- EnvironmentShared weather model
+- EnvironmentService scheduling
+- weather ByteNet
+- lighting
+- wind concepts
+- NatureAudio concept
+
+Replace the old rain occlusion algorithm.
+
+Known RainModule problems:
+- Main camera cover ray is slanted opposite rain direction rather than a stable shelter query.
+- `inside` initializes true and is never set false.
+- Random ±100 stud splash samples cast from high above camera.
+- If a roof is hit, an emitter is deliberately positioned about 50 studs above the roof.
+- Occluded rain speed ~70–100 and lifetime ~0.8 sec => travel ~56–80 studs.
+- Therefore particles can cross a roof and visibly continue into sheltered space.
+- Straight rain visual length further worsens clipping.
+- If no hit while “inside”, fallback can emit at random heights around/above camera inside the building.
+- Larger roofs increase the number of random roof-hit columns, which can create more penetrating above-roof emitters.
+- High roofs/upstairs worsen the slanted cover-ray miss due to horizontal drift.
+- SetCeiling exists but no callers were found.
+- SetCollisionMode exists but no callers were found.
+- old FindPartOnRay APIs remain.
+- particle emitters do not collide with geometry.
+
+Do not “fix” this by tuning 50, ±100, or lifetime alone.
+
+Target precipitation renderer:
+- small camera-local rain grid/tiles, e.g. ~3x3 initially
+- per-cell raycast along actual rain path
+- obstruction distance determines visible rain segment
+- particle lifetime/position must never allow rendered particles to cross from exposed side through a blocking roof into sheltered side
+- include safety margin for particle visual length/spread
+- valid outside/window cells can still rain while roof-covered cells are clipped
+- use hit surface for splash, not “hit roof then emit above roof”
+- reusable RaycastParams
+- intentional collision/tag policy
+- audit CanQuery on permanent shelter geometry
+- update occlusion at a modest rate such as ~10–20 Hz or based on meaningful camera/weather changes, then interpolate/fade presentation
+- profile final frequency
+- support CurrentCamera replacement
+- remove obsolete ceiling/collision APIs if no longer meaningful
+
+Testing:
+- open sky
+- low roof
+- high roof
+- huge roof
+- roof edge
+- upstairs floor/ceiling
+- awning
+- window/open doorway
+- sloped roof
+- moving in/out of shelter
+- oblique wind rain
+- transparent/decorative geometry
+- CanQuery=false cases
+- respawn/camera replacement
+- different FPS
+
+Add a debug visualization mode for sample cells/rays/hit state/exposure.
+
+======================================================================
+17. ENVIRONMENT EXPOSURE / NATURE AUDIO
+======================================================================
+
+Current NatureAudio:
+- samples roof vertically at 9 offsets
+- samples surrounding wall openness
+- computes roofCover/wallOpen/exposure
+- adjusts rain/wind sound
+
+Rain and NatureAudio currently disagree about what “inside” means.
+
+Create a shared, focused EnvironmentExposure / shelter-query resource where worthwhile:
+- roof exposure
+- indoor/outdoor classification
+- optional zone identity
+- reusable raycast policy
+
+Do not make a giant EnvironmentManager.
+Rain visual columns still require detailed per-column rain-path casts.
+Shared exposure exists to keep systems conceptually consistent, not to force identical rendering logic.
+
+======================================================================
+18. AUDIO OCCLUSION / ACOUSTICS DIRECTION
+======================================================================
+
+A future acoustics system is appropriate for this game.
+
+Use the concepts from the reviewed Starboard/Medium article, but do not copy its implementation blindly.
+
+Useful concepts:
+- source-based room tone
+- authored/precomputed acoustic zones
+- portals for doors/windows/openings
+- direct + indirect propagation paths
+- path distance
+- bend count/angle
+- sound-category-specific diffraction sensitivity
+- bass retention rather than one universal muffling filter
+- reposition indirect sound toward the final visible propagation node/opening
+- blend multiple candidate paths to avoid stereo jumps
+- precompute static topology; keep runtime simple
+
+Roblox now has modern AudioEmitter/AudioListener acoustic simulation.
+Before building a full custom system, A/B test:
+A. Roblox acoustic simulation
+B. small custom zone/portal + direct-ray + EQ prototype
+
+Compare:
+- quality
+- predictability
+- CPU
+- tycoon construction interaction
+- authoring cost
+
+For custom architecture, keep it domain-focused:
+Audio/
+  Acoustics/
+    AcousticGraph
+    AcousticZone
+    PortalState
+    PropagationResolver
+    RoomToneResolver
+  Config/
+    SoundProfiles
+    RoomProfiles
+  Environment/
+    NatureAudio
+
+Do not author a unique profile for every SoundId.
+Use semantic categories with optional overrides:
+- Ambient
+- Mechanical
+- Footstep
+- Voice
+- Impact
+- Alarm
+- Weather
+
+Tycoon topology is relatively suitable because build states are mostly predetermined.
+Model possible acoustic zones/portals and toggle them from domain events rather than rediscovering all geometry continuously.
+
+RbxObservers could register authored tags such as:
+- AcousticZone
+- AcousticPortal
+- AcousticNode
+
+Do not add a million baked paths before profiling/quality validation.
+Start with room/portal graph.
+
+======================================================================
+19. AI / NPC
+======================================================================
+
+Current NPC architecture is not catastrophic but has scaling concerns.
+
+Current patterns:
+- 10 Hz-ish AI update
+- per-NPC player scans
+- NPC separation/world scans
+- controller/StateMachine objects stored in ECS components
+
+At small NPC counts this may be fine.
+At larger counts, complexity trends toward NPC x players and NPC x NPC.
+
+Before adding octrees/spatial indices, profile target NPC counts.
+
+If scaling is needed:
+- cache player character positions
+- use spatial partition/query structure
+- reduce repeated full-folder scans
+- keep behavior/state machine ownership clear
+
+Do not use dead GOAP system unless intentionally reviving it with a real consumer.
+Otherwise delete GOAP.
+
+NPCSpeech currently broadcasts to all; consider relevance-based delivery if traffic/scale warrants it.
+
+======================================================================
+20. SETTINGS / ADMIN / BOOTSTRAP
+======================================================================
+
+20.1 Settings transport
+Live NewSettings path still uses legacy RemoteFunctions:
+- GetSettingsData
+- ExportSettingsFunction
+- ImportSettingsFunction
+
+This is outside the canonical ByteNet architecture.
+
+Migrate deliberately or isolate it as a compatibility boundary.
+Apply first-party request rate policy.
+Repeated export currently creates delayed save tasks; stale versions no-op, but task accumulation is unnecessary.
+Use a cleaner debounce/save scheduler.
+
+Do not rely on client PlayerRemoving as the only save guarantee.
+Server lifecycle remains authoritative.
+
+20.2 Old Settings
+Old ServerStorage SettingsHandler should be deleted if truly not loaded.
+
+20.3 Admin
+AdminDispatcher authorizes by username:
+`Admins["Sacredbow1"] = true`
+Use immutable UserId-based authorization.
+
+The admin path also uses legacy ClientReplicator; verify whether this UI is still needed and migrate/remove intentionally.
+
+20.4 Loader packet readiness
+There are multiple components independently polling ByteNet namespace readiness and pcall-requiring Packets.
+Create one packet/bootstrap readiness mechanism rather than many islands.
+
+======================================================================
+21. PERFORMANCE — RECV / SENT / MEMORY ARE FIRST-CLASS BUDGETS
+======================================================================
+
+Do not treat performance as only loop optimization.
+
+Measure separately:
+- Client Recv
+- Client Sent
+- Client Memory
+- Server memory
+- server frame/heartbeat CPU
+- LuaHeap
+- Instance count
+- Signals/connections
+- graphics/particle pressure
+
+Use:
+- Performance Stats
+- MicroProfiler
+- network capture/X-Ray
+- Developer Console
+- Luau Heap
+- Scene Analysis
+
+Code audit identifies likely pressure but cannot produce real KB/s or MB without a live place.
+
+Profile scenarios:
+- fresh join
+- idle outdoor
+- idle inside completed tycoon
+- many active droppers
+- construction animation
+- rain/storm
+- multiple combat players
+- laser usage
+- nuke
+- lightning
+- inventory/shop/settings usage
+- 10–15 minute normal session
+- 30–60 minute soak test
+
+Compare heap snapshots at equivalent gameplay state over time.
+
+Memory leak:
+resources never become collectible / baseline rises.
+
+Allocation churn:
+resources are eventually collectible but created/destroyed fast enough to drive GC/CPU.
+
+Fix both, but diagnose correctly.
+
+======================================================================
+22. NETWORK PERFORMANCE SPECIFIC FINDINGS
+======================================================================
+
+22.1 ACS laser
+Render path can send roughly half-rate render updates while laser active, historically around ~30 updates/s at 60 FPS.
+Server rebroadcasts to all clients.
+Migrate to:
+- compact typed packet
+- lower deliberate rate
+- unreliable latest-state-wins
+- relevance where appropriate
+- stable config not retransmitted
+
+22.2 ServerBullet / HitEffect
+Do not broadcast entire weaponData/modifier tables.
+Send compact changing state.
+
+22.3 Server-created visual replication
+Recv/Sent includes more than explicit remotes.
+Server-created/tweened Instances replicate creation/properties/destruction.
+
+High-value migrations:
+- dropper visuals -> client
+- lightning visual tree -> client
+- nuke/rocket visual motion -> client
+
+Server sends:
+- authoritative event/outcome
+- position
+- seed
+- timestamp
+as appropriate.
+
+22.4 Lightning
+Server currently constructs many Parts/lights/emitters and mutates them.
+Prefer small LightningStrike packet + deterministic/local client effect.
+
+22.5 Preload
+ReplicatedFirst preload scans broadly and preloads discovered ImageButtons individually.
+Replace blanket preload with curated critical assets.
+Batch sensibly.
+Do not force all assets into memory “just in case”.
+
+Also stop persistent cosmetic preload loops when loading is complete.
+
+22.6 ReplicatedStorage
+Large models/textures/sounds under ReplicatedStorage contribute to every client footprint and are not Workspace-streamed.
+Git cannot measure place-only asset foo... (16 KB left)ARMOUREDTYCOON — FINAL CODEX SOL REFACTOR SPECIFICATION
+Target repository: Sacredbow/ArmouredTycoon
+Audited main commit: 9647df368402a7104a0535612fdbfb91abcaef3a ("1.5")
+
+ROLE
+You are performing a professional repository-wide refactor of a Roblox/Luau tycoon game.
+This is not a mechanical cleanup pass. Read this entire specification before editing, inspect the relevant code before changing it, and preserve gameplay behavior unless this document explicitly identifies a bug or architectural migration.
+
+PRIMARY OBJECTIVE
+Bring the project toward a high-quality production architecture with:
+- Clear ownership of mutable state.
+- Explicit lifecycle and cleanup.
+- Strong server authority.
+- Compact, typed networking.
+- Measurable performance improvements in Recv, Sent, CPU, and Memory.
+- Idiomatic modern Luau.
+- Minimal unnecessary abstraction.
+- ECS only where ECS is actually a good fit.
+- Completed migrations instead of old/new systems running in parallel.
+- Dead code removed rather than modernized.
+- Stable, testable domain boundaries.
+
+NAMING / STYLE POLICY
+Use PascalCase consistently for first-party:
+- Modules
+- Services
+- Systems
+- Components
+- Classes
+- Types
+- Public methods / public APIs
+- Named domain concepts
+
+Use camelCase for ordinary local variables and parameters when it improves readability.
+Do not perform gratuitous renames that break protocols/assets. For externally visible legacy names (remote names, authored asset names, ACS data fields, etc.), preserve compatibility during migration and remove the compatibility layer only after all first-party callers are migrated.
+
+Examples:
+- ProfileManager
+- NetworkGuard
+- WeaponRuntimeState
+- ProjectileSimulationSystem
+- EnvironmentExposure
+- AcousticGraph
+- RegisterPacket
+- ResolveDamage
+- local player
+- local character
+- local packetData
+
+GENERAL DECISION PRIORITY
+When choosing between two implementations, prioritize:
+1. Correctness
+2. Ownership / lifecycle safety
+3. Server authority / security
+4. Maintainability / readability
+5. Measured performance
+6. Conciseness
+
+Never sacrifice an earlier item merely to make code shorter, cleverer, or more abstract.
+
+======================================================================
+1. NON-NEGOTIABLE ARCHITECTURAL RULES
+======================================================================
+
+1.1 Do not over-engineer.
+Prefer the smallest implementation that provides correct ownership, lifecycle, typing, security, and performance.
+
+1.2 Do not create abstractions that merely forward to Roblox/Luau APIs.
+Examples of bad one-function wrappers:
+- DestroyLater -> task.delay / Destroy
+- FindChild -> FindFirstChild
+- Tween -> TweenService:Create
+- ClampNumber -> math.clamp
+
+An abstraction is justified only when it owns meaningful policy, lifecycle, replacement/cancellation, typing, transactions, or domain behavior.
+
+1.3 Do not convert everything to ECS.
+Use ECS/Jecs for high-cardinality simulation/data-oriented workloads.
+Do not force:
+- UI
+- Services
+- Resource managers
+- Network policy
+- Singleton configuration
+- Plain orchestration
+into ECS without a real reason.
+
+1.4 Do not store OOP/controller/service objects in ECS components just so systems can call methods on them.
+Current examples of the anti-pattern include components carrying:
+- Tycoon objects
+- Controller objects
+- Service objects
+- callbacks/closures
+- StateMachine/controller behavior
+
+Target:
+- Numeric entity IDs
+- Typed plain-data components
+- Behavior owned by systems
+- Roblox Instance references only at explicit integration boundaries
+
+1.5 Keep configuration immutable.
+Do not mutate authored config tables to store runtime values such as current ammo, current state, current ownership, etc.
+
+1.6 One mutable concern = one owner.
+Avoid multiple systems writing:
+- Humanoid.WalkSpeed
+- Camera state
+- Weapon ammo
+- Profile/leaderstat UI values
+- Session phase
+- Environment shelter state
+
+1.7 Finish migrations.
+The codebase repeatedly has old + new systems active simultaneously. Remove displaced architecture after migration succeeds.
+
+======================================================================
+2. TOOLCHAIN / REPOSITORY BASELINE
+======================================================================
+
+Before broad refactors:
+- Choose one toolchain manager. The repo currently has both Aftman and Rokit.
+- Resolve conflicting Rojo versions:
+  - aftman.toml: Rojo 7.7.0
+  - rokit.toml: Rojo 7.6.1
+  - README: Rojo 7.6.1
+- Pin StyLua if the project uses it.
+- Add a StyLua config.
+- Strengthen Selene beyond only `std = "roblox"` where useful.
+- Establish reproducible commands for:
+  - install
+  - build
+  - format/check formatting
+  - lint
+  - typecheck
+  - tests
+- Add CI.
+- Add first-party regression tests. Existing test files in the tree are dependency tests, not game tests.
+- Keep Story files as manual/smoke UI surfaces but do not treat them as the only test suite.
+
+Do not mix massive formatting-only diffs with behavioral refactors where avoidable.
+
+======================================================================
+3. DELETE / QUARANTINE DEAD CODE BEFORE MODERNIZING IT
+======================================================================
+
+Repository search indicates the following are orphaned or effectively dead and should be verified, then deleted/quarantined instead of refactored:
+
+- ServerScriptService/AI/GOAP/*
+  No consumer found outside the GOAP folder itself.
+
+- ServerScriptService/Services/World/EnvironmentService/WeatherModule.luau
+  Legacy server weather implementation; current EnvironmentService does not use it.
+
+- ReplicatedStorage/Modules/NotificationModule.luau
+  No consumer found.
+
+- StarterPlayer/.../Systems/Networking/NetworkState.client.luau
+  Runs automatically but no consumer uses GetStat; WeaponState listener is effectively no-op.
+
+- Old ServerStorage SettingsHandler path
+  No live source-side loader found; the project has a newer Settings UI path.
+
+- Dead UI/migration files previously identified:
+  HUDView
+  StatPill
+  useAnimatedNumber if only used by dead StatPill
+  useBouncyBinding
+  InterfaceKit.UseSpringTween if unused
+  Shop/init and store/init if truly unreferenced
+  Settings route stubs returning nil
+  other dead migration stubs after verification
+
+- ProjectileCastSystem
+  It is registered, but the active ACS path currently does not create the projectile ECS components it expects. Either complete the migration or delete the dead scheduled system. Do not keep a system running over an empty migration path.
+
+Delete first; do not spend time “improving” unreachable code.
+
+======================================================================
+4. DATA / COMMERCE / PROFILE CORRECTNESS
+======================================================================
+
+4.1 ProductRewards / ProfileManager call style
+A P0 mismatch was identified:
+- ProfileManager functions are dot-style.
+- ProductRewards had colon-style invocation in relevant paths.
+This can shift arguments so the module table becomes the player argument and may still return PurchaseGranted even when the operation did not correctly apply.
+
+Fix all reward handlers to call APIs using the correct call convention.
+Do not acknowledge a purchase until the reward commit is known to be durable/successful.
+
+4.2 Developer product receipt idempotency
+CommerceService.ProcessReceipt needs a durable PurchaseId idempotency ledger.
+DataTemplate did not contain a proper receipt-history structure.
+
+Required behavior:
+- Check PurchaseId against durable processed-receipt state.
+- Apply reward transaction.
+- Persist processed receipt / durable transaction state.
+- Only then return PurchaseGranted.
+- Make duplicate receipt delivery safe.
+- Avoid granting twice across retries/server restarts.
+
+4.3 PlayerRuntimeState shallow-copy bug
+DefaultState contains nested GamepassOwnership = {}.
+`table.clone(DefaultState)` only shallow clones, causing nested shared state between players.
+
+Deep-create mutable nested structures per player.
+
+4.4 PlayerRuntimeState ownership
+Tycoon-scoped runtime state should not accidentally become whole-player-session state.
+ResetTycoonState exists and resets Multiplier/Power/Armour/CanRebirth during tycoon cleanup.
+However:
+- ArmourEquipped can remain true across ordinary character death/respawn while the vest model is destroyed with the old character.
+Reset/reconcile armour on character lifecycle.
+
+4.5 RarityBox economy boundary
+RarityBoxService should not mutate leaderstats Cash/Emerald directly.
+All economy mutation should go through ProfileManager / one economy authority.
+
+4.6 Stat transport duplication
+Current values can flow through:
+- leaderstats ValueObjects
+- ByteNet StatSync
+- Profile Replica for overlapping fields
+
+UI should not consume duplicate representations for the same state.
+If leaderstats are required for Roblox leaderboard display, keep them for that purpose, but choose one deliberate UI transport.
+
+4.7 Code expiry bug
+CodeService currently defines a “global seven-day expiry” from:
+`ReferenceTime = os.time()` at server boot.
+Codes without absolute ExpiresAt therefore get a fresh seven-day window each server restart.
+
+Use an absolute configured Unix epoch or explicit campaign expiry, not server uptime.
+
+======================================================================
+5. NETWORK ARCHITECTURE / BYTENETMAX
+======================================================================
+
+5.1 Canonical network layer
+ReplicatedStorage/Network/Packets is the canonical first-party network contract.
+Complete migration away from ACS_Engine.Events/legacy RemoteEvents where practical.
+
+5.2 ByteNetMax version
+Pinned package:
+`elitriare/bytenet-max@0.2.5`
+
+Important API facts from the bundled source:
+- packet reliabilityType is `"reliable"` or `"unreliable"`
+- default is reliable
+- client packet `.send(data)`
+- server packet `.sendTo(...)`, `.sendToList(...)`, `.sendToAll(...)`, `.sendToAllExcept(...)`
+- `.listen(callback)`
+- queries use `.invoke`
+- `.listen(callback)` returns a cleanup/disconnect FUNCTION, not an RBXScriptConnection
+
+Correct:
+```luau
+local Disconnect = Packet.listen(function(Data)
+	...
+end)
+
+Disconnect()
+```
+
+Incorrect:
+```luau
+local Connection = Packet.listen(...)
+Connection:Disconnect()
+```
+
+Audit all ByteNet listener cleanup accordingly.
+
+5.3 Existing ByteNetMax transport limiter
+ByteNetMax 0.2.5 already has transport-level inbound protection in the server processor:
+- incoming data must be a buffer
+- max buffer size
+- token bucket based on bytes
+- default MAX_BUFFER_SIZE is ~4096
+- byte refill budget approximately 4 KB/s unless configured otherwise
+
+Do not incorrectly state that ByteNet has no rate limiter.
+
+However this is not enough:
+one accepted buffer can contain many tiny logical messages.
+
+5.4 Add first-party NetworkGuard
+Do not fork/edit ByteNetMax for project-specific action thresholds.
+
+Add a first-party boundary such as:
+`Server/Networking/NetworkGuard.luau`
+
+Responsibilities:
+- Per-player aggregate logical action budget
+- Per-packet token bucket
+- Burst allowance
+- Semantic validation hooks
+- Player/session validation
+- Metrics for accepted/dropped requests
+- Cleanup on PlayerRemoving
+- Optional severity/telemetry escalation
+
+Concept:
+ByteNet transport protection -> NetworkGuard -> gameplay handler
+
+Rate limiting is primarily resource protection and trust-boundary enforcement.
+A threshold violation normally means:
+- drop/reject
+- increment telemetry
+not automatic permanent ban.
+
+5.5 Do not use a client-obtainable auth token as authority
+Current ACS AcessId/AuthToken model is not meaningful authority because the client can obtain/use the token.
+Remove this architecture.
+Server should derive authority from:
+- player identity
+- equipped Tool/server state
+- server-known weapon config
+- validated action context
+- validated target/context
+
+5.6 Reliable vs unreliable
+Keep reliable for important discrete transitions:
+- equip/unequip
+- inventory mutations
+- purchase results
+- profile/commerce state
+- final nuke result
+- committed state changes
+
+Use unreliable for frequently replaced presentation state where packet loss is superseded by the next update:
+- laser transforms
+- high-rate aim orientation
+- transient cosmetic positions
+- intermediate score displays where final state is separately reliable
+
+Do not mark everything unreliable blindly.
+
+5.7 Minimize payloads
+Do not send whole stable config tables per shot/event.
+Current ACS examples needing redesign include:
+- ServerBullet(origin, direction, weaponData, modifierTable)
+- HitEffect including whole weaponData
+- Damage huge positional payloads with client settings/modifiers/token
+- Equip with broad authored config data
+
+Server/client should already know stable configuration by weapon identity.
+Packets should carry only compact changing intent/state.
+
+5.8 Prefer relevance over sendToAll
+`sendToAll()` is valid for rare genuinely global events.
+Do not use it as the default.
+
+Audit:
+- NPCSpeech
+- BuildAssemble
+- combat presentation
+- world effects
+- other nearby-only events
+
+Use spatial/relevance lists where frequency/traffic makes it worthwhile.
+
+5.9 Do not manually add another buffer serialization layer on top of ByteNetMax without profiling.
+ByteNetMax already serializes compactly with buffers.
+
+======================================================================
+6. ACS / COMBAT CLIENT REFACTOR
+======================================================================
+
+6.1 Target architecture
+Current client decomposition is directionally better than old monoliths, but Main/Equip/Render/Camera/UI still duplicate ownership.
+
+Make Main a true bootstrap/orchestrator:
+- wiring
+- lifetime
+- top-level feature composition
+not the owner of dozens of mutable weapon fields.
+
+6.2 One WeaponRuntimeState
+Current state is duplicated across:
+- Main
+- EquipController
+- mutable weaponData/config
+- WeaponUIState
+- legacy HUD adapter
+- animation/server representations
+
+Create one typed runtime state separate from immutable WeaponConfig.
+
+Example:
+```luau
+export type WeaponRuntimeState = {
+	Ammo: number,
+	ReserveAmmo: number,
+	FireMode: FireMode,
+	IsReloading: boolean,
+	IsAiming: boolean,
+	IsJammed: boolean,
+	Generation: number,
+}
+```
+
+6.3 Equip must be transactional
+Current setup can partially mutate state and then early-return.
+
+Target:
+1. Validate Tool/classification/config/resources.
+2. Build temporary dependencies/resources.
+3. Only when all required invariants succeed, commit to equipped runtime state.
+4. Return explicit success/failure.
+5. On failure, cleanup temporary resources.
+
+Do not set “equipped=true” before construction succeeds.
+
+6.4 Cleanup correctness
+Known bug:
+Main.cleanupCharacter calls InputBindings.unbindDefaultActions(...) but InputBindings defines only bindDefaultActions.
+Fix API mismatch.
+
+Teardown must explicitly clean:
+- ContextActionService bindings
+- bipod/weapon actions
+- render bindings
+- mousewheel/raw input if owned
+- packet listeners
+- animations
+- visuals
+- temporary Instances
+- camera overrides
+- sensitivity/FOV overrides
+
+Use one resource owner/Janitor per character/equip lifecycle.
+Teardown must be idempotent.
+
+6.5 Avoid global render-step names
+`BindToRenderStep("Camera Update")` is too global/conflict-prone.
+If BindToRenderStep is still needed, use unique lifecycle-owned names or one centralized render owner.
+
+6.6 Remove stale delayed callbacks
+Main has delayed equip work that checks only `isEquipped`; an old weapon callback can act on a newly equipped weapon.
+Use generation/session tokens.
+
+Pattern:
+```luau
+local Generation = Runtime.Generation
+
+task.delay(0.5, function()
+	if Runtime.Generation ~= Generation then
+		return
+	end
+	...
+end)
+```
+
+6.7 Consolidate camera ownership
+Current camera logic overlaps:
+- Main
+- CameraController
+- RenderController
+- duplicate third-person/lean/spring state
+
+Choose one camera authority.
+
+6.8 Stop creating Tweens every render frame
+RenderController creates FOV Tweens during rendering.
+HeadMovement also creates Tweens repeatedly.
+
+Change to state-transition-driven behavior:
+ADS false -> true: create/start transition once
+ADS true -> true: no new Tween
+
+For continuous motion, use direct dt-based smoothing rather than spawning Tweens every frame.
+
+6.9 Stop GetDescendants in hot render paths
+RenderController repeatedly searches weapon descendants for SightMark/LaserPoint.
+Cache references during equip/model setup.
+
+6.10 Use dt-based smoothing
+Avoid fixed-alpha lerps that make behavior FPS dependent.
+Use dt-aware interpolation where applicable.
+
+6.11 CurrentCamera can change
+Do not permanently capture Workspace.CurrentCamera once and assume it never changes.
+Handle replacement where relevant.
+
+6.12 Animation architecture
+There is a half-migration:
+- WeaponAnimator exists
+- Fire path calls into it
+- no meaningful Evaluate usage
+- RenderController still performs legacy CFrame animation
+- Utilities/State appears to be another leftover architecture
+
+Pick one animation architecture, finish migration, delete displaced path.
+
+6.13 Projectile architecture
+Current CastController still creates physical/local bullet state with per-projectile Heartbeat work.
+ProjectileCastSystem exists but active ACS does not create its ECS components.
+
+Choose one architecture.
+Preferred direction for high-cardinality projectiles:
+- data-oriented projectile simulation
+- one shared simulation update
+- local visual rendering
+- no controller objects/closures stored in ECS
+
+Do not claim ECS is inherently faster; profile.
+
+6.14 Raycast ignore/context duplication
+Main and CastController maintain separate ignore concepts.
+Create one explicit RaycastContext/ignore owner with dedupe/caching.
+Do not allow comments to claim lists are shared when they are not.
+
+6.15 HitResolver duplication
+CastController also performs direct hit/humanoid lookup.
+Choose one hit-resolution authority and delete the duplicate after tests.
+
+6.16 Melee ignored-part recursion
+Prefer bounded iterative continuation over unbounded recursive tracing.
+
+6.17 Client projectile visual architecture
+Current invisible physical bullet + separate visual tracer is unnecessarily complex.
+Consolidate into a data-driven local simulation/visual path without changing gameplay tuning.
+
+6.18 Crosshair
+Crosshair updates store/UI every frame even if state is unchanged.
+Make presentation update state-change-driven where possible.
+
+6.19 WeaponUI migration
+WeaponUIState -> ClientRuntimeState/React and WeaponHudAdapter -> legacy GUI duplicate formatting/state.
+Finish React/runtime migration and retire legacy adapter.
+Unify firemode naming/formatting.
+
+6.20 Fall damage
+FallDamage belongs to character/health domain, not gun framework.
+Move it out of ACS.
+Server independently validates outcome.
+Avoid generic `find<T> :: any` style helpers.
+
+6.21 Attachment configs
+Validate authored attachment data.
+Do not assume arbitrary module fields always exist.
+
+6.22 Naming cleanup
+Internally migrate poor/legacy names such as:
+- AcessId
+- Refil
+- Atirar
+- Ultil
+- virar
+- sentado
+- aimming
+- Supressor
+
+Preserve external protocol compatibility temporarily if required, then remove compatibility after all first-party callers migrate.
+
+6.23 RefillMag
+No first-party FireServer caller was found earlier.
+Verify reachability.
+Remove unused remote attack surface or replace with server-authorized reload state.
+
+6.24 Surrender
+Optional victim/state manipulation needs contextual validation.
+Remove if unused or make authoritative.
+
+6.25 Stance
+Validate against allowed enum/range, not merely `typeof(number)`.
+
+6.26 Equipment mode idempotency
+Repeated equip must not duplicate SWeapon/AnimBase or other rig resources.
+Make equip state-driven/idempotent.
+
+6.27 ACS debug logging
+Remove/gate shield and hit-path prints before performance profiling.
+
+======================================================================
+7. SERVER COMBAT AUTHORITY
+======================================================================
+
+7.1 Damage
+Current client sends far too much:
+- target data
+- weapon settings
+- modifier data
+- auth token
+etc.
+
+Server should derive authoritative stable config from:
+- equipped server-known Tool
+- server weapon config
+- server equipment state
+
+Client sends compact intent/context only.
+
+7.2 Validate:
+- attacker alive/state
+- equipped weapon ownership
+- target validity
+- plausible hit context
+- distance/context
+- team rules
+- fire/reload state
+- packet rate
+
+7.3 Shield
+Do not trust client-supplied weaponData to derive shield outcome.
+Server derives damage/config.
+
+7.4 Cosmetic remotes
+Whizz/Suppression/SVLaser/etc. require:
+- ownership/state validation
+- rate policy
+- compact payloads
+- relevance filtering
+
+======================================================================
+8. MOVEMENT / CHARACTER OWNERSHIP
+======================================================================
+
+Current overlap:
+- CharacterManager/BaseMovement writes WalkSpeed
+- ACS tracks running/walking and writes WalkSpeed
+- StanceController writes WalkSpeed
+
+This is a major ownership conflict.
+
+Target:
+One locomotion authority resolves final movement values.
+Combat/stance publishes modifiers/constraints.
+Movement domain applies final WalkSpeed/state.
+
+User preference:
+Do not preserve CharacterManager OOP merely because it exists.
+If ECS/data-oriented movement is cleaner, migrate intentionally.
+Do not store CharacterManager OOP object as an ECS component.
+
+Input bug:
+InputBegan/InputEnded both respecting gameProcessed can leave held keys stuck if key-down was recorded but release is consumed by UI.
+For held state, cleanup/release should not be skipped simply because gameProcessed is true.
+
+Spawn protection:
+Existing delayed callback reads `player.Character` later.
+Capture exact Character/Humanoid or generation so an old timer cannot mutate a replacement character.
+
+Verify future-character spawn protection behavior; do not overclaim without tests.
+
+======================================================================
+9. ECS / JECS
+======================================================================
+
+Pinned:
+`ukendio/jecs@0.1.0`
+
+Do not assume APIs from newer/different Jecs versions.
+The bundled query API supports normal:
+```luau
+for Entity, Component in World:query(...) do
+```
+Do not use assumed `:cached()` unless the pinned library actually supports it.
+
+Current anti-patterns:
+- Producer component stores Tycoon object
+- Reveal stores Tycoon/targets/onComplete callback
+- RocketFlight stores Rocket object
+- NPCUpdate stores controller/StateMachine
+- EnvironmentClock stores Service
+- CharacterManager component stores manager object
+- ScheduledTask stores arbitrary callbacks/closures
+
+Target components:
+- plain typed data
+- IDs
+- timestamps
+- numeric state
+- compact Instance refs only where needed at boundary
+
+Systems own behavior.
+
+Generic ScheduledTask:
+Useful but currently used broadly for domain behavior.
+For high-cardinality simulation, prefer domain-specific timer components.
+Rare orchestration delays can remain ordinary lifecycle-scoped tasks outside ECS.
+
+Runner:
+Creates a small Context table and pcall/xpcall boundaries per system.
+Do not micro-optimize this before larger issues.
+Profile first.
+
+======================================================================
+10. RBXOBSERVERS / INSTANCE LIFECYCLE
+======================================================================
+
+RbxObservers is a good fit for this project as the Roblox Instance lifecycle boundary.
+
+Use it for dynamic:
+- CollectionService tags
+- character/Instance appearance/disappearance
+- attributes where setup/cleanup should pair automatically
+- acoustic/environment authored tags
+- prompt/tag lifecycle
+- ECS registration boundaries
+
+Do not use it for:
+- ordinary static one-time traversal
+- profile/network state
+- UI store state
+- numeric ECS simulation
+- every decorative object
+
+The project already uses Janitor.
+Do not add Trove just to pair with RbxObservers.
+Use:
+RbxObservers -> per-observed-instance Janitor -> cleanup return function
+
+Example:
+```luau
+local StopObserving = Observers.observeTag("ElectricityParts", function(Instance)
+	if not Instance:IsA("BasePart") then
+		warn(`ElectricityParts tag applied to non-BasePart: {Instance:GetFullName()}`)
+		return
+	end
+
+	local Janitor = Janitor.new()
+
+	Janitor:Add(Instance.Touched:Connect(function(Hit)
+		HandleElectricityTouch(Instance, Hit)
+	end))
+
+	return function()
+		Janitor:Destroy()
+	end
+end, { workspace })
+```
+
+RbxObservers is particularly appropriate for:
+- WindShake current manual GetTagged/GetInstanceAddedSignal/GetInstanceRemovedSignal logic
+- ElectricityParts
+- future AcousticZone/AcousticPortal/AcousticNode registration
+- custom prompt lifecycle if tags are intentionally used
+- Instance -> ECS registration boundaries
+
+When using observeTag, runtime-check the Instance type. Do not assume a tag guarantees BasePart.
+
+======================================================================
+11. TYCOON LIFECYCLE / MEMORY / CORRECTNESS
+======================================================================
+
+11.1 Button lifecycle memory leak
+`PurchaseDebounceByButton` is a strong table keyed by BasePart.
+Purchased buttons are destroyed and rebirth creates new button clones.
+Old destroyed keys can remain forever.
+
+Fix:
+- do not retain destroyed button keys
+- cleanup on purchase/removal
+- or use lifecycle-owned/weak state where semantics permit
+
+11.2 Button ECS entity retention
+`_ApplyPurchasedButton()` destroys purchased button Instances but leaves:
+`ButtonEntities[Button]`
+and corresponding ECS entity alive until full tycoon cleanup.
+
+Delete entity + remove map entry at purchase time.
+
+11.3 BuildAssemble retention
+`FinalStateByPart` is a module-global strong Instance-key map.
+Some destruction/deassemble paths may not restore/remove entries.
+Do not let destroyed Instances remain strongly referenced.
+
+Prefer animation-operation-local state rather than global state.
+
+11.4 BuildService LastRequests leak
+`BuildService.LastRequests[player]` is populated by remote calls.
+It is cleared in ClearPlayer/rebirth but normal player removal does not necessarily clear it.
+Ensure PlayerRemoving cleanup.
+
+Audit all Player-keyed service maps for equivalent cleanup.
+
+11.5 Claim/onboarding stale owner task
+ClaimSystem has delayed onboarding work that can read current `self.Owner` after ownership turnover.
+Use owner/session generation tokens and owned connections.
+
+11.6 LabDoor
+Known typo:
+two Touched OnEntered paths; one OnExited connection incorrectly uses Touched where Magnitude2.TouchEnded is likely intended.
+Fix after verifying authored geometry.
+
+QuickZone is unrelated; do not invent a QuickZone migration for this.
+
+11.7 BuildService warning
+There is an unconditional warning before casting/using BuildAction RemoteFunction.
+Replace with validation/assertion, not unconditional production warning.
+
+11.8 TemplateCache collision
+BuildSystem caches:
+`TemplateCache[Obj.Name] = Obj`
+Duplicate names overwrite each other.
+Dependency check can disagree with `_FindTemplate()` hierarchy search.
+
+Use stable identifiers or scope-aware lookup.
+
+11.9 Build state capture mismatch
+CaptureItemState captures some fields that RestoreItemState does not restore (e.g. Sound state), while restore checks some fields that capture does not store (e.g. prompt ActionText).
+Make capture/restore schema symmetric and typed.
+
+11.10 Production fade
+ProductionSystem Reveal fade path repeatedly Plays sound and prints during heartbeat/step.
+Trigger one-time transition effects once, not every frame.
+
+11.11 Dropper visuals
+Server currently creates/tweens cosmetic dropper Parts.
+Move recurring purely cosmetic dropper visuals client-side via small event/seed.
+Server owns economy result only.
+
+11.12 Electricity correctness
+Current hazard checks `PlayerRuntimeState.HasPower(player)` on the person touching the hazard.
+Power is conceptually tycoon/world state; do not make the victim’s own power flag determine whether another tycoon’s hazard is active.
+Model power ownership correctly.
+
+Electricity delayed callbacks resolve `player.Character` later.
+Use captured character/generation.
+
+The “disarm” callback destroys Tool Instances and hidden weapon rig objects.
+This is much broader than a temporary disarm.
+Make inventory/weapon mutation intentional and domain-owned.
+
+Notification currently can target self.Owner even when another player was affected.
+Notify correct participant.
+
+Modernize BodyVelocity if behavior can be preserved with current constraint APIs.
+
+11.13 Armour respawn
+ArmourEquipped resets on tycoon cleanup but not ordinary character respawn.
+Vest disappears with the old character.
+Reconcile/reset flag on character lifecycle.
+
+11.14 Touched connections
+Lasers, armour, electricity, buttons, etc. create many long-lived Touched connections.
+Give each tycoon/Instance behavior an explicit lifecycle owner.
+RbxObservers + Janitor may be appropriate for tagged dynamic parts.
+
+11.15 Appearance
+Do not convert one-time color traversal into observers unless parts are genuinely dynamic.
+One-time traversal is simpler when lifecycle does not require observing.
+
+11.16 BuildAssemble networking
+Client-side procedural visual generation is the right direction.
+However:
+- `sendToAll` should be relevance-aware if traffic justifies it
+- server hide/restore Transparency/CanCollide property changes themselves replicate
+Account for that in Recv/Sent profiling.
+
+======================================================================
+12. ROCKET / NUKE
+======================================================================
+
+Preserve previously completed lifecycle fixes if already applied:
+- centralized idempotent session finalizer
+- freeze/unfreeze correctness
+- stale delayed cleanup protection
+- tycoon ownership generation/lifecycle token
+Do not regress these.
+
+Additional findings:
+
+12.1 Mash math
+Mash begins around 20 seconds in a 50-second flight, giving ~30 seconds.
+Score clamps to 0..100.
+Moderate activity can saturate both players, and defender wins ties.
+Current mechanic may fail to distinguish stronger input.
+
+Do not tune gameplay numbers during structural refactor unless explicitly asked.
+But separate scoring model from transport and make it testable.
+
+12.2 Click batching
+Client batching ~0.18 s is a good networking pattern.
+Keep batched intent.
+Server owns score.
+
+12.3 Anti-autoclick
+Do not permanently punish based on network-arrival CPS heuristics alone.
+Jitter/batching affects timing.
+Prefer server contribution caps / semantic rate policy.
+Rate anomalies can feed telemetry.
+
+12.4 Spectator UI
+Score packets are global and UI infers mash activity from score/action, so spectators can see giant mash controls even though server ignores them.
+Packet/session state needs participant role and explicit mash-open state.
+
+12.5 Phase inference
+Terminal Phase can overwrite action before mash actually ends.
+Store explicit MashOpen/Phase state.
+
+12.6 Concurrency
+Server supports sessions map but client NukeStore is essentially a single cinematic state.
+Either:
+- enforce globally one nuclear event
+or
+- implement true multi-session client model with explicit priority
+Do not accidentally support server concurrency with single global camera/lighting state.
+
+12.7 Freeze ownership
+Do not use a naive Humanoid -> bool map if concurrent locks are possible.
+Prefer locomotion authority + token/ref-count lock semantics.
+
+12.8 Cooldown
+Cooldown currently begins when prompt opens, before valid target commit.
+Start long cooldown only on committed launch; use a short pending-target timeout separately.
+
+12.9 Pending launch authority
+Do not rely on a synchronous RocketActivated boolean as the only authorization.
+Use explicit pending launch/session record.
+
+12.10 NukeTarget sender
+No first-party source-controlled `NukeTarget.send(...)` was found in the earlier audit.
+Verify whether UI is embedded in place/ServerStorage assets.
+Move important executable scripts into source control.
+
+12.11 RocketFlightSystem
+Appears dead/incomplete:
+expects Rocket.isLaunched / Rocket:UpdateSpeed(dt), with no matching creation/implementation found.
+Delete unless intentionally completing migration.
+Do not force cinematic rocket visuals into ECS.
+
+12.12 Client-rendered rocket
+Server should own outcome/session timing.
+Client can render deterministic visual rocket path from source/target/start timestamp.
+
+12.13 Presentation mismatch
+`deathRange` appears presentation-only while actual consequence is economy/reset.
+Rename/align semantics.
+Deflected path visual should match outcome.
+
+12.14 Global impact effects
+Do not flash/shake every player equally regardless of distance.
+Scale presentation by relevance/distance.
+
+12.15 NukePackets
+Current giant optional struct should become typed packets by responsibility:
+- reliable lifecycle/session start
+- reliable result/end
+- click batch intent
+- possibly unreliable score/presentation update
+
+12.16 Startup readiness
+Nuke cinematic/store can fail permanently if packet namespace is not ready at startup.
+Use one central packet readiness/bootstrap path.
+
+12.17 Store merging
+Do not merge omitted fields into one global current session without session ID validation.
+
+======================================================================
+13. UI REFACTOR
+======================================================================
+
+Current UI has three overlapping eras:
+- React UI
+- legacy MainInterface
+- NewSettings / old settings islands
+
+Target domain-first structure similar to:
+
+UI/
+  Bootstrap.client.luau
+  App.luau
+  App/
+    AppShell.luau
+    ModalHost.luau
+    UiNavigation.luau
+    Layers.luau
+  Design/
+    Theme.luau
+    Format.luau
+    Components/
+    Hooks/
+  State/
+    StoreProvider.luau
+    StatsStore.luau
+    ProfileStore.luau
+    Hooks/
+  Features/
+    Combat/
+    Inventory/
+    Shop/
+    Codes/
+    Profile/
+    Progression/
+    Rebirth/
+    Dialogue/
+    Notifications/
+    KOTH/
+    Nuke/
+  Legacy/
+    LegacyCurrencyBridge.luau
+    SettingsBridge.luau
+
+Do not recreate this exact folder tree mechanically if source relationships suggest a simpler equivalent.
+
+13.1 MenuRouter
+Currently a god component handling:
+- modal/menu state
+- tabs
+- codes
+- profile
+- quests
+- daily
+- rebirth
+- settings
+- blur
+- touch sprint
+- thumbnails
+- level-up
+- game events
+- marketplace prompts
+- chat
+- profile/tycoon actions
+- keyboard
+- legacy currency bridge
+
+Split by real feature responsibilities.
+App shell owns navigation/layers, not commerce/profile behavior.
+
+13.2 Feature taxonomy
+Do not place features under folders merely based on where they render.
+KOTH and WeaponCrosshair are not inherently “HUD domain”.
+Prefer domain-first.
+
+13.3 Legacy Currency
+Move imperative PlayerGui/RenderStepped bridge under Legacy and retire it once React path is authoritative.
+
+13.4 Settings
+SettingsPanel currently stubbed/nil while route exists.
+Remove fake route or implement a deliberate bridge.
+Do not keep old Settings + NewSettings + React route ambiguity.
+
+13.5 InterfaceKit
+Too broad.
+Corner/TitleLine return nil despite use.
+Either implement required primitives or remove.
+Do not make InterfaceKit a dumping ground for sound/tween/format/hook behavior.
+
+13.6 Animation hooks
+Multiple animation systems exist:
+- useSpringBinding
+- useBouncyBinding
+- useAnimatedNumber
+- InterfaceKit tween/spring helpers
+- manual animation loops
+
+Choose one small intentional animation approach.
+Do not create one RenderStepped connection per trivial hook if a shared scheduler/React-native approach is cleaner.
+
+13.7 GameStore
+Currently overloaded:
+- singleton
+- lifecycle
+- aggregate snapshot
+- compatibility facade
+- packets/actions
+
+Separate concerns.
+Avoid every sub-store mutation invalidating one whole global snapshot.
+
+13.8 StoreProvider
+Current context/provider is not meaningfully consumed while hooks read singleton directly.
+Choose one:
+- real provider/context
+or
+- explicit singleton store architecture
+Do not pretend both are active.
+
+13.9 Stats duplication
+StatsStore duplicates Level/Experience from Profile.
+Choose one owner.
+
+13.10 Nuke/KOTH store
+NukeStore should not own KOTH.
+Split.
+
+13.11 NotificationStore
+Store should own state, not long-running visual side effects/waits.
+Move presentation timing/effects to component/controller/lifecycle layer.
+
+13.12 InventoryView
+Large file with many responsibilities.
+Split only into meaningful domain components; do not atomize into useless micro-files.
+
+13.13 Quests/Daily/Rebirth
+Align folders/components with domain routes.
+Do not export unrelated views from one generic file.
+
+13.14 Layers
+App currently mounts sibling features with independent ZIndex behavior.
+Create semantic layers:
+- HUD
+- Interaction
+- Modal
+- Notification
+- Cinematic
+
+13.15 Inventory double-system
+CUSTOM_INVENTORY_ENABLED=false appears to affect CoreGui toggling, while React InventoryView may still mount.
+Ensure exactly one inventory presentation/control path.
+
+13.16 Debug
+React debug flag should be disabled in production.
+
+======================================================================
+14. INVENTORY
+======================================================================
+
+14.1 `_toolSlotByName` retention bug
+Inventory client assigns slots by InventoryId/name and never releases mappings when tools disappear.
+Over a long session, removed unique tools can reserve all eight slots.
+
+Rebuild/reconcile the mapping from currently live inventory state or explicitly release slots.
+
+14.2 gameProcessed ordering
+Current input handles toggle/slot/equip before honoring gameProcessed.
+Typing/focused UI can trigger inventory controls.
+
+Apply input policy intentionally.
+
+14.3 Inventory server
+InventoryAction RemoveTool validates:
+- Tool type
+- ownership in Backpack/Character
+Good baseline.
+Add NetworkGuard policy and typed action schema rather than arbitrary future actions.
+
+14.4 Client classification
+Inventory client infers weapon stats through broad config field scanning and fallbacks.
+Prefer explicit shared presentation metadata/weapon schema after ACS config cleanup.
+Avoid maintaining heuristics forever.
+
+======================================================================
+15. PROXIMITY / ONBOARDING
+======================================================================
+
+15.1 Custom prompt lifecycle
+Current PromptRegistry and Prompt1/Prompt2/SurfacePrompt create:
+- GUI clone
+- TextButton
+- Tween connections
+- optional Beam/Highlight
+per show.
+
+Make show idempotent.
+One prompt -> one owned resource scope.
+A second show must cleanup/replace prior state.
+
+15.2 PromptEffect duplicate resources
+CreateBeam can create duplicate named Attachments/Beam if show occurs twice before hide.
+DestroyBeam finds only one by name.
+Use explicit per-prompt owned references/Janitor.
+
+15.3 Onboarding listener leak
+Onboarding.client destroys its own Script when tutorial completes but does not disconnect:
+- ByteNet Tutorial listener
+- RuntimeSettings observer
+- CharacterAdded connection
+
+Destroying the Script does not automatically remove ByteNet callback storage.
+Own all resources and disconnect before completion/destruction.
+
+15.4 Onboarding beam cost
+Beam.Segments = 500 and multiple unclaimed-tycoon beams may exist.
+Reduce to the minimum visually justified value after profiling.
+Do not assume 500 is free.
+
+15.5 Server onboarding
+Lifecycle delayed tasks/connections must validate owner/session generation so old onboarding work cannot act on a new owner.
+
+======================================================================
+16. ENVIRONMENT / RAIN
+======================================================================
+
+Keep:
+- EnvironmentShared weather model
+- EnvironmentService scheduling
+- weather ByteNet
+- lighting
+- wind concepts
+- NatureAudio concept
+
+Replace the old rain occlusion algorithm.
+
+Known RainModule problems:
+- Main camera cover ray is slanted opposite rain direction rather than a stable shelter query.
+- `inside` initializes true and is never set false.
+- Random ±100 stud splash samples cast from high above camera.
+- If a roof is hit, an emitter is deliberately positioned about 50 studs above the roof.
+- Occluded rain speed ~70–100 and lifetime ~0.8 sec => travel ~56–80 studs.
+- Therefore particles can cross a roof and visibly continue into sheltered space.
+- Straight rain visual length further worsens clipping.
+- If no hit while “inside”, fallback can emit at random heights around/above camera inside the building.
+- Larger roofs increase the number of random roof-hit columns, which can create more penetrating above-roof emitters.
+- High roofs/upstairs worsen the slanted cover-ray miss due to horizontal drift.
+- SetCeiling exists but no callers were found.
+- SetCollisionMode exists but no callers were found.
+- old FindPartOnRay APIs remain.
+- particle emitters do not collide with geometry.
+
+Do not “fix” this by tuning 50, ±100, or lifetime alone.
+
+Target precipitation renderer:
+- small camera-local rain grid/tiles, e.g. ~3x3 initially
+- per-cell raycast along actual rain path
+- obstruction distance determines visible rain segment
+- particle lifetime/position must never allow rendered particles to cross from exposed side through a blocking roof into sheltered side
+- include safety margin for particle visual length/spread
+- valid outside/window cells can still rain while roof-covered cells are clipped
+- use hit surface for splash, not “hit roof then emit above roof”
+- reusable RaycastParams
+- intentional collision/tag policy
+- audit CanQuery on permanent shelter geometry
+- update occlusion at a modest rate such as ~10–20 Hz or based on meaningful camera/weather changes, then interpolate/fade presentation
+- profile final frequency
+- support CurrentCamera replacement
+- remove obsolete ceiling/collision APIs if no longer meaningful
+
+Testing:
+- open sky
+- low roof
+- high roof
+- huge roof
+- roof edge
+- upstairs floor/ceiling
+- awning
+- window/open doorway
+- sloped roof
+- moving in/out of shelter
+- oblique wind rain
+- transparent/decorative geometry
+- CanQuery=false cases
+- respawn/camera replacement
+- different FPS
+
+Add a debug visualization mode for sample cells/rays/hit state/exposure.
+
+======================================================================
+17. ENVIRONMENT EXPOSURE / NATURE AUDIO
+======================================================================
+
+Current NatureAudio:
+- samples roof vertically at 9 offsets
+- samples surrounding wall openness
+- computes roofCover/wallOpen/exposure
+- adjusts rain/wind sound
+
+Rain and NatureAudio currently disagree about what “inside” means.
+
+Create a shared, focused EnvironmentExposure / shelter-query resource where worthwhile:
+- roof exposure
+- indoor/outdoor classification
+- optional zone identity
+- reusable raycast policy
+
+Do not make a giant EnvironmentManager.
+Rain visual columns still require detailed per-column rain-path casts.
+Shared exposure exists to keep systems conceptually consistent, not to force identical rendering logic.
+
+======================================================================
+18. AUDIO OCCLUSION / ACOUSTICS DIRECTION
+======================================================================
+
+A future acoustics system is appropriate for this game.
+
+Use the concepts from the reviewed Starboard/Medium article, but do not copy its implementation blindly.
+
+Useful concepts:
+- source-based room tone
+- authored/precomputed acoustic zones
+- portals for doors/windows/openings
+- direct + indirect propagation paths
+- path distance
+- bend count/angle
+- sound-category-specific diffraction sensitivity
+- bass retention rather than one universal muffling filter
+- reposition indirect sound toward the final visible propagation node/opening
+- blend multiple candidate paths to avoid stereo jumps
+- precompute static topology; keep runtime simple
+
+Roblox now has modern AudioEmitter/AudioListener acoustic simulation.
+Before building a full custom system, A/B test:
+A. Roblox acoustic simulation
+B. small custom zone/portal + direct-ray + EQ prototype
+
+Compare:
+- quality
+- predictability
+- CPU
+- tycoon construction interaction
+- authoring cost
+
+For custom architecture, keep it domain-focused:
+Audio/
+  Acoustics/
+    AcousticGraph
+    AcousticZone
+    PortalState
+    PropagationResolver
+    RoomToneResolver
+  Config/
+    SoundProfiles
+    RoomProfiles
+  Environment/
+    NatureAudio
+
+Do not author a unique profile for every SoundId.
+Use semantic categories with optional overrides:
+- Ambient
+- Mechanical
+- Footstep
+- Voice
+- Impact
+- Alarm
+- Weather
+
+Tycoon topology is relatively suitable because build states are mostly predetermined.
+Model possible acoustic zones/portals and toggle them from domain events rather than rediscovering all geometry continuously.
+
+RbxObservers could register authored tags such as:
+- AcousticZone
+- AcousticPortal
+- AcousticNode
+
+Do not add a million baked paths before profiling/quality validation.
+Start with room/portal graph.
+
+======================================================================
+19. AI / NPC
+======================================================================
+
+Current NPC architecture is not catastrophic but has scaling concerns.
+
+Current patterns:
+- 10 Hz-ish AI update
+- per-NPC player scans
+- NPC separation/world scans
+- controller/StateMachine objects stored in ECS components
+
+At small NPC counts this may be fine.
+At larger counts, complexity trends toward NPC x players and NPC x NPC.
+
+Before adding octrees/spatial indices, profile target NPC counts.
+
+If scaling is needed:
+- cache player character positions
+- use spatial partition/query structure
+- reduce repeated full-folder scans
+- keep behavior/state machine ownership clear
+
+Do not use dead GOAP system unless intentionally reviving it with a real consumer.
+Otherwise delete GOAP.
+
+NPCSpeech currently broadcasts to all; consider relevance-based delivery if traffic/scale warrants it.
+
+======================================================================
+20. SETTINGS / ADMIN / BOOTSTRAP
+======================================================================
+
+20.1 Settings transport
+Live NewSettings path still uses legacy RemoteFunctions:
+- GetSettingsData
+- ExportSettingsFunction
+- ImportSettingsFunction
+
+This is outside the canonical ByteNet architecture.
+
+Migrate deliberately or isolate it as a compatibility boundary.
+Apply first-party request rate policy.
+Repeated export currently creates delayed save tasks; stale versions no-op, but task accumulation is unnecessary.
+Use a cleaner debounce/save scheduler.
+
+Do not rely on client PlayerRemoving as the only save guarantee.
+Server lifecycle remains authoritative.
+
+20.2 Old Settings
+Old ServerStorage SettingsHandler should be deleted if truly not loaded.
+
+20.3 Admin
+AdminDispatcher authorizes by username:
+`Admins["Sacredbow1"] = true`
+Use immutable UserId-based authorization.
+
+The admin path also uses legacy ClientReplicator; verify whether this UI is still needed and migrate/remove intentionally.
+
+20.4 Loader packet readiness
+There are multiple components independently polling ByteNet namespace readiness and pcall-requiring Packets.
+Create one packet/bootstrap readiness mechanism rather than many islands.
+
+======================================================================
+21. PERFORMANCE — RECV / SENT / MEMORY ARE FIRST-CLASS BUDGETS
+======================================================================
+
+Do not treat performance as only loop optimization.
+
+Measure separately:
+- Client Recv
+- Client Sent
+- Client Memory
+- Server memory
+- server frame/heartbeat CPU
+- LuaHeap
+- Instance count
+- Signals/connections
+- graphics/particle pressure
+
+Use:
+- Performance Stats
+- MicroProfiler
+- network capture/X-Ray
+- Developer Console
+- Luau Heap
+- Scene Analysis
+
+Code audit identifies likely pressure but cannot produce real KB/s or MB without a live place.
+
+Profile scenarios:
+- fresh join
+- idle outdoor
+- idle inside completed tycoon
+- many active droppers
+- construction animation
+- rain/storm
+- multiple combat players
+- laser usage
+- nuke
+- lightning
+- inventory/shop/settings usage
+- 10–15 minute normal session
+- 30–60 minute soak test
+
+Compare heap snapshots at equivalent gameplay state over time.
+
+Memory leak:
+resources never become collectible / baseline rises.
+
+Allocation churn:
+resources are eventually collectible but created/destroyed fast enough to drive GC/CPU.
+
+Fix both, but diagnose correctly.
+
+======================================================================
+22. NETWORK PERFORMANCE SPECIFIC FINDINGS
+======================================================================
+
+22.1 ACS laser
+Render path can send roughly half-rate render updates while laser active, historically around ~30 updates/s at 60 FPS.
+Server rebroadcasts to all clients.
+Migrate to:
+- compact typed packet
+- lower deliberate rate
+- unreliable latest-state-wins
+- relevance where appropriate
+- stable config not retransmitted
+
+22.2 ServerBullet / HitEffect
+Do not broadcast entire weaponData/modifier tables.
+Send compact changing state.
+
+22.3 Server-created visual replication
+Recv/Sent includes more than explicit remotes.
+Server-created/tweened Instances replicate creation/properties/destruction.
+
+High-value migrations:
+- dropper visuals -> client
+- lightning visual tree -> client
+- nuke/rocket visual motion -> client
+
+Server sends:
+- authoritative event/outcome
+- position
+- seed
+- timestamp
+as appropriate.
+
+22.4 Lightning
+Server currently constructs many Parts/lights/emitters and mutates them.
+Prefer small LightningStrike packet + deterministic/local client effect.
+
+22.5 Preload
+ReplicatedFirst preload scans broadly and preloads discovered ImageButtons individually.
+Replace blanket preload with curated critical assets.
+Batch sensibly.
+Do not force all assets into memory “just in case”.
+
+Also stop persistent cosmetic preload loops when loading is complete.
+
+22.6 ReplicatedStorage
+Large models/textures/sounds under ReplicatedStorage contribute to every client footprint and are not Workspace-streamed.
+Git cannot measure place-only asset footprint.
+Inspect live place with Scene Analysis/memory tools.
+
+22.7 Workspace streaming
+Repo does not define StreamingEnabled/radii.
+Do not assume disabled; place file may own settings.
+Inspect actual Studio properties.
+If enabled/considered, ensure code tolerates Instances streaming in/out.
+
+22.8 CashCollectEffect
+Networking is compact, but client creates up to dozens of Parts/Attachments/Trails per effect.
+Profile.
+If significant:
+- ParticleEmitter
+- smaller count
+- object pool
+Do not optimize purely by assumption.
+
+22.9 BuildAssemble
+Client-side procedural build effect is directionally correct but can create hundreds of pieces/tweens.
+Consider quality budgets and overlap control after profiling.
+
+22.10 UI animation
+Avoid N independent RenderStepped connections for N springs if scale becomes meaningful.
+Use a shared scheduler only if it actually simplifies/lowers work.
+Do not invent a giant animation framework prematurely.
+
+22.11 ECS context table
+Do not prioritize eliminating the per-frame small Context allocation before fixing large Instance/network/render churn.
+
+======================================================================
+23. MEMORY / RETENTION RULES
+======================================================================
+
+Audit all long-lived tables keyed by:
+- Player
+- Instance
+- Button
+- Humanoid
+- Model
+
+Every strong-key collection needs:
+- explicit removal path
+- lifecycle ownership
+or
+- intentional weak-key semantics when safe
+
+Known concrete cases:
+- BuildService.LastRequests[player]
+- PurchaseDebounceByButton[Button]
+- ButtonEntities[Button]
+- BuildAssemble.FinalStateByPart[Part]
+- prompt active maps
+- per-player ACS state maps
+- session maps
+- runtime observer lists
+
+Do not assume Instance:Destroy() frees memory if Lua tables still reference the Instance.
+
+Do not assume Script destruction disconnects:
+- ByteNet listener callback
+- custom observer
+- module-level connection
+unless the resource is explicitly tied to Instance destruction.
+
+======================================================================
+24. PCALL / XPCALL POLICY
+======================================================================
+
+Do not remove pcall globally.
+
+Good uses:
+- DataStore calls
+- HTTP
+- Players:BanAsync / UnbanAsync
+- Path:ComputeAsync
+- Roblox async/user-thumbnail/friend APIs
+- authored animation/module loading that can genuinely fail
+- optional module boundaries
+- top-level system isolation where failure is reported
+
+Bad/questionable uses:
+- wrapping ordinary internal functions solely so programming errors disappear
+- bare pcall with ignored error on critical operations
+- swallowing save/cache failures
+
+Known examples to improve:
+- CastController wraps HitMod.HitEffect in bare pcall and discards errors
+- CrosshairController pcall around ordinary RuntimeSettings getter is likely unnecessary
+- CommerceService cache refresh pcall lacks useful handling
+- Settings save pcall can silently fail
+- Preload Destroy pcall hides unexpected lifecycle errors
+
+If intentional isolation is needed, prefer:
+```luau
+local Success, Error = xpcall(function()
+	...
+end, debug.traceback)
+
+if not Success then
+	warn(`Operation failed:\n{Error}`)
+end
+```
+
+Never let critical errors vanish silently.
+
+======================================================================
+25. MODERN LUAU / CODE QUALITY DO RULES
+======================================================================
+
+- Use modern Luau generalized iteration by default:
+```luau
+for Key, Value in Table do
+	...
+end
+```
+
+- Keep `ipairs` only when its stop-at-first-nil sequence semantics are intentional.
+- Use numeric loops when the index matters.
+- Prefer `GuiButton.Activated` for normal cross-platform GUI activation.
+- Use mouse-specific events only for actual hover/drag/pointer semantics.
+- Use ContextActionService for mapped gameplay actions.
+- Use UserInputService for raw/held/pointer input.
+- Handle held-state releases even when gameProcessed is true if cleanup semantics require it.
+- Prefer guard clauses over deep nesting.
+- Keep functions at one conceptual level.
+- Use --!strict for maintained first-party runtime code.
+- Do not add strict to dead files just to satisfy style; delete them.
+- Treat `any` as a boundary smell.
+- Runtime-check Roblox Instance types to narrow types.
+- Use explicit domain types.
+- Prefer typed tagged unions/enums over arbitrary strings where practical.
+- Cache stable references instead of repeated hierarchy searches in hot loops.
+- Make startup/setup/equip transitions transactional.
+- Make teardown idempotent.
+- Use generation/session IDs for delayed work.
+- Use current APIs:
+  - Workspace:Raycast
+  - Model:PivotTo
+  - modern constraints when behavior is equivalent
+- Write comments explaining why/invariants, not narrating syntax.
+- Remove/gate debug logs.
+- Preserve gameplay behavior during architecture changes unless fixing a known bug.
+- Separate behavior changes from broad formatting when possible.
+
+======================================================================
+26. CODE QUALITY DON'T RULES
+======================================================================
+
+Do not:
+- manufacture one-function utility modules
+- wrap existing APIs with no added policy/lifecycle
+- convert every module to ECS
+- store behavior-heavy objects inside ECS components
+- mechanically replace every pairs/ipairs
+- convert readable loops to numeric loops for imagined speed
+- localize every Roblox global for micro-optimization
+- create Tweens every frame
+- call GetDescendants every frame for stable references
+- run cosmetic server animations that clients can render locally
+- send whole config tables over high-frequency network paths
+- duplicate one state across leaderstats + ByteNet + Replica without deliberate purpose
+- default to sendToAll
+- trust client configs/damage values when server can derive them
+- use client-obtainable auth tokens as authority
+- ban on one timing/rate anomaly
+- treat rate limiting as semantic validation
+- fork Wally package code for project-specific policy
+- keep compatibility layers forever
+- keep old/new implementations active after migration
+- let delayed callbacks act on “whatever current Character/Tycoon exists”
+- let multiple systems independently write WalkSpeed/camera/etc.
+- mutate immutable config to store runtime state
+- silently swallow internal errors
+- create persistent tasks without cancellation/ownership
+- retain destroyed Instances as table keys
+- keep Player-keyed maps without PlayerRemoving cleanup
+- rely on Script destruction for ByteNet/custom-observer cleanup
+- infer explicit game phases from presentation values
+- use one global state object for unrelated concurrent sessions
+- split cohesive files solely due to line count
+- combine unrelated domains merely because they render in the same layer
+- preload all assets indiscriminately
+- leave production debug flags on
+- change balancing/mechanics during structural work unless a known bug requires it
+
+======================================================================
+27. EXAMPLE — TRANSACTIONAL EQUIP
+======================================================================
+
+Bad:
+```luau
+Runtime.IsEquipped = true
+Runtime.Tool = Tool
+
+local Config = require(...)
+if not Config then
+	return
+end
+
+local Rig = CreateRig(...)
+if not Rig then
+	return
+end
+```
+
+Preferred:
+```luau
+local function TryBuildEquipState(Tool: Tool): EquipState?
+	local Config = ResolveWeaponConfig(Tool)
+	if not Config then
+		return nil
+	end
+
+	local Rig = CreateWeaponRig(Tool, Config)
+	if not Rig then
+		return nil
+	end
+
+	return {
+		Tool = Tool,
+		Config = Config,
+		Rig = Rig,
+	}
+end
+
+local NextState = TryBuildEquipState(Tool)
+if not NextState then
+	return false
+end
+
+CleanupCurrentEquip()
+CommitEquipState(NextState)
+
+return true
+```
+
+======================================================================
+28. EXAMPLE — LIFECYCLE-SAFE DELAY
+======================================================================
+
+Bad:
+```luau
+task.delay(0.5, function()
+	if Runtime.IsEquipped then
+		ApplySomething()
+	end
+end)
+```
+
+Preferred:
+```luau
+local Generation = Runtime.Generation
+
+task.delay(0.5, function()
+	if Runtime.Generation ~= Generation then
+		return
+	end
+
+	ApplySomething()
+end)
+```
+
+For character-specific work, capture/validate the exact Character/Humanoid as well.
+
+======================================================================
+29. EXAMPLE — NETWORK HANDLER
+======================================================================
+
+Avoid:
+```luau
+Packet.listen(function(Data, Player)
+	if Data then
+		DoEverything(Player, Data)
+	end
+end)
+```
+
+Prefer:
+```luau
+NetworkGuard.Listen(
+	Packets.packets.InventoryAction,
+	RatePolicies.InventoryAction,
+	function(Data, Player)
+		if not ValidateInventoryAction(Data) then
+			return
+		end
+
+		InventoryService.HandleAction(Player, Data)
+	end
+)
+```
+
+NetworkGuard API shown here is conceptual; design the smallest typed API that fits the project.
+
+======================================================================
+30. EXAMPLE — UI ACTIVATION
+======================================================================
+
+Normal button:
+```luau
+Janitor:Add(Button.Activated:Connect(function()
+	SaveSettings()
+end))
+```
+
+Do not use MouseButton1Click just because old code used it.
+
+For hover presentation:
+```luau
+Janitor:Add(Button.MouseEnter:Connect(function()
+	SetHovered(true)
+end))
+
+Janitor:Add(Button.MouseLeave:Connect(function()
+	SetHovered(false)
+end))
+```
+
+Hover must not be required to access functionality.
+
+======================================================================
+31. EXAMPLE — HOT LOOP REFERENCE CACHING
+======================================================================
+
+Avoid per-render:
+```luau
+for _, Descendant in Weapon:GetDescendants() do
+	if Descendant.Name == "SightMark" then
+		...
+	end
+end
+```
+
+Resolve on equip:
+```luau
+local RuntimeReferences = {
+	SightMark = Weapon:FindFirstChild("SightMark", true),
+	LaserPoint = Weapon:FindFirstChild("LaserPoint", true),
+}
+```
+
+Validate exact expected types once, then render from cached references.
+
+======================================================================
+32. EXAMPLE — ECS BOUNDARY VIA OBSERVER
+======================================================================
+
+Roblox world lifecycle:
+```luau
+Observers.observeTag("DamageZone", function(Instance)
+	if not Instance:IsA("BasePart") then
+		return
+	end
+
+	local Entity = ECS.createEntity({
+		DamageZone = {
+			Part = Instance,
+		},
+	})
+
+	return function()
+		ECS.deleteEntity(Entity)
+	end
+end, { workspace })
+```
+
+Then ECS systems process DamageZone data.
+Do not store a DamageZoneController object and call methods from the system.
+
+======================================================================
+33. FINAL REFACTOR ORDER
+======================================================================
+
+Perform work in a risk-reducing order.
+
+Phase 0 — Baseline
+- pin toolchain
+- build/lint/typecheck commands
+- initial tests
+- capture performance baseline
+
+Phase 1 — Delete dead architecture
+- GOAP if unused
+- legacy WeatherModule
+- dead NotificationModule
+- NetworkState.client
+- dead UI hooks/views/stubs
+- unused remotes/systems after verification
+
+Phase 2 — P0 correctness/security
+- commerce reward calling convention
+- durable receipt idempotency
+- PlayerRuntimeState deep nested state
+- exposed secret removal/rotation note
+- anti-cheat dangerous permanent-ban heuristics
+- combat authority
+- stale lifecycle callbacks
+- listener cleanup API correctness
+
+IMPORTANT SECRET NOTE:
+A live-looking Discord webhook secret was found in source during audit.
+Do not reproduce it in output.
+Remove it from tracked source and require external rotation/revocation.
+Removing from current source does not erase Git history.
+
+Phase 3 — Lifecycle/memory correctness
+- ButtonEntities
+- PurchaseDebounceByButton
+- FinalStateByPart
+- BuildService.LastRequests
+- onboarding listeners
+- character generations
+- prompt resources
+- Player-key maps
+
+Phase 4 — Network architecture
+- NetworkGuard
+- ACS ByteNet packet redesign
+- remove AuthToken/AcessId authority model
+- migrate client -> server intents
+- migrate server -> client presentation
+- reliable/unreliable policy
+- relevance
+- delete obsolete ACS remotes
+
+Phase 5 — State ownership
+- WeaponRuntimeState/config split
+- locomotion authority
+- stat transport dedupe
+- UI store ownership
+- tycoon power/armour ownership
+
+Phase 6 — Performance-heavy presentation
+- client dropper visuals
+- client lightning
+- client nuke/rocket visuals
+- ACS render allocations
+- projectile architecture
+- curated preload
+- replicated asset audit
+
+Phase 7 — UI architecture
+- shell/layers
+- domain feature separation
+- store/provider cleanup
+- retire legacy bridges
+- one animation approach
+
+Phase 8 — Environment
+- replace rain occlusion
+- shared EnvironmentExposure
+- clean wind/NatureAudio ownership
+- optional acoustic prototype
+
+Phase 9 — ECS cleanup
+- remove OOP refs/callback components
+- domain-specific simulation components
+- delete unused ECS systems
+- profile update frequencies
+
+Phase 10 — Tests / performance / soak
+- regression suite
+- network profiling
+- heap snapshots
+- low-end graphics tests
+- multiplayer combat load
+- long-session soak
+
+======================================================================
+34. ACCEPTANCE CRITERIA
+======================================================================
+
+The refactor is not complete merely because the game launches.
+
+Require:
+
+Architecture
+- no obvious old/new duplicate architecture without a documented temporary migration reason
+- one owner for major mutable concerns
+- ECS components primarily plain typed data
+- UI not forced into ECS
+
+Lifecycle
+- all dynamic connections/listeners/tasks have explicit ownership
+- teardown is idempotent
+- Player/Instance keyed maps clear correctly
+- delayed callbacks cannot mutate replacement lifecycle objects
+- ByteNet listener cleanup uses the actual returned-function API
+
+Networking
+- canonical typed packet layer
+- first-party semantic rate limiting
+- compact payloads
+- authoritative server config/outcomes
+- high-rate replaceable presentation uses appropriate unreliable packets
+- unnecessary sendToAll reduced
+- no fake client token authority
+
+Performance
+- reduced recurring server cosmetic Instance replication
+- no per-frame Tween creation in ACS render
+- no repeated stable hierarchy scans in hot loops
+- preload is curated
+- Recv/Sent/Memory measured before/after
+- soak memory does not monotonically grow in equivalent gameplay state
+
+UI
+- no accidental duplicate inventory/settings/state systems
+- normal buttons use cross-platform activation
+- meaningful semantic layers
+- dead UI migration files removed
+
+Environment
+- rain cannot visibly travel through blocking roofs in tested shelter cases
+- audio/rain environment classification is conceptually consistent
+- no legacy server rain system accidentally active
+
+Commerce
+- duplicate ProcessReceipt delivery is safe
+- PurchaseGranted only after durable successful handling
+
+Tooling
+- one toolchain source of truth
+- consistent Rojo version
+- formatter/linter/typecheck/test path documented
+- CI exists
+
+======================================================================
+35. FINAL WORKING PRINCIPLE
+======================================================================
+
+The desired result should be “boring” in the best engineering sense:
+
+- obvious ownership
+- obvious data flow
+- obvious cleanup
+- obvious authority
+- explicit types
+- compact network contracts
+- predictable state transitions
+- minimal hidden behavior
+- minimal unnecessary abstraction
+- measurable rather than imagined performance improvements
+
+Do not chase cleverness.
+
+When in doubt:
+inspect the real call graph and lifecycle, preserve behavior, choose one owner, type the boundary, clean it up explicitly, and delete displaced architecture once the migration is complete.
+
+
+--- Packages
+Consider the uses of each package you find in the folder (except Vide due to that being a future task.)
+if you think we are ready we can replcae replica with replecs, ecs version of replica
+I advise to read the docs of all of these packagaes and all of the roblox docs , with devfourm to have 100% fullstack understanding.
+
+All resources should be there if not please ask.
+
+You do not need to ask permisison to use commands to access files etc

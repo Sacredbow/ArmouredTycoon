@@ -4,9 +4,10 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
-local Workspace = game:GetService("Workspace")
+
 
 local EnvironmentShared = require(ReplicatedStorage.Shared.World.EnvironmentShared)
+local EnvironmentExposure = require(script.Parent.EnvironmentExposure)
 
 
 local NatureAudio = {}
@@ -24,29 +25,6 @@ local WIND_VOLUME = {
 	IndoorFloor = 0.48,
 }
 
-local ROOF_SAMPLE_OFFSETS = {
-	Vector3.zero,
-	Vector3.new(5, 0, 0),
-	Vector3.new(-5, 0, 0),
-	Vector3.new(0, 0, 5),
-	Vector3.new(0, 0, -5),
-	Vector3.new(3.5, 0, 3.5),
-	Vector3.new(-3.5, 0, 3.5),
-	Vector3.new(3.5, 0, -3.5),
-	Vector3.new(-3.5, 0, -3.5),
-}
-
-local WALL_DIRECTIONS = {
-	Vector3.new(1, 0.15, 0),
-	Vector3.new(-1, 0.15, 0),
-	Vector3.new(0, 0.15, 1),
-	Vector3.new(0, 0.15, -1),
-	Vector3.new(0.7, 0.15, 0.7).Unit,
-	Vector3.new(-0.7, 0.15, 0.7).Unit,
-	Vector3.new(0.7, 0.15, -0.7).Unit,
-	Vector3.new(-0.7, 0.15, -0.7).Unit,
-}
-
 type SoundSet = {
 	generalWind: Sound,
 	generalWindB: Sound,
@@ -62,6 +40,7 @@ type SoundSet = {
 
 export type NatureAudio = typeof(setmetatable({} :: {
 	_folder: Folder,
+	_exposureResource: any,
 	_sounds: SoundSet,
 	_weather: any,
 	_windEnabled: boolean,
@@ -109,22 +88,7 @@ local function tweenNumber(self: NatureAudio, key: string, instance: Instance, p
 	})
 end
 
-local function getListenerPosition(): Vector3?
-	local camera = Workspace.CurrentCamera
-	if camera then
-		return camera.CFrame.Position
-	end
-
-	local character = Players.LocalPlayer.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if root and root:IsA("BasePart") then
-		return root.Position
-	end
-
-	return nil
-end
-
-function NatureAudio.new(): NatureAudio
+function NatureAudio.new(exposureResource: any?): NatureAudio
 	local folder = Instance.new("Folder")
 	folder.Name = "NatureAudio"
 	folder.Parent = SoundService
@@ -190,6 +154,7 @@ function NatureAudio.new(): NatureAudio
 
 	local self = setmetatable({
 		_folder = folder,
+		_exposureResource = exposureResource or EnvironmentExposure.new(),
 		_sounds = {
 			generalWind = generalWind,
 			generalWindB = generalWindB,
@@ -223,37 +188,8 @@ function NatureAudio.new(): NatureAudio
 end
 
 function NatureAudio:_measureExposure(): (number, number, number)
-	local position = getListenerPosition()
-	if not position then
-		return self._exposure, self._roofCover, self._wallOpen
-	end
-
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	local character = Players.LocalPlayer.Character
-	params.FilterDescendantsInstances = if character then { character } else {}
-	params.IgnoreWater = true
-
-	local roofHits = 0
-	for _, offset in ipairs(ROOF_SAMPLE_OFFSETS) do
-		local result = Workspace:Raycast(position + offset, Vector3.new(0, 180, 0), params)
-		if result then
-			roofHits += 1
-		end
-	end
-
-	local wallOpen = 0
-	for _, direction in ipairs(WALL_DIRECTIONS) do
-		local result = Workspace:Raycast(position, direction * 75, params)
-		if not result then
-			wallOpen += 1
-		end
-	end
-
-	local roofCover = roofHits / #ROOF_SAMPLE_OFFSETS
-	local wallOpenRatio = wallOpen / #WALL_DIRECTIONS
-	local exposure = math.clamp((1 - roofCover) * 0.68 + wallOpenRatio * 0.32, 0, 1)
-	return exposure, roofCover, wallOpenRatio
+	local state = self._exposureResource:Sample()
+	return state.exposure, state.roofCover, state.wallOpen
 end
 
 function NatureAudio:_applyMuffle(exposure: number)

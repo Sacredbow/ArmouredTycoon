@@ -1,26 +1,24 @@
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
-local ECS = require(ReplicatedStorage.ECS)
 local Config = require(script.Config)
 
 local LoggingEvent = require(ServerScriptService.Signals.LogSignal)
 
+local secretLoaded, webhookURL = pcall(function()
+	return HttpService:GetSecret(Config.WebhookSecretName)
+end)
+if not secretLoaded then
+	webhookURL = nil
+end
+
 local requestQueue = {}
 local isProcessing = false
 
-local function schedule(delay: number, callback: () -> (), name: string?)
-	ECS.createEntity({
-		Name = name or "LogServiceScheduledTask",
-		ScheduledTask = {
-			delay = delay,
-			elapsed = 0,
-			callback = callback,
-		},
-	})
+local function schedule(delay: number, callback: () -> (), _name: string?)
+	task.delay(delay, callback)
 end
 
 local function getRetryDelaySeconds(responseHeaders)
@@ -99,6 +97,10 @@ local function ProcessQueue()
 end
 
 local function EnqueueRequest(url, data)
+	if url == nil then
+		return
+	end
+
 	table.insert(requestQueue, { url = url, data = data, retries = 0 })
 	ProcessQueue()
 end
@@ -345,7 +347,7 @@ local function Embed(kickedPlayer, reason, evidence)
 		embeds = { embed },
 	}
 
-	EnqueueRequest(Config.WebhookURL, data)
+	EnqueueRequest(webhookURL, data)
 end
 
 LoggingEvent:Connect(function(kickedPlayer, reason, evidence)

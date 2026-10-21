@@ -6,6 +6,7 @@ local ECS = require(ReplicatedStorage.ECS)
 
 local LeaderboardService = {}
 LeaderboardService.__index = LeaderboardService
+local ActiveService = nil
 
 local BOARD_UPDATE_INTERVAL = 600
 local DATASTORE_WRITE_COOLDOWN = 300
@@ -48,17 +49,6 @@ local BOARD_CONFIGS = {
 	},
 }
 
-local function schedule(delay, callback, name, repeatEvery)
-	ECS.createEntity({
-		Name = name or "LeaderboardScheduledTask",
-		ScheduledTask = {
-			delay = delay,
-			elapsed = 0,
-			repeatEvery = repeatEvery,
-			callback = callback,
-		},
-	})
-end
 
 local function findDescendant(root, path)
 	local current = root
@@ -127,10 +117,13 @@ end
 
 function LeaderboardService.new()
 	local self = setmetatable({}, LeaderboardService)
+	ActiveService = self
 
 	self._boards = {}
-	for _, config in ipairs(BOARD_CONFIGS) do
-		table.insert(self._boards, createBoard(config))
+	for index, config in ipairs(BOARD_CONFIGS) do
+		local board = createBoard(config)
+		board.id = index
+		table.insert(self._boards, board)
 	end
 
 	return self
@@ -238,15 +231,43 @@ function LeaderboardService:Init()
 		self:_bindPlayers(board)
 		board.secondsUntilBoardUpdate = math.min(BOARD_UPDATE_INTERVAL, 30 + (index - 1) * 45)
 
-		schedule(1, function()
-			self:_tickBoardTimer(board)
-			return true
-		end, `Leaderboard:{board.config.id}:BoardTimer`, 1)
+		ECS.createEntity({
+			Name = "Leaderboard:" .. board.config.id .. ":BoardTimer",
+			ScheduledTask = {
+				kind = "LeaderboardBoardTick",
+				boardId = board.id,
+				delay = 1,
+				elapsed = 0,
+				repeatEvery = 1,
+			},
+		})
 
-		schedule(2 + (index - 1) * 4, function()
-			self:_flushNextWrite(board)
-			return true
-		end, `Leaderboard:{board.config.id}:WriteFlush`, 2)
+		ECS.createEntity({
+			Name = "Leaderboard:" .. board.config.id .. ":WriteFlush",
+			ScheduledTask = {
+				kind = "LeaderboardWriteFlush",
+				boardId = board.id,
+				delay = 2 + (index - 1) * 4,
+				elapsed = 0,
+				repeatEvery = 2,
+			},
+		})
+	end
+end
+
+function LeaderboardService.TickBoardActive(boardId)
+	local service = ActiveService
+	local board = service and service._boards[boardId]
+	if board then
+		service:_tickBoardTimer(board)
+	end
+end
+
+function LeaderboardService.FlushWriteActive(boardId)
+	local service = ActiveService
+	local board = service and service._boards[boardId]
+	if board then
+		service:_flushNextWrite(board)
 	end
 end
 

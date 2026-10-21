@@ -6,11 +6,13 @@ local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local RunService = game:GetService('RunService')
 local TweenService = game:GetService('TweenService')
 
-local Packets = require(ReplicatedStorage.Network.Packets)
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+local Packets = PacketBootstrap.Get()
 local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
 
 local EnvironmentShared = require(ReplicatedStorage.Shared.World.EnvironmentShared)
 local NatureAudio = require(script.NatureAudio)
+local EnvironmentExposure = require(script.EnvironmentExposure)
 local Rain = require(script.WindConstructor.RainModule)
 local WindConstructor = require(script.WindConstructor)
 
@@ -18,7 +20,8 @@ local player = Players.LocalPlayer
 
 local activeWeather = EnvironmentShared.getWeather('Clear')
 local windVelocity = Vector3.zero
-local natureAudio = NatureAudio.new()
+local environmentExposure = EnvironmentExposure.new()
+local natureAudio = NatureAudio.new(environmentExposure)
 local rainVolume = -1
 local rainVolumeTimer = 0
 local environmentalAudioEnabled = RuntimeSettings.GetBoolean('Environmental Volume', true)
@@ -38,7 +41,7 @@ local function getRainVolume(weather: EnvironmentShared.WeatherState): number
 		return 0
 	end
 
-	local exposure = natureAudio:GetRainExposure()
+	local exposure = environmentExposure:GetState().rainExposure
 	local outdoor = math.clamp(0.22 + exposure * 0.78, 0, 1)
 	return (0.16 + weather.rainIntensity * 0.34) * outdoor
 end

@@ -113,7 +113,16 @@ export type BuildAssemblePayload = {
 	duration: number?,
 	mode: string?,
 }
+export type DropperVisualPayload = {
+	dropper: Instance,
+	spawnPart: BasePart,
+}
 
+export type LightningStrikePayload = {
+	startPosition: Vector3,
+	endPosition: Vector3,
+	seed: number,
+}
 export type KOTHAnnouncementPayload = {
 	playerName: string,
 	teamColor: Color3,

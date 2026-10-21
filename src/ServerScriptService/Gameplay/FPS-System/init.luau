@@ -14,7 +14,6 @@
 
 --// Services
 
-const HttpService = game:GetService("HttpService")
 const Players = game:GetService("Players")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
 const ServerScriptService = game:GetService("ServerScriptService")
@@ -26,7 +25,8 @@ const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 const DamageRuntimeState = require(ServerScriptService.Services.Combat.DamageRuntimeState)
 
 const State = require(script.Core.State)
-const Security = require(script.Core.Security)
+const ShotAuthority = require(script.Core.ShotAuthority)
+const Weapons = require(script.Core.Weapons)
 
 const Replication = require(script.Handlers.Replication)
 const Equipment = require(script.Handlers.Equipment)
@@ -103,7 +103,12 @@ local function OnPlayerAdded(player: Player)
 		existingConnection:Disconnect()
 	end
 
-	State.CharacterConnections[player] = player.CharacterAdded:Connect(OnCharacterAdded)
+	ShotAuthority.Reset(player)
+	State.CharacterConnections[player] = player.CharacterAdded:Connect(function(character)
+		Weapons.ClearEquippedRig(player)
+		ShotAuthority.Reset(player)
+		OnCharacterAdded(character)
+	end)
 
 	if player.Character then
 		OnCharacterAdded(player.Character)
@@ -111,6 +116,8 @@ local function OnPlayerAdded(player: Player)
 end
 
 local function OnPlayerRemoving(player: Player)
+	Weapons.ClearEquippedRig(player)
+	ShotAuthority.Reset(player)
 	local connection = State.CharacterConnections[player]
 	if connection then
 		connection:Disconnect()
@@ -133,8 +140,6 @@ function Init()
 	end
 	Initialized = true
 
-	State.AuthToken = HttpService:GenerateGUID(true)
-
 	-- Load ACS GameRules.Config (used for team-kill rules, walk speeds, etc.)
 	local Engine = ReplicatedStorage:WaitForChild("ACS_Engine")
 	local Rules = Engine:WaitForChild("GameRules")
@@ -151,7 +156,13 @@ function Init()
 	end
 
 	-- Handler Wiring
-	Security.Init()
+	local acsEvents = Engine:WaitForChild("Events")
+	for _, name in { "AcessId", "RefillMag" } do
+		local obsoleteRemote = acsEvents:FindFirstChild(name)
+		if obsoleteRemote then
+			obsoleteRemote:Destroy()
+		end
+	end
 	Replication.Bind()
 	Equipment.Bind()
 	Combat.Bind()

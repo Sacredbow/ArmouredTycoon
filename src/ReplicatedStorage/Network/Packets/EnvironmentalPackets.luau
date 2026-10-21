@@ -30,5 +30,14 @@ return function(ByteNet: any)
 				impact = ByteNet.boolean,
 			}),
 		}),
+
+		LightningStrike = ByteNet.definePacket({
+			value = ByteNet.struct({
+				startPosition = ByteNet.vec3,
+				endPosition = ByteNet.vec3,
+				seed = ByteNet.int32,
+			}),
+			reliabilityType = "unreliable",
+		}),
 	}
 end

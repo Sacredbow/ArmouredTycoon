@@ -17,12 +17,11 @@ const Players = game:GetService("Players")
 
 --// Constants
 
-const NAMESPACE_NAME = "ArmouredTycoon"
-const NAMESPACE_POLL_INTERVAL = 0.5
 
 --// Modules
 
 const ModuleLoader = require(ReplicatedStorage.Libraries.ModuleLoader)
+const PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
 
 --// Runtime State
 
@@ -31,36 +30,11 @@ const ClientReplicator = ReplicatedStorage.Remotes.Interface:WaitForChild("Clien
 
 --// Internal Utilities
 
-local function WaitForNamespace(): boolean
-	while true do
-		const Storage = ReplicatedStorage:FindFirstChild("BytenetStorage")
-		const NamespaceValue = Storage and Storage:FindFirstChild(NAMESPACE_NAME)
-		if NamespaceValue and NamespaceValue:IsA("StringValue") and NamespaceValue.Value ~= "" then
-			return true
-		end
-
-		task.wait(NAMESPACE_POLL_INTERVAL)
-	end
-
-	return false
-end
-
 local function EnsurePacketsReady()
 	task.defer(function()
-		if not WaitForNamespace() then
-			warn("[Loader] Bytenet namespace never became ready; packets may not decode")
-			return
-		end
-
-		const PacketsOk, PacketsError = pcall(function()
-			require(ReplicatedStorage.Network.Packets)
-		end)
-		if not PacketsOk then
-			warn(`[Loader] Network packets unavailable after startup: {PacketsError}`)
-		end
+		PacketBootstrap.Get()
 	end)
 end
-
 local function ClearLegacyUI()
 	ClientReplicator.OnClientEvent:Connect(function()
 		for _, Instance in Player.PlayerGui:GetChildren() do

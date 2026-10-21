@@ -27,8 +27,11 @@ assert(REMOTES_FOLDER, "ReplicatedStorage.Remotes is required")
 --// State
 
 local SettingsCache: { [Player]: { [string]: any } } = {}
-local SaveVersions: { [Player]: number } = {}
-
+type SaveScheduler = {
+	Version: number,
+	Pending: boolean,
+}
+local SaveSchedulers: { [Player]: SaveScheduler } = {}
 --// Internal Utilities
 
 local function GetSettingDefinitions(): { [string]: { class: string, min: number?, max: number?, choices: { string }? } }
@@ -124,18 +127,50 @@ local function QueueSettingsSave(Player: Player, Supplied: any): boolean
 	local Settings = SanitizeSettings(Player, Supplied)
 	SettingsCache[Player] = Settings
 
-	local Version = (SaveVersions[Player] or 0) + 1
-	SaveVersions[Player] = Version
-	task.delay(3, function()
-		if SaveVersions[Player] ~= Version then
-			return
+	local Scheduler = SaveSchedulers[Player]
+	if not Scheduler then
+		Scheduler = {
+			Version = 0,
+			Pending = false,
+		}
+		SaveSchedulers[Player] = Scheduler
+	end
+
+	Scheduler.Version += 1
+	if Scheduler.Pending then
+		return true
+	end
+
+	Scheduler.Pending = true
+	task.spawn(function()
+		local LastObservedVersion = Scheduler.Version
+
+		while Player.Parent do
+			task.wait(3)
+			if not Player.Parent then
+				break
+			end
+
+			if Scheduler.Version ~= LastObservedVersion then
+				LastObservedVersion = Scheduler.Version
+				continue
+			end
+
+			PersistSettings(Player)
+			if Scheduler.Version == LastObservedVersion then
+				break
+			end
+			LastObservedVersion = Scheduler.Version
 		end
-		PersistSettings(Player)
+
+		Scheduler.Pending = false
+		if SaveSchedulers[Player] == Scheduler then
+			SaveSchedulers[Player] = nil
+		end
 	end)
 
 	return true
 end
-
 local function RequireRemoteFunction(Name: string): RemoteFunction
 	local Remote = REMOTES_FOLDER:FindFirstChild(Name)
 	assert(Remote, `Remotes.{Name} is required`)
@@ -163,7 +198,7 @@ end
 Players.PlayerRemoving:Connect(function(Player: Player)
 	PersistSettings(Player)
 	SettingsCache[Player] = nil
-	SaveVersions[Player] = nil
+	SaveSchedulers[Player] = nil
 end)
 
 game:BindToClose(function()

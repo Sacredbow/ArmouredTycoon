@@ -5,9 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React = require(ReplicatedStorage.Packages.react)
 local ReactRoblox = require(ReplicatedStorage.Packages.ReactRoblox)
 
-local StatPill = require(game.StarterPlayer.StarterPlayerScripts.UI.components.StatPill)
-local NotificationText = require(game.StarterPlayer.StarterPlayerScripts.UI.components.NotificationText)
-local Theme = require(game.StarterPlayer.StarterPlayerScripts.UI.theme.Theme)
+local NotificationText = require(game.StarterPlayer.StarterPlayerScripts.UI.features.Notifications.components.NotificationText)
 
 local e = React.createElement
 local previewStore = {
@@ -24,43 +22,6 @@ local story = {
 			BorderSizePixel = 0,
 			Size = UDim2.fromScale(1, 1),
 		}, {
-			Stats = e("Frame", {
-				BackgroundTransparency = 1,
-				Position = UDim2.fromOffset(28, 28),
-				Size = UDim2.fromOffset(350, 108),
-			}, {
-				Grid = e("UIGridLayout", {
-					CellPadding = UDim2.fromOffset(10, 10),
-					CellSize = UDim2.fromOffset(164, 48),
-					FillDirectionMaxCells = 2,
-					SortOrder = Enum.SortOrder.LayoutOrder,
-				}),
-				Cash = e(StatPill, {
-					label = "Cash",
-					value = 11000000,
-					accent = Theme.Colors.Cash,
-					currency = true,
-					LayoutOrder = 1,
-				}),
-				Emerald = e(StatPill, {
-					label = "Emerald",
-					value = 15,
-					accent = Theme.Colors.Emerald,
-					LayoutOrder = 2,
-				}),
-				Kills = e(StatPill, {
-					label = "Kills",
-					value = 128,
-					accent = Theme.Colors.Kills,
-					LayoutOrder = 3,
-				}),
-				Rebirths = e(StatPill, {
-					label = "Rebirths",
-					value = 4,
-					accent = Theme.Colors.Rebirths,
-					LayoutOrder = 4,
-				}),
-			}),
 			Notifications = e("Frame", {
 				AnchorPoint = Vector2.new(0.5, 1),
 				BackgroundTransparency = 1,

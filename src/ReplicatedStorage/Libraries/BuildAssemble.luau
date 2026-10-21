@@ -10,7 +10,7 @@
 	When invoked on the server:
 	1. Calculates animation duration.
 	2. Hides final parts during construction.
-	3. Replicates to all clients via ByteNet (Packets.packets.BuildAssemble.sendToAll).
+	3. Replicates to nearby clients via ByteNet (Packets.packets.BuildAssemble.sendToList).
 	4. Waits on the server for the duration, then restores final parts and invokes onComplete.
 
 	When invoked on the client (or via packet reception):
@@ -21,6 +21,7 @@
 
 const TweenService = game:GetService("TweenService")
 const CollectionService = game:GetService("CollectionService")
+const Players = game:GetService("Players")
 const RunService = game:GetService("RunService")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -55,7 +56,7 @@ local DEFAULT_CREATION_BATCH_SIZE = 28
 local MIN_AXIS = 0.35
 local SPREAD = 5.5
 
-local FinalStateByPart: { [BasePart]: { Transparency: number, CanCollide: boolean } } = {}
+local FinalStateByPart: { [BasePart]: { Transparency: number, CanCollide: boolean } } = setmetatable({}, { __mode = "k" })
 
 local SLICE_AXES = {
 	Enum.Axis.X,
@@ -76,6 +77,44 @@ local HIDDEN_NAME_PATTERNS = {
 	"zone",
 }
 
+local BUILD_RELEVANCE_RADIUS = 900
+
+local function getItemPosition(item: Instance): Vector3?
+	if item:IsA("Model") then
+		return item:GetPivot().Position
+	elseif item:IsA("BasePart") then
+		return item.Position
+	end
+	return nil
+end
+
+local function sendBuildVisual(packets: any, item: Instance, duration: number, mode: string)
+	local packet = packets and packets.packets and packets.packets.BuildAssemble
+	if not packet then
+		return
+	end
+
+	local origin = getItemPosition(item)
+	if not origin then
+		return
+	end
+
+	local targets = {}
+	for _, player in Players:GetPlayers() do
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if root and root:IsA("BasePart") and (root.Position - origin).Magnitude <= BUILD_RELEVANCE_RADIUS then
+			table.insert(targets, player)
+		end
+	end
+	if #targets > 0 then
+		packet.sendToList({
+			item = item,
+			duration = duration,
+			mode = mode,
+		}, targets)
+	end
+end
 local function isHelperPart(part: BasePart, options: PlayOptions?): boolean
 	local lowerName = string.lower(part.Name)
 
@@ -679,13 +718,7 @@ function BuildAssemble.Play(item: Instance, onComplete: (() -> ())?, options: Pl
 	BuildAssemble.HideFinalParts(item, options)
 
 	local packets = getPackets()
-	if packets and packets.packets and packets.packets.BuildAssemble then
-		packets.packets.BuildAssemble.sendToAll({
-			item = item,
-			duration = duration,
-			mode = "play",
-		})
-	end
+	sendBuildVisual(packets, item, duration, "play")
 
 	task.delay(duration, function()
 		BuildAssemble.RestoreFinalParts(item)
@@ -706,13 +739,7 @@ function BuildAssemble.Deassemble(item: Instance, onComplete: (() -> ())?, optio
 	BuildAssemble.HideFinalParts(item, options)
 
 	local packets = getPackets()
-	if packets and packets.packets and packets.packets.BuildAssemble then
-		packets.packets.BuildAssemble.sendToAll({
-			item = item,
-			duration = duration,
-			mode = "deassemble",
-		})
-	end
+	sendBuildVisual(packets, item, duration, "deassemble")
 
 	task.delay(duration, function()
 		if options and options.destroyAfter then

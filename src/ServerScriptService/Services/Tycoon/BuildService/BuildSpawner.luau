@@ -4,27 +4,26 @@ local BuildCatalog = require(ReplicatedStorage.BuildService.BuildCatalog)
 local GridMath = require(ReplicatedStorage.BuildService.GridMath)
 
 local BuildSpawner = {}
-BuildSpawner.__index = BuildSpawner
 
-function BuildSpawner.new()
-	local self = setmetatable({}, BuildSpawner)
+function BuildSpawner.create()
+	local self = {}
 	self.Models = ReplicatedStorage.BuildService:FindFirstChild("BuildModels")
 	return self
 end
 
-function BuildSpawner:_getContainer(tycoon)
-	local container = tycoon.Model:FindFirstChild("PlacedBuilds")
+function BuildSpawner:_getContainer(model: Model)
+	local container = model:FindFirstChild("PlacedBuilds")
 	if container then
 		return container
 	end
 
 	container = Instance.new("Folder")
 	container.Name = "PlacedBuilds"
-	container.Parent = tycoon.Model
+	container.Parent = model
 	return container
 end
 
-function BuildSpawner:Spawn(tycoon, placement, compound: BasePart, cellSize: number)
+function BuildSpawner:Spawn(model: Model, placement, compound: BasePart, cellSize: number)
 	local tier = BuildCatalog:GetTier(placement.BuildId, placement.Tier)
 	if not tier then
 		return nil
@@ -54,12 +53,12 @@ function BuildSpawner:Spawn(tycoon, placement, compound: BasePart, cellSize: num
 		instance.CFrame = target * CFrame.new(0, instance.Size.Y / 2, 0)
 	end
 
-	instance.Parent = self:_getContainer(tycoon)
+	instance.Parent = self:_getContainer(model)
 	return instance
 end
 
-function BuildSpawner:Destroy(tycoon, guid: string)
-	local container = tycoon.Model:FindFirstChild("PlacedBuilds")
+function BuildSpawner:Destroy(model: Model, guid: string)
+	local container = model:FindFirstChild("PlacedBuilds")
 	local instance = container and container:FindFirstChild(guid)
 	if instance then
 		instance:Destroy()

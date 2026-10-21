@@ -28,16 +28,32 @@ local DefaultState: State = {
 local StatesByPlayer: { [Player]: State } = {}
 
 local PlayerRuntimeState = {}
+local CharacterConnections: { [Player]: RBXScriptConnection } = {}
+
+local function bindCharacter(player: Player)
+	CharacterConnections[player] = player.CharacterAdded:Connect(function()
+		local state = StatesByPlayer[player]
+		if state then
+			state.ArmourEquipped = false
+			state.Surrender = false
+			state.AntiCheatTeleportGraceUntil = 0
+		end
+	end)
+end
 
 local function cloneDefaults(): State
-	return table.clone(DefaultState) :: State
+	local state = table.clone(DefaultState)
+	state.GamepassOwnership = {}
+	return state
 end
 
 function PlayerRuntimeState.Get(player: Player): State
 	local state = StatesByPlayer[player]
 	if not state then
 		state = cloneDefaults()
-		StatesByPlayer[player] = state
+		if player.Parent == Players then
+			StatesByPlayer[player] = state
+		end
 	end
 
 	return state
@@ -109,6 +125,10 @@ function PlayerRuntimeState.SetSurrendering(player: Player, value: boolean)
 	PlayerRuntimeState.Get(player).Surrender = value
 end
 
+function PlayerRuntimeState.GetGamepassOwnership(player: Player, gamepassId: number): boolean?
+	return PlayerRuntimeState.Get(player).GamepassOwnership[gamepassId]
+end
+
 function PlayerRuntimeState.HasGamepassOwned(player: Player, gamepassId: number): boolean
 	return PlayerRuntimeState.Get(player).GamepassOwnership[gamepassId] == true
 end
@@ -117,7 +137,17 @@ function PlayerRuntimeState.SetGamepassOwned(player: Player, gamepassId: number,
 	PlayerRuntimeState.Get(player).GamepassOwnership[gamepassId] = value
 end
 
+for _, player in Players:GetPlayers() do
+	bindCharacter(player)
+end
+
+Players.PlayerAdded:Connect(bindCharacter)
 Players.PlayerRemoving:Connect(function(player)
+	local connection = CharacterConnections[player]
+	if connection then
+		connection:Disconnect()
+		CharacterConnections[player] = nil
+	end
 	PlayerRuntimeState.Clear(player)
 end)
 

@@ -19,6 +19,7 @@ const ServerScriptService = game:GetService("ServerScriptService")
 const ECS = require(ReplicatedStorage.ECS)
 const RarityModule = require(ServerScriptService.Modules.RarityModule)
 const FollowService = require(ServerScriptService.Services.External.FollowService)
+const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 
 --// Constants
 
@@ -41,6 +42,7 @@ const REWARDS = table.freeze({
 
 local RarityBoxService = {}
 RarityBoxService.__index = RarityBoxService
+local ActiveService: any? = nil
 
 local function _rng(range)
 	return math.random(range[1], range[2])
@@ -62,6 +64,7 @@ function RarityBoxService.new(packets)
 	self.BoxFolder.Name = "RarityBoxes"
 	self.BoxFolder.Parent = workspace
 	self.SpawnPoints = workspace:WaitForChild("BoxSpawnPoints")
+	ActiveService = self
 	return self
 end
 
@@ -76,14 +79,11 @@ function RarityBoxService:_GiveReward(player: Player, boxName: string)
 		return
 	end
 
-	local Cash = player.leaderstats.Cash
-	local Emerald = player.leaderstats.Emerald
-
-	if Cash and spec.cash then
-		Cash.Value += _rng(spec.cash)
+	if spec.cash then
+		ProfileManager.AddCash(player, _rng(spec.cash))
 	end
-	if Emerald and spec.emerald then
-		Emerald.Value += _rng(spec.emerald)
+	if spec.emerald then
+		ProfileManager.AddEmerald(player, _rng(spec.emerald))
 	end
 end
 
@@ -120,24 +120,31 @@ function RarityBoxService:_SpawnBox()
 		ScheduledTask = {
 			delay = BOX_LIFETIME,
 			elapsed = 0,
-			callback = function()
-				if BoxClone.Parent then
-					BoxClone:Destroy()
-				end
-			end,
+			kind = "RarityBoxExpire",
+			box = BoxClone,
 		},
 	})
 
+	local claimed = false
 	PrimaryPart.Touched:Connect(function(hit)
+		if claimed then
+			return
+		end
 		local plr = Players:GetPlayerFromCharacter(hit.Parent)
 		if not plr then
 			return
 		end
 
+		claimed = true
 		BoxClone:Destroy()
-
-self:_GiveReward(plr, BoxClone.Name)
+		self:_GiveReward(plr, BoxClone.Name)
 	end)
+end
+
+function RarityBoxService.SpawnActive()
+	if ActiveService then
+		ActiveService:_SpawnBox()
+	end
 end
 
 function RarityBoxService:Init()
@@ -147,9 +154,7 @@ function RarityBoxService:Init()
 			delay = SPAWN_INTERVAL,
 			repeatEvery = SPAWN_INTERVAL,
 			elapsed = 0,
-			callback = function()
-				self:_SpawnBox()
-			end,
+			kind = "RarityBoxSpawn",
 		},
 	})
 end

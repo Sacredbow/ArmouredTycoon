@@ -37,7 +37,6 @@ const PlayersService = game:GetService("Players")
 --// Modules
 
 local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
-local ECS = require(ReplicatedStorage.ECS)
 
 local Engine = ReplicatedStorage:WaitForChild("ACS_Engine")
 local Events = Engine:WaitForChild("Events")
@@ -141,15 +140,8 @@ function Main.start(hostScript)
 		end)
 	end
 
-	local function schedule(delay: number, callback: () -> (), name: string?)
-		ECS.createEntity({
-			Name = name or "ACSClientScheduledTask",
-			ScheduledTask = {
-				delay = delay,
-				elapsed = 0,
-				callback = callback,
-			},
-		})
+	local function schedule(delay: number, callback: () -> (), _name: string?)
+		task.delay(delay, callback)
 	end
 
 	--// Character Parts
@@ -158,7 +150,6 @@ function Main.start(hostScript)
 	local torso = char:WaitForChild("Torso")
 	local rootPart = char:WaitForChild("HumanoidRootPart")
 	local neck = torso:WaitForChild("Neck")
-	local authToken = Events.AcessId:InvokeServer(plr.UserId) :: typeof(PlayersService.LocalPlayer)
 
 
 	--// Springs
@@ -188,11 +179,13 @@ function Main.start(hostScript)
 
 	local crosshairController = CrosshairController.new(plr)
 	local cameraController = CameraController.new(plr, cam, char, humanoid, rootPart, torso, acsClient)
-	local castController = CastController.new(plr, cam, char, effectsFolder, Events, authToken, gameRules, destroyLater)
+	local castController = CastController.new(plr, cam, char, effectsFolder, Events, gameRules, destroyLater)
 	local equipController = EquipController.new(plr, cam, char, humanoid, Events, GunModels, ArmModel, AttModels, AttModules, AttachmentModifiers.createDefault(), crosshairController, cameraController, castController)
 	local inputController = InputController.new(plr, mouse)
 
 	local cleanupCharacter: (() -> ())?
+	local equipGeneration = 0
+	local renderStepName = "ACS_CameraUpdate_" .. tostring(plr.UserId)
 
 	--// Mutable Runtime State (shared by input handlers, combat actions, render loop)
 
@@ -750,6 +743,7 @@ function Main.start(hostScript)
 		if not WeaponToolClassifier.canEquip(toolData, FeatureFlags) then return end
 		if humanoid.Sit and humanoid.SeatPart and humanoid.SeatPart:IsA("VehicleSeat") then return end
 
+		equipGeneration += 1
 		equipController:setup(tool)
 		applyWeaponCameraMode()
 
@@ -768,7 +762,11 @@ function Main.start(hostScript)
 		playWeaponAnimation("EquipAnim")
 		state.animDebounce = true
 
+		local generation = equipGeneration
 		task.delay(0.5, function()
+			if equipGeneration ~= generation then
+				return
+			end
 			if equipController:isEquipped() and state.gunStance ~= 0 and state.gunStance ~= 2 then
 				state.gunStance = 0
 				Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
@@ -782,6 +780,7 @@ function Main.start(hostScript)
 	end
 
 	local function unset()
+	equipGeneration += 1
 		equipController:unequip()
 		inputController:unbindWeaponActions()
 		if FeatureFlags.WeaponUtilitiesEnabled then inputController:unbindBipodToggle() end
@@ -804,7 +803,7 @@ function Main.start(hostScript)
 
 	--// Camera Lean Update
 
-	RunService:BindToRenderStep("Camera Update", 200, function()
+	RunService:BindToRenderStep(renderStepName, 200, function()
 		leanSpring.cornerPeek.t = leanSpring.peekFactor * state.virar
 		local newLeanCF = CFrame.fromAxisAngle(Vector3.new(0, 0, 1), leanSpring.cornerPeek.p)
 		cam.CFrame = cam.CFrame * newLeanCF
@@ -900,7 +899,7 @@ function Main.start(hostScript)
 
 	connect(RunService.RenderStepped:Connect(function(deltaTime)
 		-- Camera head movement
-		cameraController:headMovement(equipController:isEquipped(), state.aiming, equipController:getWeaponData(), acsClient)
+		cameraController:headMovement(equipController:isEquipped(), state.aiming, equipController:getWeaponData(), acsClient, deltaTime)
 
 		-- Viewmodel render pipeline (delegated to RenderController)
 		renderController:step(deltaTime)
@@ -930,7 +929,7 @@ function Main.start(hostScript)
 	cleanupCharacter = function()
 		for _, conn in ipairs(connections) do conn:Disconnect() end
 		table.clear(connections)
-		RunService:UnbindFromRenderStep("Camera Update")
+		RunService:UnbindFromRenderStep(renderStepName)
 		InputBindings.unbindDefaultActions(ContextActionService)
 	end
 

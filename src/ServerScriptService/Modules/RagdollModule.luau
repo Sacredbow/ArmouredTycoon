@@ -98,6 +98,10 @@ end
 
 --// Public API
 
+function RagdollModule.RestoreScheduled(Character: Model, SocketTable: any, MotorTable: any)
+	RestoreCharacter(Character, SocketTable, MotorTable)
+end
+
 function RagdollModule.Ragdoll(Player: Player, Duration: number?)
 	local Character = Player.Character
 	if not Character then
@@ -112,11 +116,10 @@ function RagdollModule.Ragdoll(Player: Player, Duration: number?)
 		ScheduledTask = {
 			delay = Duration,
 			elapsed = 0,
-			callback = function()
-				if Player.Character then
-					RestoreCharacter(Player.Character, Sockets, Motors)
-				end
-			end,
+			kind = "RagdollRestore",
+			character = Character,
+			sockets = Sockets,
+			motors = Motors,
 		},
 	})
 end

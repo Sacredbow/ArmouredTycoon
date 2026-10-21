@@ -1,236 +1,171 @@
 --!strict
 --[[
-	@class TycoonService
-
-	@desc
-	Orchestrates tycoon lifecycle — initializes all Tycoon instances,
-	handles player rebirth, owner registration, and tutorial onboarding
-	for unclaimed tycoon doors.
+	TycoonService is the ECS orchestration boundary. It owns no Tycoon
+	instances: models are spawned into the shared ECS world and all gameplay
+	commands address numeric entity IDs.
 ]]
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 
---// Services
-
-const Players = game:GetService("Players")
-const ReplicatedStorage = game:GetService("ReplicatedStorage")
-const ServerScriptService = game:GetService("ServerScriptService")
-
---// Modules
-
-const DataTemplate = require(ServerScriptService.DataManager.DataTemplate)
-const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
-const TycoonClass = require(ServerScriptService.Classes.Tycoon)
-const RagdollModule = require(ServerScriptService.Modules.RagdollModule)
-const CollisionModule = require(ServerScriptService.Modules.CollisionManager)
-const PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
-const Packets = require(ReplicatedStorage.Network.Packets)
-
---// Types
-
-type ConstructionData = {
-	PurchasedButtons: { string },
-}
-
---// Module
+local DataTemplate = require(ServerScriptService.DataManager.DataTemplate)
+local ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
+local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+local Packets = require(ReplicatedStorage.Network.Packets)
+local ECS = require(ReplicatedStorage.ECS)
+local Factory = require(ServerScriptService.ECS.TycoonFactory)
+local TycoonRuntime = require(ServerScriptService.ECS.TycoonRuntime)
+local NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
 
 local TycoonService = {}
-TycoonService.__index = TycoonService
 
 local function waitForProfile(player: Player): boolean
 	local deadline = os.clock() + 20
 	while player.Parent == Players and not ProfileManager.Profiles[player] and os.clock() < deadline do
 		task.wait(0.25)
 	end
-
 	return ProfileManager.Profiles[player] ~= nil
-end
-
-local function getOwnerDoorPath(tycoon): string
-	return `{tycoon.Model.Name}:MainItems:OwnerDoor:Door`
 end
 
 local function clearSavedConstruction(player: Player)
 	local profile = ProfileManager.Profiles[player]
-	if not profile then
-		return
-	end
-
-	local constructionData = profile.Data.TycoonConstruction
-	if type(constructionData) ~= "table" then
-		profile.Data.TycoonConstruction = {
-			PurchasedButtons = {},
-		}
-		return
-	end
-
-	(constructionData :: ConstructionData).PurchasedButtons = {}
+	if not profile then return end
+	profile.Data.TycoonConstruction = profile.Data.TycoonConstruction or {PurchasedButtons = {}}
+	profile.Data.TycoonConstruction.PurchasedButtons = {}
 end
 
-function TycoonService.new(playerService: any, purchaseService: any): TycoonServiceInstance
-	local self = setmetatable({}, TycoonService) :: TycoonServiceInstance
+function TycoonService.create(playerService: any, purchaseService: any)
+	local self = {}
 	self.PlayerService = playerService
 	self.PurchaseService = purchaseService
-	self.Tycoons = {}
-	self.TycoonsByOwner = {}
+	self.Entities = {}
+	self.PlayerAddedConnection = nil
 	return self
 end
 
-function TycoonService._SendAvailableTycoonDoors(self: TycoonServiceInstance, player: Player)
-	if not waitForProfile(player) then
-		return
-	end
-
-	if ProfileManager.HasCompletedOnboarding(player) then
-		return
-	end
-
-	for _, tycoon in ipairs(self.Tycoons) do
-		if not tycoon.Owner then
-			Packets.packets.Tutorial.sendTo({ ["type"] = "TycoonAvailable", target = getOwnerDoorPath(tycoon) }, player)
+function TycoonService:_sendAvailableTycoonDoors(player: Player)
+	if not waitForProfile(player) or ProfileManager.HasCompletedOnboarding(player) then return end
+	for entity, state in ECS.world:query(ECS.Components.TycoonState) do
+		if state.active ~= false and not state.owner then
+			local model = Factory.getModel(entity)
+			if model then
+				Packets.packets.Tutorial.sendTo({
+					type = "TycoonAvailable",
+					target = string.format("%s:MainItems:OwnerDoor:Door", model.Name),
+				}, player)
+			end
 		end
 	end
 end
 
-function TycoonService._StartOnboardingDoorGuidance(self: TycoonServiceInstance)
-	for _, player in ipairs(Players:GetPlayers()) do
-		task.defer(function()
-			self._SendAvailableTycoonDoors(self, player)
-		end)
+function TycoonService:_startOnboardingDoorGuidance()
+	for _, player in Players:GetPlayers() do
+		task.defer(function() self:_sendAvailableTycoonDoors(player) end)
 	end
-
-	if self.PlayerAddedConnection then
-		self.PlayerAddedConnection:Disconnect()
-	end
-
+	if self.PlayerAddedConnection then self.PlayerAddedConnection:Disconnect() end
 	self.PlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
-		task.defer(function()
-			self._SendAvailableTycoonDoors(self, player)
-		end)
+		task.defer(function() self:_sendAvailableTycoonDoors(player) end)
 	end)
 end
 
-function TycoonService.Init(self: TycoonServiceInstance)
-	self._SetupRemotes(self)
-
+function TycoonService:Init()
+	self:_setupRemotes()
+	Players.PlayerRemoving:Connect(function(player)
+		self:_onPlayerRemoving(player)
+	end)
 	local tycoonsFolder = workspace:FindFirstChild("Tycoons")
 	if not tycoonsFolder then
-		warn("[TycoonService] workspace.Tycoons is required but not found; tycoons will not initialize")
+		warn("[TycoonService] workspace.Tycoons is required but not found")
 		return
 	end
-	print("Initializing tycoons...")
-
-	for _, tycoonModel in ipairs(tycoonsFolder:GetChildren()) do
+	for _, tycoonModel in tycoonsFolder:GetChildren() do
 		if tycoonModel:IsA("Model") then
-			local tycoon =
-				TycoonClass.new(tycoonModel, self.PlayerService, self.PurchaseService, RagdollModule, CollisionModule)
-			tycoon:Init()
-			table.insert(self.Tycoons, tycoon)
-			print("Setup complete:", tycoonModel.Name)
+			local entity = Factory.spawn(tycoonModel)
+			table.insert(self.Entities, entity)
+			TycoonRuntime.init(entity, self.PlayerService, self.PurchaseService, self.PlayerService.BuildService)
 		end
 	end
-
-	print("All tycoons initialized!")
-	self._StartOnboardingDoorGuidance(self)
+	self:_startOnboardingDoorGuidance()
 end
 
-function TycoonService._SetupRemotes(self: TycoonServiceInstance)
-	if #self.Tycoons == 0 then
-		warn("[TycoonService] No tycoon models were available during initialization; other services will continue loading.")
-	end
-
-	Packets.queries.TycoonAction.listen(function(request, player: Player?)
-		if not player then
-			return { success = false, message = "Player unavailable." }
-		end
-
-		if request.action == "Rebirth" then
-			local success, message = self.RequestRebirth(self, player)
-			return { success = success == true, message = tostring(message) }
-		end
-
-		warn(`[TycoonService] {tostring(player)} sent unknown action: {tostring(request.action)}`)
-		return { success = false, message = "Unknown tycoon action." }
+function TycoonService:_setupRemotes()
+	NetworkGuard.Query(Packets.queries.TycoonAction, "TycoonAction", {
+		Rate = 4,
+		Burst = 6,
+		Validate = function(request)
+			return type(request) == "table" and request.action == "Rebirth"
+		end,
+	}, function(request, player: Player?)
+		if not player then return {success = false, message = "Player unavailable."} end
+		local success, message = self:RequestRebirth(player)
+		return {success = success == true, message = tostring(message)}
 	end)
 end
-function TycoonService.RegisterOwner(self: TycoonServiceInstance, player, tycoon)
-	self.TycoonsByOwner[player] = tycoon
+
+function TycoonService:RegisterOwner(player: Player, entity: number)
+	local state = Factory.getState(entity)
+	if state and state.owner ~= player then
+		Factory.setOwner(entity, player)
+	end
 end
 
-function TycoonService.GetTycoonForPlayer(self: TycoonServiceInstance, player)
-	return self.TycoonsByOwner[player]
-end
-
-function TycoonService.GetAllTycoons(self: TycoonServiceInstance)
-	return self.Tycoons
-end
-
-function TycoonService.FindUnclaimedTycoon(self: TycoonServiceInstance) 
-	for _, tycoon in ipairs(self.Tycoons) do
-		if not tycoon.Owner then
-			return tycoon
-		end
+function TycoonService:GetTycoonForPlayer(player: Player): number?
+	for entity, state in ECS.world:query(ECS.Components.TycoonState) do
+		if state.active ~= false and state.owner == player then return entity end
 	end
 	return nil
 end
 
-function TycoonService._OnPlayerRemoving(self: TycoonServiceInstance, player)
-	local tycoon = self.TycoonsByOwner[player]
-	if tycoon then
-		tycoon:Cleanup()
-		self.TycoonsByOwner[player] = nil
+function TycoonService:GetTycoonModel(entity: number): Model?
+	return Factory.getModel(entity)
+end
+
+function TycoonService:GetAllTycoons(): {number}
+	local result = {}
+	for entity, state in ECS.world:query(ECS.Components.TycoonState) do
+		if state.active ~= false then table.insert(result, entity) end
+	end
+	return result
+end
+
+function TycoonService:FindUnclaimedTycoon(): number?
+	for entity, state in ECS.world:query(ECS.Components.TycoonState) do
+		if state.active ~= false and not state.owner then return entity end
+	end
+	return nil
+end
+
+function TycoonService:_onPlayerRemoving(player: Player)
+	local entity = self:GetTycoonForPlayer(player)
+	if entity then
+		clearSavedConstruction(player)
+		TycoonRuntime.cleanup(entity, self.PlayerService, self.PlayerService.BuildService)
 	end
 end
 
-function TycoonService.Rebirth(self: TycoonServiceInstance, player: Player, rebirthAmount: number?)
-	local tycoon = self.TycoonsByOwner[player]
-	local amountToAward = rebirthAmount or 1
-
-	ProfileManager.AddRebirths(player, amountToAward)
+function TycoonService:Rebirth(player: Player, rebirthAmount: number?)
+	local entity = self:GetTycoonForPlayer(player)
+	ProfileManager.AddRebirths(player, rebirthAmount or 1)
 	ProfileManager.SetCash(player, DataTemplate.Cash)
-
-	if not tycoon then
+	if not entity then
 		clearSavedConstruction(player)
-		warn(`[TycoonService] Rebirth applied for {player.Name} without an active tycoon`)
 		return
 	end
-
 	if self.PlayerService.BuildService then
-		self.PlayerService.BuildService:ClearPlayer(player, tycoon)
+		self.PlayerService.BuildService:ClearPlayer(player, entity)
 	end
-
-	tycoon:_ClearSavedConstruction(player)
-	tycoon:Cleanup()
-	self.TycoonsByOwner[player] = nil
+	TycoonRuntime.cleanup(entity, self.PlayerService, self.PlayerService.BuildService)
 end
 
-function TycoonService.RequestRebirth(self: TycoonServiceInstance, player: Player)
-	local tycoon = self.TycoonsByOwner[player]
-	if not tycoon then
-		return false, "Claim a tycoon first."
-	end
-
-	if not tycoon:CheckCompletion(tycoon.Buttons) then
+function TycoonService:RequestRebirth(player: Player)
+	local entity = self:GetTycoonForPlayer(player)
+	if not entity then return false, "Claim a tycoon first." end
+	if not TycoonRuntime.checkCompletion(entity) then
 		PlayerRuntimeState.SetCanRebirth(player, false)
 		return false, "Complete your tycoon before rebirthing."
 	end
-
-	self.Rebirth(self, player)
+	self:Rebirth(player)
 	return true, "Rebirth complete. Your tycoon has been reset."
 end
-
--- ================================================================================
--- TYPE DEFINITION
--- ================================================================================
--- TycoonServiceInstance is the type for a constructed TycoonService object
--- (returned by TycoonService.new). It combines:
---   1. All methods defined on TycoonService (via the metatable)
---   2. Instance properties set in TycoonService.new()
-
-export type TycoonServiceInstance = typeof(setmetatable({}, TycoonService)) & {
-	PlayerService: any,
-	PurchaseService: any,
-	Tycoons: { TycoonClass.TycoonInstance },
-	TycoonsByOwner: { [Player]: TycoonClass.TycoonInstance },
-	PlayerAddedConnection: RBXScriptConnection?,
-}
 
 return TycoonService

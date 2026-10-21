@@ -20,6 +20,7 @@ const Damage = require(script.Parent.Parent.Core.Damage)
 const Weapons = require(script.Parent.Parent.Core.Weapons)
 const Security = require(script.Parent.Parent.Core.Security)
 const PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+const NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
 
 --// Engine Folders
 
@@ -33,38 +34,37 @@ const Events = Engine:WaitForChild("Events") :: any
 -- directly on distant players.
 const MAX_GRENADE_THROW_DISTANCE = 300
 
+const SHIELD_HIT_POLICY = { Rate = 25, Burst = 40 }
+const DAMAGE_POLICY = { Rate = 25, Burst = 40 }
+const GRENADE_POLICY = { Rate = 2, Burst = 4 }
+const SURRENDER_POLICY = { Rate = 8, Burst = 12 }
+const MAX_SURRENDER_DISTANCE = 12
+
 --// Public API
 
 function Bind()
-	Events.ShieldHit.OnServerEvent:Connect(function(player: Player, weaponData, shieldModel: Model)
-	
-		print(`[SERVER-Shield] ShieldHit remote received — player: '{player.Name} shield: {shieldModel.Name}, fullname: {shieldModel:GetFullName()}`)
-		Damage.HandleShieldHit(player, weaponData, shieldModel)
+	Events.ShieldHit.OnServerEvent:Connect(function(player: Player, shieldModel: Model)
+		if NetworkGuard.Allow(player, "ACSShieldHit", SHIELD_HIT_POLICY, shieldModel) then
+			Damage.HandleShieldHit(player, shieldModel)
+		end
 	end)
 
 	Events.Damage.OnServerInvoke = function(
 		player: Player,
 		weapon: Tool?,
 		targetHumanoid: Humanoid?,
-		distance: number,
 		hitType: number,
-		weaponSettings: any,
-		modifiers: any,
-		isSelfDamage: boolean,
-		selfDamageAmount: number,
-		authToken: string
+		modifiers: any
 	)
+		if not NetworkGuard.Allow(player, "ACSDamage", DAMAGE_POLICY, nil) then
+			return
+		end
 		Damage.HandleDamageRequest(
 			player,
 			weapon,
 			targetHumanoid,
-			distance,
 			hitType,
-			weaponSettings,
-			modifiers,
-			isSelfDamage,
-			selfDamageAmount,
-			authToken
+			modifiers
 		)
 	end
 
@@ -74,9 +74,11 @@ function Bind()
 		weaponSettings: any,
 		spawnCFrame: CFrame,
 		impulseDirection: Vector3,
-		impulsePower: number,
-		authToken: string
+		impulsePower: number
 	)
+		if not NetworkGuard.Allow(player, "ACSGrenade", GRENADE_POLICY, nil) then
+			return
+		end
 		local character = player.Character
 		if not character then
 			return
@@ -97,18 +99,13 @@ function Bind()
 			return
 		end
 
-		if not Security.IsAuthorized(player, authToken) then
-			Security.BanPlayer(player, "grenade event with wrong permission code")
-			return
-		end
-
 		if not grenadeTool or not weaponSettings then
-			Security.BanPlayer(player, "grenade event with missing tool or settings")
+			Security.RejectRequest(player, "grenade event with missing tool or settings")
 			return
 		end
 
-		local isValidWeapon = Security.SecureSettings(player, grenadeTool, weaponSettings)
-		if not isValidWeapon or weaponSettings.Type ~= "Grenade" then
+		local serverSettings = Security.SecureSettings(player, grenadeTool, weaponSettings)
+		if not serverSettings or serverSettings.Type ~= "Grenade" then
 			return
 		end
 
@@ -123,7 +120,7 @@ function Bind()
 			end
 		end
 
-		Weapons.SpawnGrenade(player, grenadeTool, weaponSettings, spawnCFrame, impulseDirection, impulsePower)
+		Weapons.SpawnGrenade(player, grenadeTool, serverSettings, spawnCFrame, impulseDirection, impulsePower)
 	end)
 
 	Events.Stance.OnServerEvent:Connect(function(player: Player, stance: number, lean: number)
@@ -139,7 +136,7 @@ function Bind()
 
 		-- Stance/lean feed the ByteNet int32 packet; garbage types would
 		-- corrupt the broadcast to every client.
-		if typeof(stance) ~= "number" or typeof(lean) ~= "number" then
+		if typeof(stance) ~= "number" or typeof(lean) ~= "number" or stance ~= math.floor(stance) or stance < 0 or stance > 2 or lean < -1 or lean > 1 then
 			warn(`[FPS.Combat] {player.Name} sent invalid stance payload`)
 			return
 		end
@@ -168,13 +165,27 @@ function Bind()
 	end)
 
 	Events.Surrender.OnServerEvent:Connect(function(player: Player, victim: Player?)
+		if not NetworkGuard.Allow(player, "ACSSurrender", SURRENDER_POLICY, nil) then
+			return
+		end
 		local character = player.Character
-		if not character then
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if not character or not humanoid or humanoid.Health <= 0 then
 			return
 		end
 
 		if victim then
 			if victim == player or not victim.Character then
+				return
+			end
+
+			local victimHumanoid = victim.Character:FindFirstChildOfClass("Humanoid")
+			local sourceRoot = character:FindFirstChild("HumanoidRootPart")
+			local victimRoot = victim.Character:FindFirstChild("HumanoidRootPart")
+			if not victimHumanoid or victimHumanoid.Health <= 0 or not sourceRoot or not sourceRoot:IsA("BasePart") or not victimRoot or not victimRoot:IsA("BasePart") then
+				return
+			end
+			if (sourceRoot.Position - victimRoot.Position).Magnitude > MAX_SURRENDER_DISTANCE then
 				return
 			end
 

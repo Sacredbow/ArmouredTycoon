@@ -7,9 +7,10 @@ Docs: https://devforum.roblox.com/t/wind-shake-high-performance-wind-effect-for-
 
 --]=]
 
-local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
 local Settings = require(script.Settings)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Observers = require(ReplicatedStorage.Packages.Observers)
 local Octree = require(script.Octree)
 
 local COLLECTION_TAG = "WindShake" -- The CollectionService tag to be watched and mounted automatically
@@ -36,6 +37,7 @@ local ResumedEvent = Instance.new("BindableEvent")
 
 local WindShake = {
 	ObjectMetadata = {};
+    ObserverGeneration = 0;
 	Octree = Octree.new();
 
 	Handled = 0;
@@ -131,7 +133,9 @@ function WindShake:Update()
 
 	local camera = workspace.CurrentCamera
 	local cameraCF = camera and camera.CFrame
-
+	if not cameraCF then
+		return
+	end
 	debug.profilebegin("Octree Search")
 	local updateObjects = self.Octree:RadiusSearch(cameraCF.Position + (cameraCF.LookVector * 115), 120)
 	debug.profileend()
@@ -141,6 +145,7 @@ function WindShake:Update()
 	self.Active = activeCount
 
 	if activeCount < 1 then
+		debug.profileend()
 		return
 	end
 
@@ -235,19 +240,22 @@ function WindShake:Init()
 
 	-- Clear any old stuff.
 	self:Cleanup()
+    self.Initialized = true
 
-	-- Wire up tag listeners.
-	local windShakeAdded = CollectionService:GetInstanceAddedSignal(COLLECTION_TAG)
-	self.AddedConnection = self:Connect("AddObjectShake", windShakeAdded)
+    -- Observe the tag as a lifecycle boundary. Each tagged instance owns
+    -- its own cleanup callback, including instances removed from Workspace.
+    self.ObserverGeneration += 1
+    local ObserverGeneration = self.ObserverGeneration
+    self.ObserverStop = Observers.observeTag(COLLECTION_TAG, function(Instance)
+        self:AddObjectShake(Instance)
+        return function()
+            if self.ObserverGeneration == ObserverGeneration then
+                self:RemoveObjectShake(Instance)
+            end
+        end
+    end, { workspace })
 
-	local windShakeRemoved = CollectionService:GetInstanceRemovedSignal(COLLECTION_TAG)
-	self.RemovedConnection = self:Connect("RemoveObjectShake", windShakeRemoved)
-
-	for _,object in pairs(CollectionService:GetTagged(COLLECTION_TAG)) do
-		self:AddObjectShake(object)
-	end
-
-	-- Automatically start.
+    -- Automatically start.
 	self:Resume()
 end
 
@@ -257,16 +265,12 @@ function WindShake:Cleanup()
 	end
 
 	self:Pause()
+    self.ObserverGeneration += 1
 
-	if self.AddedConnection then
-		self.AddedConnection:Disconnect()
-		self.AddedConnection = nil
-	end
-
-	if self.RemovedConnection then
-		self.RemovedConnection:Disconnect()
-		self.RemovedConnection = nil
-	end
+    if self.ObserverStop then
+        self.ObserverStop()
+        self.ObserverStop = nil
+    end
 
 	table.clear(self.ObjectMetadata)
 	self.Octree:ClearNodes()

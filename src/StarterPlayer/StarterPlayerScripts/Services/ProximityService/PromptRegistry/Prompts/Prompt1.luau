@@ -18,6 +18,15 @@ local function stopAllTweens(data)
 end
 
 function Module:onShown(Prompt, InputType, Player)
+
+	-- Showing the same prompt twice replaces its previous resource scope.
+	local existing = Module.activePrompts[Prompt]
+	if existing then
+		if existing.holdTween then existing.holdTween:Cancel() end
+		if existing.revertTween then existing.revertTween:Cancel() end
+		if existing.clone then existing.clone:Destroy() end
+		Module.activePrompts[Prompt] = nil
+	end
 	local PromptClone = CustomPrompt:Clone()
 	local canvasGroup = PromptClone.CanvasGroup
 	local gui = canvasGroup.Frame

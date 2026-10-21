@@ -1,73 +1,52 @@
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local BuildCatalog = require(ReplicatedStorage.BuildService.BuildCatalog)
-local GridMath = require(ReplicatedStorage.BuildService.GridMath)
+local GridMath = require(game:GetService("ReplicatedStorage").BuildService.GridMath)
 
 local GridState = {}
-GridState.__index = GridState
 
-function GridState.new(compound: BasePart, cellSize: number)
-	local self = setmetatable({}, GridState)
-	self.Compound = compound
-	self.CellSize = cellSize
-	self.Metadata = GridMath.MetadataFromCompound(compound, cellSize)
-	self.Occupied = {}
-	self.Placements = {}
-	return self
+function GridState.create(compound: BasePart, cellSize: number)
+	return {
+		Compound = compound,
+		CellSize = cellSize,
+		Metadata = GridMath.MetadataFromCompound(compound, cellSize),
+		Occupied = {},
+		Placements = {},
+	}
 end
 
-function GridState:_setCells(placement, value)
-	local definition = BuildCatalog:Get(placement.BuildId)
-	if not definition then
-		return
-	end
-
-	for _, cell in GridMath.ResolveCells(placement.GridX, placement.GridY, definition.Footprint.Cells, placement.Rotation) do
-		self.Occupied[GridMath.Key(cell.X, cell.Y)] = value
+local function setCells(state, placement, value)
+	for _, cell in GridMath.OccupiedCells(placement.BuildId, placement.GridX, placement.GridY, placement.Rotation) do
+		state.Occupied[GridMath.Key(cell.X, cell.Y)] = value
 	end
 end
 
-function GridState:CanPlace(buildId: string, gridX: number, gridY: number, rotation: number): (boolean, string?)
-	local definition = BuildCatalog:Get(buildId)
-	if not definition then
-		return false, "Unknown build."
-	end
-
-	for _, cell in GridMath.ResolveCells(gridX, gridY, definition.Footprint.Cells, rotation) do
-		if not GridMath.IsInside(cell.X, cell.Y, self.Metadata.Width, self.Metadata.Height) then
-			return false, "Outside compound."
+function GridState.CanPlace(state, buildId: string, gridX: number, gridY: number, rotation: number): (boolean, string?)
+	for _, cell in GridMath.OccupiedCells(buildId, gridX, gridY, rotation) do
+		if not GridMath.IsInside(cell.X, cell.Y, state.Metadata.Width, state.Metadata.Height) then
+			return false, "Placement is outside the build area."
 		end
-
-		if self.Occupied[GridMath.Key(cell.X, cell.Y)] then
-			return false, "Space is blocked."
+		if state.Occupied[GridMath.Key(cell.X, cell.Y)] then
+			return false, "That space is already occupied."
 		end
 	end
-
 	return true
 end
 
-function GridState:Add(placement)
-	self.Placements[placement.Guid] = placement
-	self:_setCells(placement, placement.Guid)
+function GridState.Add(state, placement)
+	state.Placements[placement.Guid] = placement
+	setCells(state, placement, placement.Guid)
 end
 
-function GridState:Remove(guid: string)
-	local placement = self.Placements[guid]
-	if not placement then
-		return nil
-	end
-
-	self:_setCells(placement, nil)
-	self.Placements[guid] = nil
+function GridState.Remove(state, guid: string)
+	local placement = state.Placements[guid]
+	if not placement then return nil end
+	state.Placements[guid] = nil
+	setCells(state, placement, nil)
 	return placement
 end
 
-function GridState:ExportOccupancy()
-	local occupied = {}
-	for cellKey, guid in self.Occupied do
-		occupied[cellKey] = guid
-	end
-	return occupied
+function GridState.ExportOccupancy(state)
+	local result = {}
+	for cellKey, guid in state.Occupied do result[cellKey] = guid end
+	return result
 end
 
 return GridState

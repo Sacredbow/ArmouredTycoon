@@ -34,6 +34,7 @@ export type CameraController = typeof(setmetatable({} :: {
 	_thirdPerson: boolean,
 	_halfStep: boolean,
 	_viewModel: Model?,
+	_viewModelDescendants: { Instance },
 	_viewModelEnabledStates: { [Instance]: boolean },
 	_viewModelTransparencyStates: { [Instance]: number },
 	_leanSpring: any,
@@ -54,6 +55,7 @@ function CameraController.new(player: Player, camera: Camera, character: Model, 
 		_thirdPerson = RuntimeSettings.GetBoolean("Third Person", true),
 		_halfStep = false,
 		_viewModel = nil,
+		_viewModelDescendants = {},
 		_viewModelEnabledStates = {},
 		_viewModelTransparencyStates = {},
 		_leanSpring = nil,
@@ -66,6 +68,7 @@ end
 
 function CameraController:setViewModel(viewModel: Model?)
 	self._viewModel = viewModel
+	self._viewModelDescendants = if viewModel then viewModel:GetDescendants() else {}
 	self._viewModelEnabledStates = {}
 	self._viewModelTransparencyStates = {}
 end
@@ -92,7 +95,7 @@ function CameraController:setViewModelVisible(visible: boolean)
 		return
 	end
 
-	for _, descendant in pairs(self._viewModel:GetDescendants()) do
+	for _, descendant in self._viewModelDescendants do
 		if descendant:IsA("BasePart") then
 			descendant.LocalTransparencyModifier = if visible then 0 else 1
 		elseif descendant:IsA("SurfaceGui") or descendant:IsA("BillboardGui") or descendant:IsA("ParticleEmitter") or descendant:IsA("Beam") or descendant:IsA("Trail") then
@@ -109,7 +112,7 @@ function CameraController:setViewModelVisible(visible: boolean)
 	end
 end
 
-function CameraController:headMovement(toolEquip: boolean, aiming: boolean, weaponData: any, acsClient: Instance?)
+function CameraController:headMovement(toolEquip: boolean, aiming: boolean, weaponData: any, acsClient: Instance?, deltaTime: number?)
 	if not self._player or not self._humanoidRootPart or not self._humanoid or self._humanoid.Health <= 0 then
 		return
 	end
@@ -134,7 +137,9 @@ function CameraController:headMovement(toolEquip: boolean, aiming: boolean, weap
 		* CFrame.Angles(-math.asin(self._camera.CFrame.LookVector.Y) + math.asin(self._torso.CFrame.LookVector.Y), 0, 0)
 		* CFrame.Angles(math.rad(-90), 0, math.rad(180))
 
-	TweenService:Create(self._neck, NECK_TWEEN_INFO, { C1 = neckCFrame }):Play()
+	local smoothingDelta = math.clamp(deltaTime or (1 / 60), 1 / 240, 0.1)
+	local neckAlpha = 1 - math.exp(-smoothingDelta / 0.2)
+	self._neck.C1 = self._neck.C1:Lerp(neckCFrame, neckAlpha)
 
 	local aimingRig = toolEquip and aiming and weaponData and weaponData.Type == "Gun"
 	local aimPitch = if aimingRig then math.clamp(math.asin(self._camera.CFrame.LookVector.Y), -1.1, 1.1) else 0
@@ -142,9 +147,9 @@ function CameraController:headMovement(toolEquip: boolean, aiming: boolean, weap
 	local animBase = self._character:FindFirstChild("AnimBase")
 	local animBaseW = animBase and animBase:FindFirstChild("AnimBaseW")
 	if animBaseW and animBaseW:IsA("Motor6D") then
-		TweenService:Create(animBaseW, ANIM_BASE_TWEEN_INFO, {
-			C0 = CFrame.Angles(aimPitch * AIM_RIG_PITCH_SCALE, 0, 0),
-		}):Play()
+		local animBaseAlpha = 1 - math.exp(-smoothingDelta / 0.16)
+		local targetC0 = CFrame.Angles(aimPitch * AIM_RIG_PITCH_SCALE, 0, 0)
+		animBaseW.C0 = animBaseW.C0:Lerp(targetC0, animBaseAlpha)
 	end
 
 	if not self._halfStep then

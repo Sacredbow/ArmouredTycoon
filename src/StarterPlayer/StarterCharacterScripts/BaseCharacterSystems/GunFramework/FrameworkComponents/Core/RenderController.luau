@@ -83,13 +83,55 @@ RenderController.__index = RenderController
 export type RenderController = typeof(setmetatable({} :: {
 	_camera: Camera,
 	_ctx: RenderContext,
+	_cachedWeapon: Instance?,
+	_sightMarks: { BasePart },
+	_laserPoints: { BasePart },
+	_lastFovTarget: number?,
+	_fovTween: Tween?,
 }, RenderController))
 
 function RenderController.new(camera: Camera, ctx: RenderContext): RenderController
 	return setmetatable({
 		_camera = camera,
 		_ctx = ctx,
+		_cachedWeapon = nil,
+		_sightMarks = {},
+		_laserPoints = {},
+		_lastFovTarget = nil,
+		_fovTween = nil,
 	}, RenderController)
+end
+
+function RenderController:_refreshWeaponCaches(weapon: Instance)
+	if self._cachedWeapon == weapon then
+		return
+	end
+
+	self._cachedWeapon = weapon
+	table.clear(self._sightMarks)
+	table.clear(self._laserPoints)
+	for _, descendant in weapon:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			if descendant.Name == "SightMark" then
+				table.insert(self._sightMarks, descendant)
+			elseif descendant.Name == "LaserPoint" then
+				table.insert(self._laserPoints, descendant)
+			end
+		end
+	end
+end
+
+function RenderController:_setFovTarget(target: number)
+	if self._lastFovTarget == target then
+		return
+	end
+
+	self._lastFovTarget = target
+	if self._fovTween then
+		self._fovTween:Cancel()
+	end
+	self._fovTween = TweenService:Create(self._camera, self._ctx.aimTween, { FieldOfView = target })
+	self._fovTween:Play()
 end
 
 --// Recoil accessors (Main pushes authored recoil CFrames through here)
@@ -129,8 +171,12 @@ function RenderController:step(deltaTime: number)
 	local viewModel = equip:getViewModel()
 
 	if not viewModel or not weaponInHand then
+		self._cachedWeapon = nil
+		table.clear(self._sightMarks)
+		table.clear(self._laserPoints)
 		return
 	end
+	self:_refreshWeaponCaches(weaponInHand)
 
 	ctx.cameraController:setViewModelVisible(not ctx.isThirdPersonCamera())
 
@@ -196,24 +242,24 @@ function RenderController:step(deltaTime: number)
 		if not ctx.state.nvg or (weaponInHand:FindFirstChild("AimPart") and not weaponInHand.AimPart:FindFirstChild("NVAim")) then
 			if equip:getAimPartMode() == 1 then
 				if not ctx.isThirdPersonCamera() then
-					TweenService:Create(camera, ctx.aimTween, { FieldOfView = equip:getModTable().ZoomValue }):Play()
+					self:_setFovTarget(equip:getModTable().ZoomValue)
 				end
 				ctx.maincf = ctx.maincf:Lerp(ctx.maincf * CFrame_new(0, 0, -0.5) * ctx.recoilcf * sway:inverse() * curAimpart.CFrame:toObjectSpace(camera.CFrame), 0.2)
 			else
 				if not ctx.isThirdPersonCamera() then
-					TweenService:Create(camera, ctx.aimTween, { FieldOfView = equip:getModTable().Zoom2Value }):Play()
+					self:_setFovTarget(equip:getModTable().Zoom2Value)
 				end
 				ctx.maincf = ctx.maincf:Lerp(ctx.maincf * CFrame_new(0, 0, -0.5) * ctx.recoilcf * sway:inverse() * curAimpart.CFrame:toObjectSpace(camera.CFrame), 0.2)
 			end
 		else
 			if not ctx.isThirdPersonCamera() then
-				TweenService:Create(camera, ctx.aimTween, { FieldOfView = 70 }):Play()
+				self:_setFovTarget(70)
 			end
 			ctx.maincf = ctx.maincf:Lerp(ctx.maincf * CFrame_new(0, 0, -0.5) * ctx.recoilcf * sway:inverse() * (weaponInHand.AimPart.CFrame * weaponInHand.AimPart.NVAim.CFrame):toObjectSpace(camera.CFrame), 0.2)
 		end
 	else
 		if not ctx.isThirdPersonCamera() then
-			TweenService:Create(camera, ctx.aimTween, { FieldOfView = 70 }):Play()
+			self:_setFovTarget(70)
 		end
 		ctx.maincf = ctx.maincf:Lerp((animData and animData.MainCFrame or CFrame_new()) * ctx.recoilcf * sway:inverse(), 0.2)
 	end
@@ -232,8 +278,8 @@ function RenderController:step(deltaTime: number)
 	end
 
 	-- Scope reticle parallax
-	for _, part in weaponInHand:GetDescendants() do
-		if part:IsA("BasePart") and part.Name == "SightMark" then
+	for _, part in self._sightMarks do
+		if part.Parent then
 			local distScale = part.CFrame:pointToObjectSpace(camera.CFrame.Position) / part.Size
 			local reticle = part:FindFirstChild("SurfaceGui")
 			if reticle and reticle:IsA("SurfaceGui") then
@@ -294,8 +340,8 @@ function RenderController:step(deltaTime: number)
 			end
 		end
 
-		for _, key in weaponInHand:GetDescendants() do
-			if key:IsA("BasePart") and key.Name == "LaserPoint" then
+		for _, key in self._laserPoints do
+			if key.Parent then
 				local laserResult = ctx.runtime.raycast(key.CFrame.Position, key.CFrame.LookVector * 1000, ctx.ignoreModel)
 				local pos = laserResult and laserResult.Position or (camera.CFrame.Position + key.CFrame.LookVector * 2000)
 				local normal = laserResult and laserResult.Normal or key.CFrame.LookVector

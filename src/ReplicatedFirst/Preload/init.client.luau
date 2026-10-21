@@ -172,48 +172,41 @@ local InitText = InitManager.new({
 
 
 
-local function isLoadable(inst)
-	return inst:IsA("ImageButton") 
-		
-end
+
+local LoadingComplete = false
 
 local function Assets()
-	local assets = {}
 	Rotation:Start()
 	InitText:Start()
-	for _, v in ipairs(game:GetDescendants()) do
-		if isLoadable(v) then
-			table.insert(assets, v)
-		end
-	end
 
+	local assets = { BackgroundCover, PlayerInterface }
 	local total = #assets
+	local loaded = 0
 	LoadingCounter.Text = "[0/" .. total .. "]"
 
-	for i, asset in ipairs(assets) do
-		ContentProvider:PreloadAsync({ asset })
-		LoadingCounter.Text = "[" .. i .. "/" .. total .. "]"
+	local success, errorMessage = pcall(function()
+		ContentProvider:PreloadAsync(assets, function()
+			loaded += 1
+			LoadingCounter.Text = "[" .. loaded .. "/" .. total .. "]"
+		end)
+	end)
+	if not success then
+		warn("[Preload] Critical asset preload failed:", errorMessage)
 	end
+
+	LoadingCounter.Text = "[" .. math.min(loaded, total) .. "/" .. total .. "]"
 end
-
-
-
-
 task.spawn(function()
-
-	while task.wait(5) do
-		TweenService:Create(BackgroundCover, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {ImageColor3 = Color3.fromRGB(math.random(1, 255),  math.random(1, 255),  math.random(1, 255))}):Play()
-		
+	while not LoadingComplete do
+		task.wait(5)
+		if LoadingComplete then
+			break
+		end
+		TweenService:Create(BackgroundCover, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
+			ImageColor3 = Color3.fromRGB(math.random(1, 255), math.random(1, 255), math.random(1, 255)),
+		}):Play()
 	end
-	
 end)
-
-
-
-
-
-
-
 game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
 game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.Chat, false)
 
@@ -239,6 +232,7 @@ TweenManager.Interface(BlackScreen, {BackgroundTransparency = 1}, TweenInfo.new(
 TweenManager.Interface(LoadingCounter, {TextTransparency = 0}, TweenInfo.new(1, Enum.EasingStyle.Sine))
 
 Assets()
+LoadingComplete = true
 Rotation:Stop()
 InitText:Finish()
 task.wait(2)

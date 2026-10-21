@@ -32,41 +32,42 @@ local function hasTool(player: Player, toolName: string): boolean
 	return false
 end
 
-function GearDistribution.GiveShield(player: Player)
+function GearDistribution.GiveShield(player: Player): boolean
 	local character = player.Character
 	if not character then
-		return
+		return false
 	end
 
 	if character:FindFirstChild("Shield") then
-		return
+		return true
 	end
 
 	local leftArm = character:FindFirstChild("Left Arm")
 	if not leftArm or not leftArm:IsA("BasePart") then
-		return
+		return false
 	end
 
 	local shieldTemplate = ReplicatedStorage:FindFirstChild("Assets")
 		and (ReplicatedStorage.Assets :: Folder):FindFirstChild("CharacterItems")
 		and ReplicatedStorage.Assets.CharacterItems:FindFirstChild("Shield")
-	if not shieldTemplate or not shieldTemplate:IsA("Model") then
-		return
+	if not shieldTemplate or not shieldTemplate:IsA("Model") or not shieldTemplate.PrimaryPart then
+		return false
 	end
 
 	local shield = shieldTemplate:Clone()
-	if not shield.PrimaryPart then
-		return
+	local primaryPart = shield.PrimaryPart
+	if not primaryPart then
+		shield:Destroy()
+		return false
 	end
-
 	local weld = Instance.new("Weld")
 	weld.Part0 = leftArm
-	weld.Part1 = shield.PrimaryPart
+	weld.Part1 = primaryPart
 	weld.C0 = CFrame.new(-0.1, 0, 0) * CFrame.Angles(math.rad(90), 0, math.rad(-90))
-	weld.Parent = shield.PrimaryPart
+	weld.Parent = primaryPart
 	shield.Parent = character
+	return true
 end
-
 function GearDistribution.GiveHK416(player: Player)
 	if hasTool(player, "HK416") then
 		return

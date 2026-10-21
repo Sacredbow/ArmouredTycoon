@@ -11,12 +11,13 @@ local QuestOptions = require(ReplicatedStorage.Progression.QuestOptions)
 local useGameStore = require(script.Parent.Parent.Parent.store.useGameStore)
 local useViewportScale = require(script.Parent.Parent.Parent.hooks.useViewportScale)
 local Currency = require(script.Parent.Parent.Shop.components.Currency)
-local Packets = require(ReplicatedStorage.Network.Packets)
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+local Packets = PacketBootstrap.Get()
 
 local e = React.createElement
 
 type ShopTab = "Money" | "Passes" | "Boosts"
-type Modal = "None" | "Shop" | "Codes" | "Lootbox" | "Profile" | "Quests" | "Daily" | "Rebirth" | "Settings"
+type Modal = "None" | "Shop" | "Codes" | "Lootbox" | "Profile" | "Quests" | "Daily" | "Rebirth"
 type Stats = {
 	Cash: number,
 	Emerald: number,
@@ -95,7 +96,6 @@ local ProfilePanel = require(script.Parent.Parent.Player.ProfileView)
 local QuestPanels = require(script.Parent.Parent.Progression.QuestPanels)
 local RebirthPanels = require(script.Parent.Parent.Player.components.RebirthPanels)
 local LevelUpPresentation = require(script.Parent.Parent.Progression.LevelUpPresentation)
-local SettingsPanel = require(script.Parent.components.SettingsPanel)
 
 local QuestsPanel = QuestPanels.Quests
 local DailyPanel = QuestPanels.Daily
@@ -169,8 +169,9 @@ local function MenuRouter(props: MenuRouterProps)
 
 	local function openSettings()
 		setMenuOpen(false)
-		setModal("Settings")
-		setBlur(24)
+		setBlur(0)
+		local AnimationController = require(script.Parent.Parent.Parent.Parent.Settings.AnimationController)
+		AnimationController.AnimateMenu("In", "Settings")
 	end
 
 	React.useEffect(function()
@@ -188,14 +189,14 @@ local function MenuRouter(props: MenuRouterProps)
 
 	-- Replaces the old ClientSignals.Listen(kind == "CanRebirth") branch.
 	React.useEffect(function()
-		local connection = Packets.packets.GameEvent.listen(function(data)
+		local disconnect = Packets.packets.GameEvent.listen(function(data)
 			if data.type == "CanRebirth" then
 				setCanRebirth(true)
 			end
 		end)
 
 		return function()
-			connection:Disconnect()
+			disconnect()
 		end
 	end, {})
 
@@ -259,7 +260,7 @@ local function MenuRouter(props: MenuRouterProps)
 	-- NotFollowing / Prompt / SystemMessage remain here since they're UI actions,
 	-- not toasts, and GameStore explicitly ignores these types for that reason.
 	React.useEffect(function()
-		local connection = Packets.packets.GameEvent.listen(function(data)
+		local disconnect = Packets.packets.GameEvent.listen(function(data)
 			if data.type == "NotFollowing" then
 				setMenuOpen(false)
 				setModal("Lootbox")
@@ -274,7 +275,7 @@ local function MenuRouter(props: MenuRouterProps)
 		end)
 
 		return function()
-			connection:Disconnect()
+			disconnect()
 		end
 	end, {})
 
@@ -458,11 +459,6 @@ local function MenuRouter(props: MenuRouterProps)
 			confirm = function()
 				invokeTycoonAction("Rebirth")
 			end,
-		}),
-		Settings = e(SettingsPanel, {
-			visible = modal == "Settings",
-			uiScale = uiScale,
-			close = closeModal,
 		}),
 		LevelUp = e(LevelUpPresentation, {
 			visible = levelUpVisible,

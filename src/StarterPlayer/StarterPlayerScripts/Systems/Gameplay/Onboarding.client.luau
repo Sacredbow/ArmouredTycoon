@@ -24,7 +24,8 @@ const ReplicatedStorage = game:GetService("ReplicatedStorage")
 --// Modules
 
 const RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
-const Packets = require(ReplicatedStorage.Network.Packets)
+const PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+const Packets = PacketBootstrap.Get()
 const OnboardingDefinitions = require(ReplicatedStorage.Progression.Onboarding.OnboardingDefinitions)
 const GameStore = require(script.Parent.Parent.Parent.UI.store.GameStore)
 
@@ -65,6 +66,7 @@ local ActiveBeams: { [string]: BeamEntry } = {}
 local DoorBeamsEnabled = false
 local ClaimedDoorKeys: { [string]: boolean } = {}
 local LastTutorialMessage: string? = nil
+local Destroyed = false
 
 local function ButtonDirectionsEnabled(): boolean
 	return RuntimeSettings.GetBoolean("Allow Button Directions", true)
@@ -118,7 +120,7 @@ local function SetBeam(Start: BasePart, Target: BasePart, Key: string)
 	Beam.TextureLength = 5
 	Beam.CurveSize0 = 20
 	Beam.CurveSize1 = 20
-	Beam.Segments = 500
+	Beam.Segments = 32
 
 	ActiveBeams[Key] = { att0 = Att0, att1 = Att1, beam = Beam }
 end
@@ -258,7 +260,11 @@ end
 
 --// Bootstrap â€” Runtime Hooks
 
-RuntimeSettings.Observe("Allow Button Directions", function()
+local RuntimeSettingsConnection = RuntimeSettings.Observe("Allow Button Directions", function()
+	if Destroyed then
+		return
+	end
+
 	buttonDirectionsEnabled = ButtonDirectionsEnabled()
 	if not buttonDirectionsEnabled then
 		DisplaceAllBeams()
@@ -267,12 +273,16 @@ RuntimeSettings.Observe("Allow Button Directions", function()
 	end
 end)
 
-Player.CharacterAdded:Connect(function(Character)
-	if not DoorBeamsEnabled or not buttonDirectionsEnabled then
+local CharacterConnection = Player.CharacterAdded:Connect(function(Character)
+	if Destroyed or not DoorBeamsEnabled or not buttonDirectionsEnabled then
 		return
 	end
 
 	const HRP = Character:WaitForChild("HumanoidRootPart")
+	if Destroyed then
+		return
+	end
+
 	for _, Tycoon in TycoonsFolder:GetChildren() do
 		const MainItems = Tycoon:FindFirstChild("MainItems")
 		if not MainItems then
@@ -294,7 +304,27 @@ Player.CharacterAdded:Connect(function(Character)
 	end
 end)
 
-Packets.packets.Tutorial.listen(function(Data: TutorialData)
+local TutorialDisconnect: (() -> ())?
+local function Cleanup()
+	if Destroyed then
+		return
+	end
+
+	Destroyed = true
+	DisplaceAllBeams()
+	RuntimeSettingsConnection:Disconnect()
+	CharacterConnection:Disconnect()
+	if TutorialDisconnect then
+		TutorialDisconnect()
+		TutorialDisconnect = nil
+	end
+	table.clear(ClaimedDoorKeys)
+end
+
+TutorialDisconnect = Packets.packets.Tutorial.listen(function(Data: TutorialData)
+	if Destroyed then
+		return
+	end
 	const NewMessage = Data.type
 	const Target = Data.target
 
@@ -343,8 +373,10 @@ Packets.packets.Tutorial.listen(function(Data: TutorialData)
 
 	if NewMessage == OnboardingStep.Completed.Message then
 		DisplaceAllBeams()
-		task.wait(3)
-		script:Destroy()
+		task.delay(3, function()
+			Cleanup()
+			script:Destroy()
+		end)
 		return
 	end
 
@@ -359,6 +391,9 @@ Packets.packets.Tutorial.listen(function(Data: TutorialData)
 		end
 		DisplaceAllBeams()
 		task.wait()
+		if Destroyed then
+			return
+		end
 		const HRP = GetPlayerHRP()
 		if HRP then
 			SetBeam(HRP, TargetPart, "tutorial_button")
@@ -374,6 +409,9 @@ Packets.packets.Tutorial.listen(function(Data: TutorialData)
 		end
 		DisplaceAllBeams()
 		task.wait()
+		if Destroyed then
+			return
+		end
 		const HRP = GetPlayerHRP()
 		if HRP then
 			SetBeam(HRP, TargetPart, "tutorial_atm")

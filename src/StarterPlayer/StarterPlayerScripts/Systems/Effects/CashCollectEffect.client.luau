@@ -6,7 +6,8 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Janitor = require(ReplicatedStorage.Packages.janitor)
-local Packets = require(ReplicatedStorage.Network.Packets)
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+local Packets = PacketBootstrap.Get()
 
 local player = Players.LocalPlayer
 local janitor = Janitor.new()

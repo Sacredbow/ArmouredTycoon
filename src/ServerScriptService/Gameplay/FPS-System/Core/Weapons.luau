@@ -147,6 +147,9 @@ end
 
 --// Internal Methods — Rig state
 
+type ActiveRig = { tool: Tool, character: Model, model: Model, animBase: BasePart }
+local ActiveRigs: { [Player]: ActiveRig } = setmetatable({}, { __mode = "k" })
+
 local function SetWeaponRigEntity(Player: Player, Character: Model, Weapon: Tool, ServerGun: Model, AnimBase: BasePart)
 	const OldEntity = State.WeaponRigEntities[Player]
 	if OldEntity then
@@ -192,7 +195,34 @@ end
 
 --// Public API — Equip / Unequip
 
+local function ClearEquippedRig(Player: Player, expectedWeapon: Tool?): boolean
+	local rig = ActiveRigs[Player]
+	if not rig or (expectedWeapon and rig.tool ~= expectedWeapon) then
+		return false
+	end
+	ActiveRigs[Player] = nil
+	rig.model:Destroy()
+	rig.animBase:Destroy()
+	local torso = rig.character:FindFirstChild("Torso")
+	if torso then
+		local rightShoulder = torso:FindFirstChild("Right Shoulder")
+		local leftShoulder = torso:FindFirstChild("Left Shoulder")
+		if rightShoulder and rightShoulder:IsA("Motor6D") then
+			rightShoulder.Enabled = true
+		end
+		if leftShoulder and leftShoulder:IsA("Motor6D") then
+			leftShoulder.Enabled = true
+		end
+	end
+	ClearWeaponRigEntity(Player)
+	return true
+end
+
 function Equip(Player: Player, Weapon: Tool, Mode: number, Settings: any, Anim: { [string]: CFrame })
+	if Mode == 2 then
+		ClearEquippedRig(Player, Weapon)
+		return
+	end
 	const Character = Player.Character
 	if not Character then
 		return
@@ -214,6 +244,13 @@ function Equip(Player: Player, Weapon: Tool, Mode: number, Settings: any, Anim: 
 
 	--// EQUIP
 	if Mode == 1 then
+		local activeRig = ActiveRigs[Player]
+		if activeRig and activeRig.tool == Weapon and activeRig.character == Character
+			and activeRig.model.Parent == Character and activeRig.animBase.Parent == Character then
+			return
+		end
+		ClearEquippedRig(Player)
+
 		const GunModel = GunModels:FindFirstChild(Weapon.Name)
 		if not GunModel then
 			warn(`[ACS] {Player.Name}: Couldn't load server-side weapon model`)
@@ -295,24 +332,11 @@ for _, Descendant in ServerGun:GetDescendants() do
 			Descendant.CanCollide = false
 		end
 
+		ActiveRigs[Player] = { tool = Weapon, character = Character, model = ServerGun, animBase = AnimBase }
 		SetWeaponRigEntity(Player, Character, Weapon, ServerGun, AnimBase)
 		return
 	end
 
-	--// UNEQUIP
-	if Mode == 2 then
-		ClearWeaponRigEntity(Player)
-		if Weapon and Character:FindFirstChild("S" .. Weapon.Name) then
-			Character["S" .. Weapon.Name]:Destroy()
-			const AnimBase = Character:FindFirstChild("AnimBase")
-			if AnimBase then
-				AnimBase:Destroy()
-			end
-		end
-
-		RS.Enabled = true
-		LS.Enabled = true
-	end
 end
 
 --// Public API — Stance
@@ -415,33 +439,10 @@ const Template = GrenadeModels:FindFirstChild(WeaponSettings.gunName)
 	end
 end
 
---// Public API — Ammunition
-
-function RefillAllMags(Player: Player, Weapon: Tool?)
-	const Character = Player.Character
-	if not Character then
-		return
-	end
-	if not Weapon or not Weapon:IsA("Tool") or not Weapon:IsDescendantOf(Character) then
-		warn(`[ACS] {Player.Name} weapon missing or not equipped for refill`)
-		return
-	end
-
-	const ACS_Client = Weapon:FindFirstChild("ACS_Client")
-	if not ACS_Client then
-		warn(`[ACS] {Player.Name} weapon {Weapon.Name} is missing ACS_Client`)
-		return
-	end
-
-	if ACS_Client:FindFirstChild("Stored") and ACS_Client:FindFirstChild("TotalMags") then
-		ACS_Client.Stored.Value = ACS_Client.TotalMags.Value
-	end
-end
-
 return {
 	Equip = Equip,
+	ClearEquippedRig = ClearEquippedRig,
 	SetStanceState = SetStanceState,
 	SpawnGrenade = SpawnGrenade,
-	RefillAllMags = RefillAllMags,
 }
 

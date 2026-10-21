@@ -211,6 +211,7 @@ local EnvironmentService = {}
 EnvironmentService.__index = EnvironmentService
 
 local LightsAreOn = false
+local ActiveEnvironmentService: any = nil
 
 --// Constructor
 
@@ -245,6 +246,7 @@ function EnvironmentService.new(Dependencies: EnvironmentDependencies): Environm
 	self.WeatherLightingWeight = self.CurrentWeather.lightingWeight or 0
 	self.NightStormActive = false
 	self._WeatherLightingTweenToken = nil
+	ActiveEnvironmentService = self
 
 	return self
 end
@@ -259,11 +261,28 @@ end
 
 --// Internal Methods — Day/Night
 
+function EnvironmentService.UpdateLightingFromClock(Hour: number)
+	if ActiveEnvironmentService then
+		ActiveEnvironmentService:_UpdateLighting(Hour)
+	end
+end
+
+function EnvironmentService.UpdateWeatherActive()
+	if ActiveEnvironmentService then
+		ActiveEnvironmentService:_UpdateWeather()
+	end
+end
+
+function EnvironmentService.SpawnShootingStarActive()
+	if ActiveEnvironmentService then
+		ActiveEnvironmentService:_MaybeSpawnShootingStar()
+	end
+end
+
 function EnvironmentService:_InitDayNight()
 	ECS.createEntity({
 		Name = "EnvironmentClock",
 		EnvironmentClock = {
-			service = self,
 			currentTime = DAY_START_HOUR,
 			timeSpeed = TIME_SPEED,
 		},
@@ -379,9 +398,7 @@ function EnvironmentService:_InitWeather()
 			delay = WEATHER_TICK_INTERVAL,
 			repeatEvery = WEATHER_TICK_INTERVAL,
 			elapsed = 0,
-			callback = function()
-				self:_UpdateWeather()
-			end,
+			kind = "EnvironmentWeatherTick",
 		},
 	})
 end
@@ -436,9 +453,7 @@ function EnvironmentService:_InitShootingStar()
 			delay = SHOOTING_STAR_INTERVAL,
 			repeatEvery = SHOOTING_STAR_INTERVAL,
 			elapsed = 0,
-			callback = function()
-				self:_MaybeSpawnShootingStar()
-			end,
+			kind = "EnvironmentShootingStarTick",
 		},
 	})
 end

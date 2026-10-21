@@ -3,27 +3,14 @@
 	@class NukeStore
 
 	@desc
-	Manages nuke cinematic state and KOTH announcements.
-	These are transient UI states that don't belong in other stores.
+	Manages the active nuclear cinematic session and its packet listener.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
 
 local Signal = require(ReplicatedStorage.Packages.signal)
-local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
-local SettingsConfig = require(ReplicatedStorage.Modules.SettingsManager.SettingsConfig)
 
 --// Types
-
-export type KOTHAnnouncement = {
-	id: number,
-	playerName: string,
-	teamColor: Color3,
-	minutes: number?,
-	createdAt: number,
-	duration: number,
-}
 
 export type NukeCinematic = {
 	active: boolean,
@@ -44,6 +31,7 @@ export type NukeCinematic = {
 	timeLeft: number?,
 	launcherScore: number,
 	defenderScore: number,
+	mashOpen: boolean,
 }
 
 --// Module
@@ -53,75 +41,23 @@ NukeStore.__index = NukeStore
 
 function NukeStore.new(): NukeStore
 	local self = setmetatable({}, NukeStore) :: NukeStore
-
-	self.KOTHAnnouncement = nil
 	self.NukeCinematic = nil
 	self.Changed = Signal.new()
-	self.NextKOTHAnnouncementId = 0
 	self.Destroyed = false
+	self.Started = false
 
 	return self
 end
 
 function NukeStore:Start(Packets: any)
-	if self.Started then
+	if self.Started or not Packets then
 		return
 	end
 
-	-- Only mark as started when listeners actually register
-	-- (see NotificationStore:Start for the GameStore Start(nil) flow).
-	if not Packets then
-		return
-	end
-
+	self.NukeConnection = Packets.packets.NukeCinematic.listen(function(payload)
+		self:HandleNukeCinematic(payload)
+	end)
 	self.Started = true
-
-	self.KOTHConnection = Packets.packets.KOTHAnnouncement.listen(function(Data)
-		self:PushKOTHAnnouncement(Data.playerName, Data.teamColor, Data.minutes)
-	end)
-
-	self.NukeConnection = Packets.packets.NukeCinematic.listen(function(Payload)
-		self:HandleNukeCinematic(Payload)
-	end)
-
-	-- Observe settings for suppressing user announcements
-	self.SettingsConnection = RuntimeSettings.Observe("User Announcements", function(Value)
-		if Value ~= true and self.KOTHAnnouncement then
-			self.KOTHAnnouncement = nil
-			self.Changed:Fire()
-		end
-	end)
-end
-
---// KOTH Announcements
-
-function NukeStore:PushKOTHAnnouncement(PlayerName: string, TeamColor: Color3, Minutes: number?)
-	if self:SuppressUserAnnouncements() then
-		return
-	end
-
-	self.NextKOTHAnnouncementId += 1
-	self.KOTHAnnouncement = {
-		id = self.NextKOTHAnnouncementId,
-		playerName = PlayerName,
-		teamColor = TeamColor,
-		minutes = Minutes,
-		createdAt = os.clock(),
-		duration = 4.5,
-	}
-
-	self.Changed:Fire()
-end
-
-function NukeStore:DismissKOTHAnnouncement(Id: number)
-	if self.KOTHAnnouncement and self.KOTHAnnouncement.id == Id then
-		self.KOTHAnnouncement = nil
-		self.Changed:Fire()
-	end
-end
-
-function NukeStore:SuppressUserAnnouncements(): boolean
-	return RuntimeSettings.GetBoolean("User Announcements", SettingsConfig.default_settings["User Announcements"] == true) ~= true
 end
 
 --// Nuke Cinematic
@@ -131,12 +67,27 @@ function NukeStore:HandleNukeCinematic(Payload: any)
 		return
 	end
 
-	if Payload.action == "End" then
-		self.NukeCinematic = nil
-		self.Changed:Fire()
+	local sessionId = Payload.sessionId
+	if type(sessionId) ~= "string" or sessionId == "" then
 		return
 	end
 
+	local current = self.NukeCinematic
+	if Payload.action == "End" then
+		if current and current.sessionId == sessionId then
+			self.NukeCinematic = nil
+			self.Changed:Fire()
+		end
+		return
+	end
+
+	-- One cinematic owns the camera/UI until its matching End arrives.
+	if current and current.sessionId ~= sessionId then
+		return
+	end
+	if not current and Payload.action ~= "Warning" and Payload.action ~= "Focus" then
+		return
+	end
 	local Current = self.NukeCinematic or {
 		active = true,
 		action = tostring(Payload.action or ""),
@@ -156,11 +107,12 @@ function NukeStore:HandleNukeCinematic(Payload: any)
 		timeLeft = Payload.timeLeft,
 		launcherScore = tonumber(Payload.launcherScore) or 0,
 		defenderScore = tonumber(Payload.defenderScore) or 0,
+		mashOpen = false,
 	}
 
 	Current.active = true
 	Current.action = tostring(Payload.action or Current.action)
-	Current.sessionId = tostring(Payload.sessionId or Current.sessionId)
+	Current.sessionId = sessionId
 	Current.role = Payload.role or Current.role
 	Current.phase = Payload.phase or Current.phase
 	Current.message = tostring(Payload.message or Current.message)
@@ -176,16 +128,17 @@ function NukeStore:HandleNukeCinematic(Payload: any)
 	Current.timeLeft = Payload.timeLeft or Current.timeLeft
 	Current.launcherScore = tonumber(Payload.launcherScore) or Current.launcherScore
 	Current.defenderScore = tonumber(Payload.defenderScore) or Current.defenderScore
+	if Payload.action == "MashStart" and (Current.role == "launcher" or Current.role == "defender") then
+		Current.mashOpen = true
+	elseif Payload.action == "Result" or Payload.action == "Impact" then
+		Current.mashOpen = false
+	end
 
 	self.NukeCinematic = Current
 	self.Changed:Fire()
 end
 
 --// Snapshots
-
-function NukeStore:GetKOTHSnapshot(): KOTHAnnouncement?
-	return self.KOTHAnnouncement
-end
 
 function NukeStore:GetNukeSnapshot(): NukeCinematic?
 	return self.NukeCinematic
@@ -201,19 +154,9 @@ function NukeStore:Destroy()
 	self.Destroyed = true
 	self.Started = false
 
-	if self.KOTHConnection then
-		self.KOTHConnection:Disconnect()
-		self.KOTHConnection = nil
-	end
-
 	if self.NukeConnection then
-		self.NukeConnection:Disconnect()
+		self.NukeConnection()
 		self.NukeConnection = nil
-	end
-
-	if self.SettingsConnection then
-		self.SettingsConnection:Disconnect()
-		self.SettingsConnection = nil
 	end
 
 	local Changed = self.Changed :: any
@@ -223,22 +166,14 @@ function NukeStore:Destroy()
 end
 
 export type NukeStore = typeof(setmetatable({} :: {
-	KOTHAnnouncement: KOTHAnnouncement?,
 	NukeCinematic: NukeCinematic?,
 	Changed: any,
 	Destroyed: boolean,
 	Started: boolean,
-	NextKOTHAnnouncementId: number,
-	KOTHConnection: any?,
 	NukeConnection: any?,
-	SettingsConnection: any?,
 
 	Start: (self: NukeStore, Packets: any) -> (),
-	PushKOTHAnnouncement: (self: NukeStore, PlayerName: string, TeamColor: Color3, Minutes: number?) -> (),
-	DismissKOTHAnnouncement: (self: NukeStore, Id: number) -> (),
-	SuppressUserAnnouncements: (self: NukeStore) -> boolean,
 	HandleNukeCinematic: (self: NukeStore, Payload: any) -> (),
-	GetKOTHSnapshot: (self: NukeStore) -> KOTHAnnouncement?,
 	GetNukeSnapshot: (self: NukeStore) -> NukeCinematic?,
 	Destroy: (self: NukeStore) -> (),
 }, NukeStore))

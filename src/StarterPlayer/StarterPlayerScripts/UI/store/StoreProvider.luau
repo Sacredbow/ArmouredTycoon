@@ -7,10 +7,6 @@ local React = require(ReplicatedStorage.Packages.react)
 
 local GameStore = require(script.Parent.GameStore)
 
-local StoreContext = React.createContext(nil)
-
-local e = React.createElement
-
 local function StoreProvider(props)
 	local store = GameStore.get()
 
@@ -21,9 +17,7 @@ local function StoreProvider(props)
 		store:Start()
 	end, { store })
 
-	return e(StoreContext.Provider, {
-		value = store,
-	}, props.children)
+	return props.children
 end
 
 return StoreProvider

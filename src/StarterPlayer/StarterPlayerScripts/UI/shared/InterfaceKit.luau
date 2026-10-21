@@ -32,7 +32,9 @@ local function buttonProps(onActivated: (() -> ())?)
 end
 
 local function corner(radius: number?)
-	return nil
+	return e("UICorner", {
+		CornerRadius = UDim.new(0, radius or 8),
+	})
 end
 
 local function stroke(color: Color3?, thickness: number?)
@@ -175,40 +177,25 @@ local function useTweenNumber(target: number, duration: number?, easingStyle: st
 	return value
 end
 
-local function useSpringTween(target: number, stiffness: number?, damping: number?)
-	local value, setValue = React.useState(target)
-
-	React.useEffect(function()
-		local cancelled = false
-		local current = value
-		local velocity = 0
-		local stiff = stiffness or 200
-		local damp = damping or 14
-
-		task.spawn(function()
-			while not cancelled do
-				local force = (target - current) * stiff
-				velocity = (velocity + force * 0.016) * math.exp(-damp * 0.016)
-				current = current + velocity * 0.016
-				setValue(current)
-				if math.abs(target - current) < 0.001 and math.abs(velocity) < 0.001 then
-					if not cancelled then setValue(target) end
-					break
-				end
-				task.wait(0.016)
-			end
-		end)
-
-		return function()
-			cancelled = true
-		end
-	end, { target })
-
-	return value
-end
-
-local function TitleLine(_props)
-	return nil
+local function TitleLine(props: ReactProps?)
+	props = props or {}
+	return e("Frame", {
+		BackgroundColor3 = props.color or Color3.fromRGB(89, 169, 255),
+		BorderSizePixel = 0,
+		Position = props.position or UDim2.new(),
+		Size = props.size or UDim2.fromOffset(64, 3),
+		Visible = props.visible ~= false,
+	}, {
+		Corner = e("UICorner", {
+			CornerRadius = UDim.new(1, 0),
+		}),
+		Gradient = e("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(89, 169, 255)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 255, 219)),
+			}),
+		}),
+	})
 end
 
 local function textLabel(props: ReactProps, children: ReactChildren?)
@@ -260,7 +247,6 @@ return {
 	NoticeGradient = noticeGradient,
 	FormatDuration = formatDuration,
 	UseTweenNumber = useTweenNumber,
-	UseSpringTween = useSpringTween,
 	TitleLine = TitleLine,
 	TextLabel = textLabel,
 	ImageButton = imageButton,

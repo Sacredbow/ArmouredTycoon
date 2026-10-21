@@ -5,13 +5,14 @@ local ECS = require(ReplicatedStorage.ECS)
 local Packets = require(ReplicatedStorage.Network.Packets)
 
 local FriendService = {}
-FriendService.__index = FriendService
+local ActiveService: any? = nil
 
-function FriendService.new(playerService)
-	local self = setmetatable({}, FriendService)
+function FriendService.create(playerService)
+	local self = {}
 	self.PlayerService = playerService
 	self.ActiveBoosts = {}
 	self.FriendPairs = {} 
+	ActiveService = self
 	return self
 end
 
@@ -103,29 +104,35 @@ function FriendService:OnPlayerLeaving(leavingPlayer: Player)
 	end
 end
 
+function FriendService.RunInitialCheck(player: Player)
+	if ActiveService and player.Parent then
+		ActiveService:CheckFriendBoost(player)
+		ECS.createEntity({
+			Name = "FriendBoostRefresh:" .. player.Name,
+			ScheduledTask = {
+				delay = 0.5,
+				elapsed = 0,
+				kind = "FriendBoostRefresh",
+			},
+		})
+	end
+end
+
+function FriendService.RefreshActive()
+	if ActiveService then
+		ActiveService:UpdateAllPlayers()
+	end
+end
+
 function FriendService:Init()
         Players.PlayerAdded:Connect(function(player)
                 ECS.createEntity({
-                        Name = `{player.Name}:FriendBoostCheck`,
+                        Name = "FriendBoostCheck:" .. player.Name,
                         ScheduledTask = {
                                 delay = 2,
                                 elapsed = 0,
-                                callback = function()
-                                        if player and player.Parent then
-                                                self:CheckFriendBoost(player)
-
-                                                ECS.createEntity({
-                                                        Name = `{player.Name}:FriendBoostRefresh`,
-                                                        ScheduledTask = {
-                                                                delay = 0.5,
-                                                                elapsed = 0,
-                                                                callback = function()
-                                                                        self:UpdateAllPlayers()
-                                                                end,
-                                                        },
-                                                })
-                                        end
-                                end,
+                                kind = "FriendBoostInitial",
+                                player = player,
                         },
                 })
         end)
@@ -136,4 +143,3 @@ function FriendService:Init()
 end
 
 return FriendService
-

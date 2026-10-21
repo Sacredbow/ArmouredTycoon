@@ -1,4 +1,5 @@
 local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
@@ -6,9 +7,9 @@ local BuildCatalog = require(ReplicatedStorage.BuildService.BuildCatalog)
 local GridState = require(script.GridState)
 local BuildSpawner = require(script.BuildSpawner)
 local ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
+local Factory = require(ServerScriptService.ECS.TycoonFactory)
 
 local BuildService = {}
-BuildService.__index = BuildService
 
 local CELL_SIZE = 4
 
@@ -16,18 +17,21 @@ local function isFiniteNumber(value): boolean
 	return typeof(value) == "number" and value == value and math.abs(value) < math.huge
 end
 
-function BuildService.new(playerService, tycoonService)
-	local self = setmetatable({}, BuildService)
+function BuildService.create(playerService, tycoonService)
+	local self = {}
 	self.PlayerService = playerService
 	self.TycoonService = tycoonService
 	self.GridStates = {}
-	self.LastRequests = {}
+	self.LastRequests = setmetatable({}, { __mode = "k" })
 	self.MissingCompounds = {}
-	self.Spawner = BuildSpawner.new()
+	self.Spawner = BuildSpawner.create()
 	return self
 end
 
 function BuildService:Init()
+	Players.PlayerRemoving:Connect(function(player)
+		self.LastRequests[player] = nil
+	end)
 	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 	if not remotes then
 		remotes = Instance.new("Folder")
@@ -42,8 +46,9 @@ function BuildService:Init()
 		action.Parent = remotes
 	end
 
-warn(`[BuildService] Remotes.BuildAction must be a RemoteFunction`);
-	(action :: RemoteFunction).OnServerInvoke = function(player: Player, request: string, payload)
+	assert(action:IsA("RemoteFunction"), "Remotes.BuildAction must be a RemoteFunction")
+	local buildAction = action :: RemoteFunction
+	buildAction.OnServerInvoke = function(player: Player, request: string, payload)
 		local now = os.clock()
 		local lastRequest = self.LastRequests[player] or 0
 		if now - lastRequest < 0.05 then
@@ -84,12 +89,12 @@ function BuildService:_profileBuildData(player: Player)
 	return profile.Data.BuildService
 end
 
-function BuildService:_compoundFor(tycoon)
-	local compound = tycoon.Model:FindFirstChild("Compound", true)
+function BuildService:_compoundFor(tycoonEntity)
+	local model = Factory.getModel(tycoonEntity)
+	local compound = model and model:FindFirstChild("Compound", true)
 	if compound and compound:IsA("BasePart") then
 		return compound
 	end
-
 	return nil
 end
 
@@ -103,12 +108,11 @@ function BuildService:_stateFor(tycoon)
 	if not compound then
 		if not self.MissingCompounds[tycoon] then
 			self.MissingCompounds[tycoon] = true
-			warn(`[BuildService] Tycoon {tycoon.Model:GetFullName()} is missing its required Compound part`)
 		end
 		return nil
 	end
 
-	state = GridState.new(compound, CELL_SIZE)
+	state = GridState.create(compound, CELL_SIZE)
 	self.GridStates[tycoon] = state
 	return state
 end
@@ -141,7 +145,7 @@ function BuildService:GetState(player: Player)
 
 	return true, {
 		Metadata = state.Metadata,
-		Occupied = state:ExportOccupancy(),
+		Occupied = GridState.ExportOccupancy(state),
 	}
 end
 
@@ -194,7 +198,7 @@ function BuildService:Place(player: Player, payload)
 		return false, "This tycoon is missing a Compound part."
 	end
 
-	local canPlace, reason = state:CanPlace(buildId, gridX, gridY, rotation)
+	local canPlace, reason = GridState.CanPlace(state, buildId, gridX, gridY, rotation)
 	if not canPlace then
 		return false, reason or "Cannot place there."
 	end
@@ -210,8 +214,8 @@ function BuildService:Place(player: Player, payload)
 		Rotation = rotation,
 	}
 
-	state:Add(placement)
-	self.Spawner:Spawn(tycoon, placement, state.Compound, state.CellSize)
+	GridState.Add(state, placement)
+	self.Spawner:Spawn(Factory.getModel(tycoon), placement, state.Compound, state.CellSize)
 
 	local buildData = self:_profileBuildData(player)
 	if buildData then
@@ -221,7 +225,7 @@ function BuildService:Place(player: Player, payload)
 	return true, {
 		Message = "Build placed.",
 		Placement = placement,
-		Occupied = state:ExportOccupancy(),
+		Occupied = GridState.ExportOccupancy(state),
 	}
 end
 
@@ -245,7 +249,7 @@ function BuildService:Remove(player: Player, payload)
 		return false, "No build grid available."
 	end
 
-	local placement = state:Remove(guid)
+	local placement = GridState.Remove(state, guid)
 	if not placement then
 		return false, "Build was not found."
 	end
@@ -255,7 +259,7 @@ function BuildService:Remove(player: Player, payload)
 		ProfileManager.AddCash(player, math.floor(tier.Cost * tier.RefundRate))
 	end
 
-	self.Spawner:Destroy(tycoon, guid)
+	self.Spawner:Destroy(Factory.getModel(tycoon), guid)
 
 	local buildData = self:_profileBuildData(player)
 	if buildData then
@@ -269,17 +273,19 @@ function BuildService:Remove(player: Player, payload)
 
 	return true, {
 		Message = "Build removed.",
-		Occupied = state:ExportOccupancy(),
+		Occupied = GridState.ExportOccupancy(state),
 	}
 end
 
 function BuildService:ReleaseTycoon(tycoon)
-	local container = tycoon.Model:FindFirstChild("PlacedBuilds")
+	local model = Factory.getModel(tycoon)
+local container = model and model:FindFirstChild("PlacedBuilds")
 	if container then
 		container:Destroy()
 	end
 
 	self.GridStates[tycoon] = nil
+	self.MissingCompounds[tycoon] = nil
 end
 
 function BuildService:ClearPlayer(player: Player, tycoon)
@@ -307,10 +313,10 @@ function BuildService:RestorePlayer(player: Player, tycoon)
 
 	for _, placement in buildData.PlacedBuilds do
 		if placement.Guid and placement.BuildId then
-			local canPlace = state:CanPlace(placement.BuildId, placement.GridX or 0, placement.GridY or 0, placement.Rotation or 0)
+			local canPlace = GridState.CanPlace(state, placement.BuildId, placement.GridX or 0, placement.GridY or 0, placement.Rotation or 0)
 			if canPlace then
-				state:Add(placement)
-				self.Spawner:Spawn(tycoon, placement, state.Compound, state.CellSize)
+				GridState.Add(state, placement)
+				self.Spawner:Spawn(Factory.getModel(tycoon), placement, state.Compound, state.CellSize)
 			else
 				warn(`[BuildService] Skipped invalid saved placement {tostring(placement.Guid)} for {player.Name}`)
 			end

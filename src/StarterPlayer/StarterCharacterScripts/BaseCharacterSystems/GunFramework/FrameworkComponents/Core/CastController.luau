@@ -11,6 +11,7 @@
 --// Services
 
 const RunService = game:GetService("RunService")
+const Players = game:GetService("Players")
 const CollectionService = game:GetService("CollectionService")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -42,7 +43,6 @@ export type CastController = typeof(setmetatable({} :: {
 	_effectsFolder: Folder,
 	_ignoreModel: { Instance },
 	_events: any,
-	_userIdToken: string,
 	_destroyLater: (Instance, number) -> (),
 	_tracers: number,
 	_weaponTool: Tool?,
@@ -59,7 +59,6 @@ function CastController.new(
 	character: Model,
 	effectsFolder: Folder,
 	events: any,
-	userIdToken: string,
 	gameRules: any,
 	destroyLaterFn: (Instance, number) -> ()
 ): CastController
@@ -70,7 +69,6 @@ function CastController.new(
 		_effectsFolder = effectsFolder,
 		_ignoreModel = { camera, character, effectsFolder },
 		_events = events,
-		_userIdToken = userIdToken,
 		_gameRules = gameRules,
 		_destroyLater = destroyLaterFn,
 		_tracers = 0,
@@ -94,11 +92,9 @@ function CastController:setThirdPersonCallback(callback: (() -> boolean)?)
 end
 
 function CastController:checkForShield(hitPart: Instance): Model?
-	print(`[CLIENT-Shield] checkForShield called — hitPart name: '{hitPart.Name}', className: {hitPart.ClassName}, parent name: '{hitPart.Parent and hitPart.Parent.Name or "nil"}'`)
 	-- Fast path: shield parts are direct children of the Shield model.
 	local parent = hitPart.Parent
 	if parent and parent:IsA("Model") and parent.Name == "Shield" then
-		print(`[CLIENT-Shield] Was it a shield? true — found via direct parent (parent name: '{parent.Name}')`)
 		return parent
 	end
 
@@ -106,11 +102,8 @@ function CastController:checkForShield(hitPart: Instance): Model?
 	-- (matches the Hitmarker module's own FindFirstAncestor check).
 	local ancestor = hitPart:FindFirstAncestor("Shield")
 	if ancestor and ancestor:IsA("Model") then
-		print(`[CLIENT-Shield] Was it a shield? true — found via ancestor search (ancestor name: '{ancestor.Name}')`)
 		return ancestor
 	end
-
-	print(`[CLIENT-Shield] Was it a shield? false — no Shield model found in hierarchy`)
 	return nil
 end
 
@@ -201,7 +194,7 @@ function CastController:createBullet(
 	local tracerVisible = self:tracerCalc()
 	if tracerVisible then
 		if self._gameRules.ReplicatedBullets then
-			self._events.ServerBullet:FireServer(origin, direction, self._weaponData, self._modTable)
+			self._events.ServerBullet:FireServer(origin, direction, nil, { MuzzleVelocity = self._modTable and self._modTable.MuzzleVelocity })
 		end
 
 		local ProjectileVisuals = require(game:GetService("ReplicatedStorage").Modules.ProjectileVisuals)
@@ -233,7 +226,8 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 	local debounce = false
 
 	local raycastParams = RaycastParams.new()
-	raycastParams.FilterDescendantsInstances = self._ignoreModel
+	local ignoreModel = table.clone(self._ignoreModel)
+	raycastParams.FilterDescendantsInstances = ignoreModel
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 	raycastParams.IgnoreWater = true
 
@@ -263,7 +257,7 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 
 		-- Whizz / suppression check
 		if not debounce then
-			for _, plyr in pairs(game.Players:GetPlayers()) do
+			for _, plyr in Players:GetPlayers() do
 				if plyr == self._player or not plyr.Character or not plyr.Character:FindFirstChild("Head") then
 					continue
 				end
@@ -284,48 +278,44 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 		end
 
 		local hitInstance = raycastResult.Instance
-		local hitParent = hitInstance and hitInstance.Parent
-
-		print(`[CLIENT-Shield] RAYCAST HIT — instance: '{hitInstance.Name}' (class: {hitInstance.ClassName}), parent: '{hitParent and hitParent.Name or "nil"}' (class: {hitParent and hitParent.ClassName or "nil"})`)
-
-		-- If the bullet hit a shield, damage the shield instead of the player.
+		local hitParent = hitInstance.Parent
+-- If the bullet hit a shield, damage the shield instead of the player.
 		-- Checked before the IGNORE_NAMES filter because shield parts are named
 		-- "Armor" and would otherwise be skipped by the raycast.
 		local shieldModel = self:checkForShield(hitInstance)
 		if shieldModel and self._weaponData then
-			print(`[CLIENT-Shield] RANGED shield hit detected! Shield model: '{shieldModel.Name}', firing ShieldHit to server with damage: {self._weaponData.Damage or 0}`)
 			bullet:Destroy()
 			debounce = true
 			cleanup()
-			self._events.ShieldHit:FireServer(self._weaponData, shieldModel)
+			self._events.ShieldHit:FireServer(shieldModel)
 			return
 		end
 
 		-- Skip accessories/hats
 		if hitParent and (hitParent:IsA("Accessory") or hitParent:IsA("Hat")) then
-			for _, plyr in pairs(game.Players:GetPlayers()) do
+			for _, plyr in Players:GetPlayers() do
 				if not plyr.Character then
 					continue
 				end
 				for _, accessory in plyr.Character:GetChildren() do
 					if accessory:IsA("Accessory") then
-						table.insert(self._ignoreModel, accessory)
+						table.insert(ignoreModel, accessory)
 					end
 				end
 			end
-			raycastParams.FilterDescendantsInstances = self._ignoreModel
+			raycastParams.FilterDescendantsInstances = ignoreModel
 			return
 		end
 
 		-- Skip armour shell / cosmetic parts
 		if hitInstance and IGNORE_NAMES[hitInstance.Name] then
-			table.insert(self._ignoreModel, hitInstance)
-			raycastParams.FilterDescendantsInstances = self._ignoreModel
+			table.insert(ignoreModel, hitInstance)
+			raycastParams.FilterDescendantsInstances = ignoreModel
 			return
 		end
 		if hitParent and IGNORE_NAMES[hitParent.Name] then
-			table.insert(self._ignoreModel, hitParent)
-			raycastParams.FilterDescendantsInstances = self._ignoreModel
+			table.insert(ignoreModel, hitParent)
+			raycastParams.FilterDescendantsInstances = ignoreModel
 			return
 		end
 
@@ -342,46 +332,45 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 			and hitInstance.Name ~= "RightUpperLeg" and hitInstance.Name ~= "RightLowerLeg" and hitInstance.Name ~= "RightFoot"
 			and hitInstance.Name ~= "LeftUpperLeg" and hitInstance.Name ~= "LeftLowerLeg" and hitInstance.Name ~= "LeftFoot"
 		then
-			table.insert(self._ignoreModel, hitInstance)
-			raycastParams.FilterDescendantsInstances = self._ignoreModel
+			table.insert(ignoreModel, hitInstance)
+			raycastParams.FilterDescendantsInstances = ignoreModel
 			return
 		end
 
 		-- Hit!
-		print(`[CLIENT-Shield] NOT a shield — bullet hit a normal target. Instance: '{raycastResult.Instance.Name}' (class: {raycastResult.Instance.ClassName}), proceeding to humanoid damage check`)
 		bullet:Destroy()
 		debounce = true
 		cleanup()
 
 		-- Hit resolution (damage / shield) must never be blocked by an error
 		-- inside the visual-effect module, so run it defensively.
-		pcall(function()
-			HitMod.HitEffect(self._ignoreModel, raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
-		end)
+		local success, errorMessage = xpcall(function()
+			HitMod.HitEffect(ignoreModel, raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
+		end, debug.traceback)
+		if not success then
+			warn("[ACS] Ranged hit effect failed: " .. tostring(errorMessage))
+		end
 		self._events.HitEffect:FireServer(raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
 
 		local hitPart = raycastResult.Instance
-		local hitDist = (raycastResult.Position - origin).Magnitude
 
 		local foundHuman, targetHumanoid = self:checkForHumanoid(raycastResult.Instance)
 
 		if foundHuman and targetHumanoid and targetHumanoid.Health > 0 and self._weaponData then
-			print(`[CLIENT-Shield] NOT a shield — humanoid hit! target part: '{hitPart.Name}', humanoid health: {targetHumanoid.Health}, sending normal damage to server`)
-			local authToken = self._userIdToken .. "-" .. self._player.UserId
 
 			if hitPart.Name == "Head" or hitPart.Parent.Name == "Top" or hitPart.Parent.Name == "Headset"
 				or hitPart.Parent.Name == "Olho" or hitPart.Parent.Name == "Face" or hitPart.Parent.Name == "Numero" then
-				self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, hitDist, 1, self._weaponData, self._modTable, nil, nil, authToken)
+				self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 1, self._modTable)
 			elseif hitPart.Name == "Torso" or hitPart.Name == "UpperTorso" or hitPart.Name == "LowerTorso"
 				or hitPart.Parent.Name == "Chest" or hitPart.Parent.Name == "Waist"
 				or hitPart.Name == "Right Arm" or hitPart.Name == "Left Arm"
 				or hitPart.Name == "RightUpperArm" or hitPart.Name == "RightLowerArm" or hitPart.Name == "RightHand"
 				or hitPart.Name == "LeftUpperArm" or hitPart.Name == "LeftLowerArm" or hitPart.Name == "LeftHand" then
-				self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, hitDist, 2, self._weaponData, self._modTable, nil, nil, authToken)
+				self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 2, self._modTable)
 			elseif hitPart.Name == "Right Leg" or hitPart.Name == "Left Leg"
 				or hitPart.Name == "RightUpperLeg" or hitPart.Name == "RightLowerLeg" or hitPart.Name == "RightFoot"
 				or hitPart.Name == "LeftUpperLeg" or hitPart.Name == "LeftLowerLeg" or hitPart.Name == "LeftFoot" then
-				self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, hitDist, 3, self._weaponData, self._modTable, nil, nil, authToken)
+				self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 3, self._modTable)
 			end
 		end
 	end)
@@ -400,60 +389,65 @@ function CastController:meleeCast()
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 	raycastParams.IgnoreWater = true
 
-	local function trace()
-		local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-		if not result then
-			return nil
-		end
+	local ignoreModel = table.clone(self._ignoreModel)
+	raycastParams.FilterDescendantsInstances = ignoreModel
 
-		local hit = result.Instance
-		local parent = hit and hit.Parent
+	local function trace(): RaycastResult?
+		for _ = 1, 32 do
+			local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+			if not result then
+				return nil
+			end
 
-		-- Skip accessories
-		if parent and (parent:IsA("Accessory") or parent:IsA("Hat")) then
-			for _, plyr in pairs(game.Players:GetPlayers()) do
-				if not plyr.Character then
-					continue
-				end
-				for _, acc in plyr.Character:GetChildren() do
-					if acc:IsA("Accessory") then
-						table.insert(self._ignoreModel, acc)
+			local hit = result.Instance
+			local parent = hit.Parent
+
+			-- Skip accessories and continue from the same ray with a bounded
+			-- number of ignored candidates.
+			if parent and (parent:IsA("Accessory") or parent:IsA("Hat")) then
+				for _, plyr in Players:GetPlayers() do
+					local character = plyr.Character
+					if character then
+						for _, accessory in character:GetChildren() do
+							if accessory:IsA("Accessory") then
+								table.insert(ignoreModel, accessory)
+							end
+						end
 					end
 				end
+				raycastParams.FilterDescendantsInstances = ignoreModel
+				continue
 			end
-			raycastParams.FilterDescendantsInstances = self._ignoreModel
-			return trace()
-		end
 
-		-- Skip armour shell
-		if hit and (IGNORE_NAMES[hit.Name] or (parent and IGNORE_NAMES[parent.Name])) then
-			if IGNORE_NAMES[hit.Name] then
-				table.insert(self._ignoreModel, hit)
-			else
-				table.insert(self._ignoreModel, parent)
+			-- Skip armour shell / cosmetic parts.
+			if IGNORE_NAMES[hit.Name] or (parent and IGNORE_NAMES[parent.Name]) then
+				table.insert(ignoreModel, if IGNORE_NAMES[hit.Name] then hit else parent)
+				raycastParams.FilterDescendantsInstances = ignoreModel
+				continue
 			end
-			raycastParams.FilterDescendantsInstances = self._ignoreModel
-			return trace()
+
+			-- Skip invisible / non-collidable parts except body parts.
+			if (hit.Transparency >= 1 or hit.CanCollide == false)
+				and not IGNORE_NAMES[hit.Name]
+				and hit.Name ~= "Head"
+				and hit.Name ~= "Right Arm" and hit.Name ~= "Left Arm"
+				and hit.Name ~= "Right Leg" and hit.Name ~= "Left Leg"
+				and hit.Name ~= "UpperTorso" and hit.Name ~= "LowerTorso"
+				and hit.Name ~= "RightUpperArm" and hit.Name ~= "RightLowerArm" and hit.Name ~= "RightHand"
+				and hit.Name ~= "LeftUpperArm" and hit.Name ~= "LeftLowerArm" and hit.Name ~= "LeftHand"
+				and hit.Name ~= "RightUpperLeg" and hit.Name ~= "RightLowerLeg" and hit.Name ~= "RightFoot"
+				and hit.Name ~= "LeftUpperLeg" and hit.Name ~= "LeftLowerLeg" and hit.Name ~= "LeftFoot"
+			then
+				table.insert(ignoreModel, hit)
+				raycastParams.FilterDescendantsInstances = ignoreModel
+				continue
+			end
+
+			return result
 		end
 
-		-- Skip invisible / non-collidable
-		if hit and (hit.Transparency >= 1 or hit.CanCollide == false) and not IGNORE_NAMES[hit.Name]
-			and hit.Name ~= "Head" and hit.Name ~= "Right Arm" and hit.Name ~= "Left Arm"
-			and hit.Name ~= "Right Leg" and hit.Name ~= "Left Leg"
-			and hit.Name ~= "UpperTorso" and hit.Name ~= "LowerTorso"
-			and hit.Name ~= "RightUpperArm" and hit.Name ~= "RightLowerArm" and hit.Name ~= "RightHand"
-			and hit.Name ~= "LeftUpperArm" and hit.Name ~= "LeftLowerArm" and hit.Name ~= "LeftHand"
-			and hit.Name ~= "RightUpperLeg" and hit.Name ~= "RightLowerLeg" and hit.Name ~= "RightFoot"
-			and hit.Name ~= "LeftUpperLeg" and hit.Name ~= "LeftLowerLeg" and hit.Name ~= "LeftFoot"
-		then
-			table.insert(self._ignoreModel, hit)
-			raycastParams.FilterDescendantsInstances = self._ignoreModel
-			return trace()
-		end
-
-		return result
+		return nil
 	end
-
 	local raycastResult = trace()
 	if not raycastResult then
 		return
@@ -461,48 +455,44 @@ function CastController:meleeCast()
 
 	-- Same as the ranged path: a visual-effect error must never block
 	-- melee damage or shield hit resolution.
-	pcall(function()
-		HitMod.HitEffect(self._ignoreModel, raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
-	end)
+	local success, errorMessage = xpcall(function()
+		HitMod.HitEffect(ignoreModel, raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
+	end, debug.traceback)
+	if not success then
+		warn("[ACS] Melee hit effect failed: " .. tostring(errorMessage))
+	end
 	self._events.HitEffect:FireServer(raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
 
 	local hitPart = raycastResult.Instance
 
 	-- If the melee hit a shield, damage the shield instead of the player.
-	print(`[CLIENT-Shield] MELEE HIT — hitPart: '{hitPart.Name}' (class: {hitPart.ClassName}), parent: '{hitPart.Parent and hitPart.Parent.Name or "nil"}'`)
 	local shieldModel = self:checkForShield(hitPart)
 	if shieldModel and self._weaponData then
-		print(`[CLIENT-Shield] MELEE shield hit detected! Shield model: '{shieldModel.Name}', firing ShieldHit to server with damage: {self._weaponData.Damage or 0}`)
-		local authToken = self._userIdToken .. "-" .. self._player.UserId
-		self._events.ShieldHit:FireServer(self._weaponData, shieldModel)
+		self._events.ShieldHit:FireServer(shieldModel)
 		return
 	end
-	print(`[CLIENT-Shield] Was it a shield? false — proceeding to normal melee damage`)
 
 	local foundHuman, targetHumanoid = self:checkForHumanoid(raycastResult.Instance)
 	if not foundHuman or targetHumanoid.Health <= 0 then
-		print(`[CLIENT-Shield] MELEE — no valid humanoid found (foundHuman: {foundHuman}), melee damage cancelled`)
 		return
 	end
-	print(`[CLIENT-Shield] MELEE — humanoid hit! target part: '{hitPart.Name}', humanoid health: {targetHumanoid.Health}, sending normal melee damage to server`)
 
-	local authToken = self._userIdToken .. "-" .. self._player.UserId
 
 	if hitPart.Name == "Head" or hitPart.Parent.Name == "Top" or hitPart.Parent.Name == "Headset"
 		or hitPart.Parent.Name == "Olho" or hitPart.Parent.Name == "Face" or hitPart.Parent.Name == "Numero" then
 		task.spawn(function()
-			self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 0, 1, self._weaponData, self._modTable, nil, nil, authToken)
+			self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 1, self._modTable)
 		end)
 	elseif hitPart.Name == "Torso" or hitPart.Name == "UpperTorso" or hitPart.Name == "LowerTorso"
 		or hitPart.Parent.Name == "Chest" or hitPart.Parent.Name == "Waist"
 		or hitPart.Name == "RightUpperArm" or hitPart.Name == "RightLowerArm" or hitPart.Name == "RightHand"
 		or hitPart.Name == "LeftUpperArm" or hitPart.Name == "LeftLowerArm" or hitPart.Name == "LeftHand" then
 		task.spawn(function()
-			self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 0, 2, self._weaponData, self._modTable, nil, nil, authToken)
+			self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 2, self._modTable)
 		end)
 	else
 		task.spawn(function()
-			self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 0, 3, self._weaponData, self._modTable, nil, nil, authToken)
+			self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 3, self._modTable)
 		end)
 	end
 end

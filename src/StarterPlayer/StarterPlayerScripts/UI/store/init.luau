@@ -6,6 +6,7 @@ local ProfileStore = require(script.ProfileStore)
 local NotificationStore = require(script.NotificationStore)
 local NPCStore = require(script.NPCStore)
 local NukeStore = require(script.NukeStore)
+local KOTHStore = require(script.KOTHStore)
 local useGameStore = require(script.useGameStore)
 
 return {
@@ -15,6 +16,7 @@ return {
 	NotificationStore = NotificationStore,
 	NPCStore = NPCStore,
 	NukeStore = NukeStore,
+	KOTHStore = KOTHStore,
 	useGameStore = useGameStore,
 }
 

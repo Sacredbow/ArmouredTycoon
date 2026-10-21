@@ -9,7 +9,7 @@ local ReactRoblox = require(ReplicatedStorage.Packages.ReactRoblox)
 
 local App = require(script.Parent.App)
 
-local DEBUG_REACT_UI = true
+local DEBUG_REACT_UI = game:GetService("RunService"):IsStudio()
 local CUSTOM_INVENTORY_ENABLED = false
 
 local player = Players.LocalPlayer

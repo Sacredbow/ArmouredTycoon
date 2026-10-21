@@ -11,7 +11,8 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BuildAssemble = require(ReplicatedStorage.Libraries.BuildAssemble)
-local Packets = require(ReplicatedStorage.Network.Packets)
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+local Packets = PacketBootstrap.Get()
 
 local function BuildInstance(data: { item: Instance, duration: number?, mode: string? })
 	if not data or not data.item then

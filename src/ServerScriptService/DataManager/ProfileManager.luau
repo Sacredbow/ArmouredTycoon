@@ -10,6 +10,7 @@ local Replica = require(ReplicatedStorage.Packages.replica)
 local QuestOptions = require(ReplicatedStorage.Progression.QuestOptions)
 local QuestProgression = require(ServerScriptService.Gameplay.Progression.QuestProgression)
 local SoundManager = require(ServerScriptService.Utilities.SoundManager)
+local NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
 
 -- Store profiles from the Profile Store.
 
@@ -369,7 +370,15 @@ function ProfileManager.BindQuestTracking(player: Player)
 end
 
 do
-	Packets.queries.ProfileAction.listen(function(request, player: Player?)
+	NetworkGuard.Query(Packets.queries.ProfileAction, "ProfileAction", {
+	Rate = 8,
+	Burst = 12,
+	Validate = function(request)
+		return type(request) == "table"
+			and (request.action == "ClaimDaily" or request.action == "ClaimQuest")
+			and (request.payload == nil or (type(request.payload) == "string" and #request.payload <= 64))
+	end,
+}, function(request, player: Player?)
 		if not player then
 			return { success = false, message = "Player unavailable." }
 		end

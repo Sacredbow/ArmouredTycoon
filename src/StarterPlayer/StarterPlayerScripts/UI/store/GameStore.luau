@@ -12,22 +12,22 @@
 	- ProfileStore        — replica, XP, level, quests, daily
 	- NotificationStore   — toast queue, weather notifications
 	- NPCStore            — conversation state
-	- NukeStore           — nuke cinematic, KOTH announcements
+	- KOTHStore           - KOTH announcements
+	- NukeStore           - nuke cinematic
 ]]
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Signal = require(ReplicatedStorage.Packages.signal)
 local Janitor = require(ReplicatedStorage.Packages.janitor)
-local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
-local SettingsConfig = require(ReplicatedStorage.Modules.SettingsManager.SettingsConfig)
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
 
 local StatsStore = require(script.Parent.StatsStore)
 local ProfileStore = require(script.Parent.ProfileStore)
 local NotificationStore = require(script.Parent.NotificationStore)
 local NPCStore = require(script.Parent.NPCStore)
+local KOTHStore = require(script.Parent.KOTHStore)
 local NukeStore = require(script.Parent.NukeStore)
 
 --// Re-export types from sub-stores for backward compatibility
@@ -35,7 +35,7 @@ export type Stats = StatsStore.Stats
 export type QuestProgress = ProfileStore.QuestProgress
 export type ProfileState = ProfileStore.ProfileState
 export type Notification = NotificationStore.Notification
-export type KOTHAnnouncement = NukeStore.KOTHAnnouncement
+export type KOTHAnnouncement = KOTHStore.KOTHAnnouncement
 export type ConversationOption = NPCStore.ConversationOption
 export type NPCConversation = NPCStore.NPCConversation
 export type NukeCinematic = NukeStore.NukeCinematic
@@ -65,6 +65,7 @@ function GameStore.new(): GameStore
 	self.ProfileStore = ProfileStore.new()
 	self.NotificationStore = NotificationStore.new()
 	self.NPCStore = NPCStore.new()
+	self.KOTHStore = KOTHStore.new()
 	self.NukeStore = NukeStore.new()
 
 	self.Janitor = Janitor.new()
@@ -89,6 +90,7 @@ function GameStore:Start()
 	self.ProfileStore:Start(nil)
 	self.NotificationStore:Start(nil)
 	self.NPCStore:Start(nil)
+	self.KOTHStore:Start(nil)
 	self.NukeStore:Start(nil)
 
 	-- Register cleanup
@@ -96,6 +98,7 @@ function GameStore:Start()
 	self.Janitor:Add(self.ProfileStore, "Destroy", "ProfileStore")
 	self.Janitor:Add(self.NotificationStore, "Destroy", "NotificationStore")
 	self.Janitor:Add(self.NPCStore, "Destroy", "NPCStore")
+	self.Janitor:Add(self.KOTHStore, "Destroy", "KOTHStore")
 	self.Janitor:Add(self.NukeStore, "Destroy", "NukeStore")
 
 	-- Wire sub-store changes to unified signal
@@ -114,6 +117,10 @@ function GameStore:Start()
 	self.Janitor:Add(self.NPCStore.Changed:Connect(function()
 		self.Changed:Fire()
 	end), "Disconnect", "NPCChanged")
+
+	self.Janitor:Add(self.KOTHStore.Changed:Connect(function()
+		self.Changed:Fire()
+	end), "Disconnect", "KOTHChanged")
 
 	self.Janitor:Add(self.NukeStore.Changed:Connect(function()
 		self.Changed:Fire()
@@ -136,6 +143,7 @@ function GameStore:Start()
 		self.ProfileStore:Start(Packets)
 		self.NotificationStore:Start(Packets)
 		self.NPCStore:Start(Packets)
+		self.KOTHStore:Start(Packets)
 		self.NukeStore:Start(Packets)
 	end), true, "AsyncPacketStart")
 
@@ -153,23 +161,8 @@ function GameStore:TryGetPackets(): any
 	if RunService:IsStudio() and not RunService:IsRunning() then
 		return nil
 	end
-
-	local Storage = ReplicatedStorage:FindFirstChild("BytenetStorage")
-	local NamespaceValue = Storage and Storage:FindFirstChild("ArmouredTycoon")
-	if not (NamespaceValue and NamespaceValue:IsA("StringValue") and NamespaceValue.Value ~= "") then
-		return nil
-	end
-
-	local Ok, Result = pcall(function()
-		return require(ReplicatedStorage.Network.Packets)
-	end)
-	if not Ok then
-		return nil
-	end
-
-	return Result
+	return PacketBootstrap.TryGet()
 end
-
 --// Snapshot (combined from all sub-stores)
 
 function GameStore:GetSnapshot(): Snapshot
@@ -177,7 +170,7 @@ function GameStore:GetSnapshot(): Snapshot
 		stats = self.StatsStore:GetSnapshot(),
 		profile = self.ProfileStore:GetSnapshot(),
 		notifications = self.NotificationStore:GetSnapshot(),
-		kothAnnouncement = self.NukeStore:GetKOTHSnapshot(),
+		kothAnnouncement = self.KOTHStore:GetSnapshot(),
 		npcConversation = self.NPCStore:GetSnapshot(),
 		nukeCinematic = self.NukeStore:GetNukeSnapshot(),
 	}
@@ -217,7 +210,7 @@ function GameStore:DismissNotification(Id: number)
 end
 
 function GameStore:DismissKOTHAnnouncement(Id: number)
-	self.NukeStore:DismissKOTHAnnouncement(Id)
+	self.KOTHStore:DismissAnnouncement(Id)
 end
 
 function GameStore:ChooseNPCConversationOption(OptionId: string)
@@ -288,6 +281,7 @@ export type GameStore = typeof(setmetatable({} :: {
 	ProfileStore: any,
 	NotificationStore: any,
 	NPCStore: any,
+	KOTHStore: any,
 	NukeStore: any,
 	Janitor: any,
 	Changed: any,

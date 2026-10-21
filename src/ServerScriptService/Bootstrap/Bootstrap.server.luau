@@ -28,6 +28,7 @@ const LeaderboardService = require(ServerScriptService.Services.World.Leaderboar
 const KOTHService = require(ServerScriptService.Services.World.KOTHService)
 const CodeService = require(ServerScriptService.Services.Commerce.CodeService)
 const InventoryServer = require(ServerScriptService.Gameplay.Inventory.InventoryServer)
+const BuildService = require(ServerScriptService.Services.Tycoon.BuildService)
 
 --// Internal Utilities
 
@@ -46,7 +47,7 @@ end
 --// Module Initialization
 
 local PlayerSvc = LoadModule("PlayerService", function()
-	local S = PlayerService.new()
+	local S = PlayerService.create()
 	S:Init()
 	return S
 end)
@@ -66,7 +67,7 @@ if not PurchaseSvc then
 end
 
 local TycoonSvc = LoadModule("TycoonService", function()
-	local S = TycoonService.new(PlayerSvc, PurchaseSvc)
+	local S = TycoonService.create(PlayerSvc, PurchaseSvc)
 	S:Init()
 	return S
 end)
@@ -77,6 +78,14 @@ end
 
 PlayerSvc.TycoonService = TycoonSvc
 
+local BuildSvc = LoadModule("BuildService", function()
+	local S = BuildService.create(PlayerSvc, TycoonSvc)
+	S:Init()
+	return S
+end)
+if BuildSvc then
+	PlayerSvc.BuildService = BuildSvc
+end
 local _EnvironmentSvc = LoadModule("EnvironmentService", function()
 	local S = EnvironmentService.new({
 		LightingPackage = Assets.Lighting,

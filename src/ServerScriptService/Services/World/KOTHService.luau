@@ -10,23 +10,13 @@ local ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 
 local KOTHService = {}
 KOTHService.__index = KOTHService
+local ActiveService: any? = nil
 
 local CASH_PER_SECOND = 3000
 local AWARD_INTERVAL = 1
 local ANNOUNCE_INTERVAL_SECONDS = 5 * 60
 local KOTH_PATH = { "MiddleSection", "KOTH" }
 
-local function schedule(delay: number, callback: () -> (), name: string?, repeatEvery: number?)
-	ECS.createEntity({
-		Name = name or "KOTHScheduledTask",
-		ScheduledTask = {
-			delay = delay,
-			elapsed = 0,
-			repeatEvery = repeatEvery,
-			callback = callback,
-		},
-	})
-end
 
 local function getTeamColor(player: Player): Color3
 	if player.Team then
@@ -60,6 +50,7 @@ function KOTHService.new()
 	self._king = nil :: Player?
 	self._kingStartedAt = 0
 	self._lastAnnouncedInterval = 0
+	ActiveService = self
 
 	return self
 end
@@ -95,10 +86,27 @@ function KOTHService:Init()
 
 	self:_refreshKing()
 
-	schedule(AWARD_INTERVAL, function()
-		self:_tickAward()
-		return true
-	end, "KOTH:AwardTick", AWARD_INTERVAL)
+	ECS.createEntity({
+		Name = "KOTH:AwardTick",
+		ScheduledTask = {
+			delay = AWARD_INTERVAL,
+			elapsed = 0,
+			repeatEvery = AWARD_INTERVAL,
+			kind = "KOTHAwardTick",
+		},
+	})
+end
+
+function KOTHService.TickAwardActive()
+	if ActiveService then
+		ActiveService:_tickAward()
+	end
+end
+
+function KOTHService.CheckTouchEndedActive(player: Player, character: Model)
+	if ActiveService and not ActiveService:_isCharacterInZone(character) then
+		ActiveService:_removeContester(player)
+	end
 end
 
 function KOTHService:_findKingLabel(contest: BasePart): TextLabel?
@@ -221,14 +229,16 @@ function KOTHService:_onTouchEnded(hit: Instance)
 		return
 	end
 
-	schedule(0.15, function()
-		if self:_isCharacterInZone(character) then
-			return false
-		end
-
-		self:_removeContester(player)
-		return false
-	end, "KOTH:TouchEndedCheck")
+	ECS.createEntity({
+		Name = "KOTH:TouchEndedCheck",
+		ScheduledTask = {
+			delay = 0.15,
+			elapsed = 0,
+			kind = "KOTHTouchEndedCheck",
+			player = player,
+			character = character,
+		},
+	})
 end
 
 function KOTHService:_removeContester(player: Player)

@@ -63,14 +63,23 @@ local RAIN_OCCLUDED_MAXSPEED = 100							-- Maximum speed for the occluded strai
 local RAIN_OCCLUDED_SPREAD = Vector2.new(10,10)				-- Spread angle for the occluded straight rain emitters
 local RAIN_OCCLUDED_MAXINTENSITY = 2						-- How many occluded straight rain particles are emitted for every splash for max intensity
 
-local RAIN_OCCLUDECHECK_OFFSET_Y = 500						-- Vertical offset from camera height to start scanning downward from for splashes
-local RAIN_OCCLUDECHECK_OFFSET_XZ_MIN = -100				-- Range of possible XZ offset values from camera XZ position for the splashes
-local RAIN_OCCLUDECHECK_OFFSET_XZ_MAX = 100
-local RAIN_OCCLUDECHECK_SCAN_Y = 550						-- Scan magnitude along rain path
-
 local RAIN_UPDATE_PERIOD = 6								-- Update the transparency of the main emitters + volume of rain inside every X frames
 
-local RAIN_VOLUME_SCAN_RADIUS = 35							-- Defining grid for checking how far the camera is away from a spot exposed to rain
+local RAIN_VOLUME_SCAN_RADIUS = 35
+local RAIN_GRID_RADIUS = 30
+local RAIN_GRID_OFFSETS = {
+	Vector3.new(-RAIN_GRID_RADIUS, 0, -RAIN_GRID_RADIUS),
+	Vector3.new(0, 0, -RAIN_GRID_RADIUS),
+	Vector3.new(RAIN_GRID_RADIUS, 0, -RAIN_GRID_RADIUS),
+	Vector3.new(-RAIN_GRID_RADIUS, 0, 0),
+	Vector3.zero,
+	Vector3.new(RAIN_GRID_RADIUS, 0, 0),
+	Vector3.new(-RAIN_GRID_RADIUS, 0, RAIN_GRID_RADIUS),
+	Vector3.new(0, 0, RAIN_GRID_RADIUS),
+	Vector3.new(RAIN_GRID_RADIUS, 0, RAIN_GRID_RADIUS),
+}
+
+-- Defining grid for checking how far the camera is away from a spot exposed to rain
 local RAIN_VOLUME_SCAN_GRID = {								-- Unit range grid for scanning how far away user is from rain space
 	-- range 0.2, 4 pts
 	Vector3.new(0.141421363, 0, 0.141421363);
@@ -113,14 +122,6 @@ local RAIN_VOLUME_SCAN_GRID = {								-- Unit range grid for scanning how far a
 }
 
 
--- Enumerators:
-
-local CollisionMode = {
-	None = 0;
-	Whitelist = 1;
-	Blacklist = 2;
-	Function = 3;
-}
 
 
 -- Variables & setup:
@@ -141,9 +142,6 @@ local rainDirection = RAIN_DEFAULT_DIRECTION				-- Direction that rain falls int
 
 local currentCeiling = nil									-- Y coordinate of ceiling (if present)
 
-local collisionMode = CollisionMode.None					-- Collision mode (from Rain.CollisionMode) for raycasting
-local collisionList = nil									-- Blacklist/whitelist for raycasting
-local collisionFunc = nil									-- Raycasting test function for when collisionMode == Rain.CollisionMode.Function
 
 local straightLowAlpha = 1									-- Current transparency for straight rain particles
 local topdownLowAlpha = 1									-- Current transparency for top-down rain particles
@@ -284,47 +282,48 @@ end
 
 local ignoreEmitterList = { Emitter }
 
-local raycastFunctions = {
-	[CollisionMode.None] = function(ray, ignoreCharacter)
-		return workspace:FindPartOnRayWithIgnoreList(ray, ignoreCharacter and {Emitter, Players.LocalPlayer and Players.LocalPlayer.Character} or ignoreEmitterList)
-	end;
-	[CollisionMode.Blacklist] = function(ray)
-		return workspace:FindPartOnRayWithIgnoreList(ray, collisionList)
-	end;
-	[CollisionMode.Whitelist] = function(ray)
-		return workspace:FindPartOnRayWithWhitelist(ray, collisionList)
-	end;
-	[CollisionMode.Function] = function(ray)
-		local destination = ray.Origin + ray.Direction
-		-- draw multiple raycasts concatenated to each other until no hit / valid hit found
-		while ray.Direction.magnitude > 0.001 do
-			local part, pos, norm, mat = workspace:FindPartOnRayWithIgnoreList(ray, ignoreEmitterList)
-			if not part or collisionFunc(part) then
-				return part, pos, norm, mat
-			end
-			local start = pos + ray.Direction.Unit * 0.001
-			ray = Ray.new(start, destination - start)
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+
+local function raycast(ray, ignoreCharacter)
+	local filter = ignoreEmitterList
+	if ignoreCharacter then
+		filter = { Emitter }
+		local character = Players.LocalPlayer and Players.LocalPlayer.Character
+		if character then
+			table.insert(filter, character)
 		end
-	end;
-}
-local raycast = raycastFunctions[collisionMode]
+	end
+
+	raycastParams.FilterDescendantsInstances = filter
+	return castRay(ray.Origin, ray.Direction, raycastParams)
+end
 
 local function connectLoop()
 	
-	local rand = Random.new()
-	
-	local inside = true					-- Whether camera is currently in a spot occluded from the sky
-	local frame = RAIN_UPDATE_PERIOD	-- Frame counter, and force update cycle right now
+	local inside = false					-- Whether camera is currently in a spot occluded from the sky
+	local frame = RAIN_UPDATE_PERIOD
+	local occlusionAccumulator = 0
 	
 	-- Update Emitter on RenderStepped since it needs to be synced to Camera
-	table.insert(connections, RunService.RenderStepped:connect(function()
+	table.insert(connections, RunService.RenderStepped:Connect(function()
+		local camera = workspace.CurrentCamera
+		if not camera then
+			return
+		end
 		
 		-- Check if camera is outside or inside
-		local part, position = raycast(Ray.new(workspace.CurrentCamera.CFrame.p, -rainDirection * RAIN_SCANHEIGHT), true)
+		local part, position, normal = raycast(Ray.new(camera.CFrame.p, -rainDirection * RAIN_SCANHEIGHT), true)
+		if part and position and normal and normal.Y > 0.35 and rainDirection.Y < 0 then
+			currentCeiling = position.Y
+		else
+			currentCeiling = nil
+		end
 		
-		if (not currentCeiling or workspace.CurrentCamera.CFrame.p.y <= currentCeiling) and not part then
+		if not currentCeiling or camera.CFrame.p.y > currentCeiling then
 
 			-- Camera is outside and under ceiling
+			inside = false
 
 			if volumeTarget < 1 and not disabled then
 				volumeTarget = 1
@@ -333,10 +332,10 @@ local function connectLoop()
 
 			frame = RAIN_UPDATE_PERIOD
 
-			local t = math.abs(workspace.CurrentCamera.CFrame.lookVector:Dot(rainDirection))
+			local t = math.abs(camera.CFrame.lookVector:Dot(rainDirection))
 
-			local center = workspace.CurrentCamera.CFrame.p
-			local right = workspace.CurrentCamera.CFrame.lookVector:Cross(-rainDirection)
+			local center = camera.CFrame.p
+			local right = camera.CFrame.lookVector:Cross(-rainDirection)
 			right = right.magnitude > 0.001 and right.unit or -rainDirection
 			local forward = rainDirection:Cross(right).unit
 
@@ -346,7 +345,7 @@ local function connectLoop()
 				RAIN_EMITTER_DIM_DEFAULT + (1 - t)*(RAIN_EMITTER_DIM_MAXFORWARD - RAIN_EMITTER_DIM_DEFAULT)
 			)
 
-			local emitterOffset = (1 - t) * workspace.CurrentCamera.CFrame.lookVector * Emitter.Size.Z/3
+			local emitterOffset = (1 - t) * camera.CFrame.lookVector * Emitter.Size.Z/3
 			- t * rainDirection * RAIN_EMITTER_UP_MODIFIER
 
 			local emitterPos = center + emitterOffset
@@ -376,7 +375,11 @@ local function connectLoop()
 
 	-- Do the other effects on Stepped
 	local signal = RunService:IsRunning() and RunService.Stepped or RunService.RenderStepped
-	table.insert(connections, signal:connect(function()
+	table.insert(connections, signal:Connect(function(timeOrDelta, steppedDeltaTime)
+		local camera = workspace.CurrentCamera
+		if not camera then
+			return
+		end
 		
 		frame = frame + 1
 		
@@ -384,7 +387,7 @@ local function connectLoop()
 		if frame >= RAIN_UPDATE_PERIOD then
 			
 			-- Measure of how much camera is facing down (0-1)
-			local t = math.abs(workspace.CurrentCamera.CFrame.lookVector:Dot(rainDirection))
+			local t = math.abs(camera.CFrame.lookVector:Dot(rainDirection))
 			
 			-- More looking down = see straight particles less and see top-down particles more
 			local straightSequence = NumberSequence.new {
@@ -401,7 +404,7 @@ local function connectLoop()
 			}
 			
 			-- Find desired rotation for the straight rain particles
-			local mapped = workspace.Camera.CFrame:inverse() * (workspace.Camera.CFrame.p - rainDirection)
+			local mapped = camera.CFrame:inverse() * (camera.CFrame.p - rainDirection)
 			local straightRotation = NumberRange.new(math.deg(math.atan2(-mapped.x, mapped.y)))
 			
 			if inside then
@@ -419,7 +422,7 @@ local function connectLoop()
 					
 					local volume = 0
 					
-					if (not currentCeiling or workspace.CurrentCamera.CFrame.p.y <= currentCeiling) then
+					if (not currentCeiling or camera.CFrame.p.y <= currentCeiling) then
 						
 						-- Check how far away camera is from a space open to the sky using volume scan grid
 						
@@ -427,7 +430,7 @@ local function connectLoop()
 						local rayDirection = -rainDirection * RAIN_SCANHEIGHT
 						
 						for i = 1, #volumeScanGrid do -- In order, so first hit is closest
-							if not raycast(Ray.new(workspace.CurrentCamera.CFrame * volumeScanGrid[i], rayDirection), true) then
+							if not raycast(Ray.new(camera.CFrame * volumeScanGrid[i], rayDirection), true) then
 								minDistance = volumeScanGrid[i].magnitude
 								break
 							end
@@ -460,63 +463,45 @@ local function connectLoop()
 			
 		end
 		
-		local center = workspace.CurrentCamera.CFrame.p
-		local right = workspace.CurrentCamera.CFrame.lookVector:Cross(-rainDirection)
-		right = right.magnitude > 0.001 and right.unit or -rainDirection
-		local forward = rainDirection:Cross(right).unit
-		local transform = CFrame.new(
-			center.x, center.y, center.z,
-			right.x, -rainDirection.x, forward.x,
-			right.y, -rainDirection.y, forward.y,
-			right.z, -rainDirection.z, forward.z
-		)
-		local rayDirection = rainDirection * RAIN_OCCLUDECHECK_SCAN_Y
-		
-		-- Splash and occlusion effects
-		for i = 1, numSplashes do
-			
+		local deltaTime = if typeof(steppedDeltaTime) == "number" then steppedDeltaTime else if typeof(timeOrDelta) == "number" then timeOrDelta else 1 / 60
+		occlusionAccumulator += math.min(deltaTime, 0.1)
+		if occlusionAccumulator < 1 / 15 then
+			return
+		end
+		occlusionAccumulator = 0
+
+		local center = camera.CFrame.Position
+		local right = camera.CFrame.LookVector:Cross(-rainDirection)
+		right = right.Magnitude > 0.001 and right.Unit or -rainDirection
+		local forward = rainDirection:Cross(right).Unit
+		local transform = CFrame.fromMatrix(center, right, -rainDirection, forward)
+		local maxCells = math.min(math.floor(numSplashes), #RAIN_GRID_OFFSETS)
+
+		-- Each cell is checked along the actual rain path. Covered cells do
+		-- not emit, so indoor particles cannot be spawned above a roof.
+		for i = 1, maxCells do
 			local splashAttachment = splashAttachments[i]
 			local rainAttachment = rainAttachments[i]
-			
-			-- Sample random splash position
-			local x = rand:NextNumber(RAIN_OCCLUDECHECK_OFFSET_XZ_MIN, RAIN_OCCLUDECHECK_OFFSET_XZ_MAX)
-			local z = rand:NextNumber(RAIN_OCCLUDECHECK_OFFSET_XZ_MIN, RAIN_OCCLUDECHECK_OFFSET_XZ_MAX)
-			local part, position, normal = raycast(Ray.new(transform * v3(x, RAIN_OCCLUDECHECK_OFFSET_Y, z), rayDirection))
-			
-			if part then
-				
-				-- Draw a splash at hit
+			local cellPosition = (transform * CFrame.new(RAIN_GRID_OFFSETS[i])).Position
+			local skyDirection = -rainDirection * RAIN_SCANHEIGHT
+			local roofHit = raycast(Ray.new(cellPosition, skyDirection), true)
+			local floorPart, position, normal = raycast(
+				Ray.new(cellPosition - rainDirection * RAIN_SCANHEIGHT, rainDirection * RAIN_SCANHEIGHT),
+				true
+			)
+
+			if floorPart and position and normal and (not inside or not roofHit) then
 				splashAttachment.Position = position + normal * RAIN_SPLASH_CORRECTION_Y
 				splashAttachment.RainSplash:Emit(1)
-				
-				if inside then
-					
-					-- Draw occlusion rain particles a little bit above the splash position
-					local corrected = position - rainDirection * RAIN_SPLASH_STRAIGHT_OFFSET_Y
-					if currentCeiling and corrected.Y > currentCeiling and rainDirection.Y < 0 then
-						corrected = corrected + rainDirection * (currentCeiling - corrected.Y) / rainDirection.Y
-					end
-					rainAttachment.CFrame = transform - transform.p + corrected
+
+				if inside and not roofHit then
+					local corrected = position - rainDirection * math.min(RAIN_SPLASH_STRAIGHT_OFFSET_Y, 12)
+					rainAttachment.CFrame = CFrame.fromMatrix(corrected, right, -rainDirection, forward)
 					rainAttachment.RainStraight:Emit(intensityOccludedRain)
 					rainAttachment.RainTopDown:Emit(intensityOccludedRain)
-					
 				end
-				
-			elseif inside then
-				
-				-- Draw occlusion rain particles on the XZ-position at around the camera's height
-				local corrected = transform * v3(x, rand:NextNumber(RAIN_NOSPLASH_STRAIGHT_OFFSET_Y_MIN, RAIN_NOSPLASH_STRAIGHT_OFFSET_Y_MAX), z)
-				if currentCeiling and corrected.Y > currentCeiling and rainDirection.Y < 0 then
-					corrected = corrected + rainDirection * (currentCeiling - corrected.Y) / rainDirection.Y
-				end
-				rainAttachment.CFrame = transform - transform.p + corrected
-				rainAttachment.RainStraight:Emit(intensityOccludedRain)
-				rainAttachment.RainTopDown:Emit(intensityOccludedRain)
-				
 			end
-			
 		end
-		
 	end))
 
 end
@@ -525,7 +510,7 @@ local function disconnectLoop()
 	-- If present, disconnect all RunService connections
 	if #connections > 0 then
 		for _,v in pairs(connections) do
-			v:disconnect()
+			v:Disconnect()
 		end
 		connections = {}
 	end
@@ -536,7 +521,7 @@ local function disableSound(tweenInfo)
 	-- Tween the rain sound to be mute over a given easing function
 	volumeTarget = 0
 	local tween = TweenService:Create(Sound, tweenInfo, {Volume = 0})
-	tween.Completed:connect(function(state)
+	tween.Completed:Connect(function(state)
 		if state == Enum.PlaybackState.Completed then
 			Sound:Stop()
 		end
@@ -568,7 +553,7 @@ local function makeProperty(valueObjectClass, defaultValue, setter)
 	if defaultValue then
 		valueObject.Value = defaultValue
 	end
-	valueObject.Changed:connect(setter)
+	valueObject.Changed:Connect(setter)
 	setter(valueObject.Value)
 	return valueObject
 end
@@ -611,7 +596,7 @@ local function updateTransparency(value)
 	
 end
 local Transparency = makeProperty("NumberValue", RAIN_DEFAULT_TRANSPARENCY, updateTransparency)
-GlobalModifier.Changed:connect(updateTransparency)
+GlobalModifier.Changed:Connect(updateTransparency)
 
 local SpeedRatio = makeProperty("NumberValue", RAIN_DEFAULT_SPEEDRATIO, function(value)
 	
@@ -671,8 +656,6 @@ end)
 
 local Rain = {}
 
-Rain.CollisionMode = CollisionMode
-
 function Rain:Enable(tweenInfo)
 	
 	if tweenInfo ~= nil and typeof(tweenInfo) ~= "TweenInfo" then
@@ -719,7 +702,7 @@ function Rain:Disable(tweenInfo)
 	
 	if tweenInfo then
 		local tween = TweenService:Create(GlobalModifier, tweenInfo, {Value = 1})
-		tween.Completed:connect(function(state)
+		tween.Completed:Connect(function(state)
 			if state == Enum.PlaybackState.Completed then
 				-- Only disable the rain completely once the visual effects are faded out
 				disable()
@@ -818,17 +801,6 @@ function Rain:SetDirection(direction, tweenInfo)
 	
 end
 
-function Rain:SetCeiling(ceiling)
-	
-	if ceiling ~= nil and typeof(ceiling) ~= "number" then
-		error("bad argument #1 to 'SetCeiling' (number expected, got " .. typeof(ceiling) .. ")", 2)
-	end
-	
-	currentCeiling = ceiling
-	
-end
-
-
 
 function Rain:SetStraightTexture(asset)
 	
@@ -877,77 +849,6 @@ function Rain:SetSoundId(asset)
 	end
 	
 	Sound.SoundId = asset
-	
-end
-
-function Rain:SetCollisionMode(mode, param)
-	
-	if mode == CollisionMode.None then
-		
-		-- Regular mode needs no white/blacklist or test function
-		collisionList = nil
-		collisionFunc = nil
-		
-	elseif mode == CollisionMode.Blacklist then
-		
-		if typeof(param) == "Instance" then
-			-- Add Emitter anyway, since users will probably not expect collisions with emitter block regardless
-			collisionList = {param, Emitter}
-		elseif typeof(param) == "table" then
-			for i = 1, #param do
-				if typeof(param[i]) ~= "Instance" then
-					error("bad argument #2 to 'SetCollisionMode' (blacklist contained a " .. typeof(param[i]) .. " on index " .. tostring(i) .. " which is not an Instance)", 2)
-				end
-			end
-			collisionList = {Emitter} -- see above
-			for i = 1, #param do
-				table.insert(collisionList, param[i])
-			end
-		else
-			error("bad argument #2 to 'SetCollisionMode (Instance or array of Instance expected, got " .. typeof(param) .. ")'", 2)
-		end
-		
-		-- Blacklist does not need a test function
-		collisionFunc = nil
-		
-	elseif mode == CollisionMode.Whitelist then
-		
-		if typeof(param) == "Instance" then
-			collisionList = {param}
-		elseif typeof(param) == "table" then
-			for i = 1, #param do
-				if typeof(param[i]) ~= "Instance" then
-					error("bad argument #2 to 'SetCollisionMode' (whitelist contained a " .. typeof(param[i])  .. " on index " .. tostring(i) .. " which is not an Instance)", 2)
-				end
-			end
-			collisionList = {}
-			for i = 1, #param do
-				table.insert(collisionList, param[i])
-			end
-		else
-			error("bad argument #2 to 'SetCollisionMode (Instance or array of Instance expected, got " .. typeof(param) .. ")'", 2)
-		end
-		
-		-- Whitelist does not need a test function
-		collisionFunc = nil
-		
-	elseif mode == CollisionMode.Function then
-		
-		if typeof(param) ~= "function" then
-			error("bad argument #2 to 'SetCollisionMode' (function expected, got " .. typeof(param) .. ")", 2)
-		end
-		
-		-- Test function does not need a list
-		collisionList = nil
-		
-		collisionFunc = param
-		
-	else
-		error("bad argument #1 to 'SetCollisionMode (Rain.CollisionMode expected, got " .. typeof(param) .. ")'", 2)
-	end
-	
-	collisionMode = mode
-	raycast = raycastFunctions[mode]
 	
 end
 
