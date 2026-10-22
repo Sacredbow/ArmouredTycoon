@@ -17,11 +17,14 @@ const ServerScriptService = game:GetService("ServerScriptService")
 --// Modules
 
 const SettingsConfig = require(ReplicatedStorage.Modules.SettingsManager.SettingsConfig)
+const NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
 
 --// Constants
 
 const SETTINGS_DATASTORE = DataStoreService:GetDataStore(SettingsConfig.datastore_key)
 const REMOTES_FOLDER = ReplicatedStorage:FindFirstChild("Remotes")
+const LOAD_POLICY = { Rate = 2, Burst = 4 }
+const SAVE_POLICY = { Rate = 1, Burst = 3 }
 assert(REMOTES_FOLDER, "ReplicatedStorage.Remotes is required")
 
 --// State
@@ -181,15 +184,27 @@ end
 --// Remote Endpoints
 
 RequireRemoteFunction("GetSettingsData").OnServerInvoke = function(Player: Player)
+	if not NetworkGuard.Allow(Player, "GetSettingsData", LOAD_POLICY, nil) then
+		return false, table.clone(SettingsConfig.default_settings), "Request rejected."
+	end
+
 	return LoadSettings(Player)
 end
 
 RequireRemoteFunction("ImportSettingsFunction").OnServerInvoke = function(Player: Player)
+	if not NetworkGuard.Allow(Player, "ImportSettingsFunction", LOAD_POLICY, nil) then
+		return false, table.clone(SettingsConfig.default_settings), "Request rejected."
+	end
+
 	local Success, Data, LoadError = LoadSettings(Player)
 	return Success, Data, LoadError
 end
 
 RequireRemoteFunction("ExportSettingsFunction").OnServerInvoke = function(Player: Player, Supplied: any)
+	if not NetworkGuard.Allow(Player, "ExportSettingsFunction", SAVE_POLICY, Supplied) then
+		return false
+	end
+
 	return QueueSettingsSave(Player, Supplied)
 end
 

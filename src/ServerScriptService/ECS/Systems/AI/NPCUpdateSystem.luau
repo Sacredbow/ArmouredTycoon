@@ -22,6 +22,7 @@ return function(context: any)
 	for Entity, NPCUpdate in World:query(Components.NPCUpdate) do
 		const Controller = NPCRegistry.Get(NPCUpdate.npcEntity or Entity)
 		if not Controller or not Controller.NPC or not Controller.NPC.Parent then
+			NPCRegistry.Unregister(Entity)
 			World:delete(Entity)
 			continue
 		end

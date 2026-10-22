@@ -86,13 +86,6 @@ export type WeatherChangedPayload = {
 	duration: number,
 }
 
-export type WeaponStatePayload = {
-	["type"]: string,
-	weaponName: string?,
-	stance: number?,
-	lean: number?,
-}
-
 export type CashCollectedPayload = {
 	amount: number,
 	origin: Vector3,
@@ -175,10 +168,6 @@ export type NukeClickBatchPayload = {
 	sessionId: string,
 	count: number,
 	clientWindow: number,
-}
-
-export type NukeTargetPayload = {
-	target: string,
 }
 
 export type InventoryActionPayload = {

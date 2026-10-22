@@ -396,7 +396,7 @@ local CloseButton : TextButton = CreditsFrame.Close
 local CloseButton2 : TextButton = ChangeLogFrame.Close
 
 
-Credits.MouseButton1Click:Connect(function()
+Credits.Activated:Connect(function()
 	setfalse()
 	TweenManager.Interface(CreditsFrame, {Position = UDim2.fromScale(0.243,0.161)}, TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out))
 	TweenService:Create(BackgroundBlur, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {Size = 24}):Play()
@@ -407,7 +407,7 @@ Credits.MouseButton1Click:Connect(function()
 
 end)
 
-ChangeLog.MouseButton1Click:Connect(function()
+ChangeLog.Activated:Connect(function()
 	setfalse()
 	TweenManager.Interface(ChangeLogFrame, {Position = UDim2.fromScale(0.243,0.161)}, TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out))
 	TweenService:Create(BackgroundBlur, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {Size = 24}):Play()
@@ -416,13 +416,13 @@ ChangeLog.MouseButton1Click:Connect(function()
 
 end)
 
-CloseButton.MouseButton1Click:Connect(function()
+CloseButton.Activated:Connect(function()
 	TweenManager.Interface(Liner, {Size = CurrentSize}, TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.In))
 	TweenManager.Interface(CreditsFrame, {Position = CurrentPos}, TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out))
 	TweenService:Create(BackgroundBlur, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {Size = 0}):Play()
 	settrue()
 end)
-CloseButton2.MouseButton1Click:Connect(function()
+CloseButton2.Activated:Connect(function()
 	TweenManager.Interface(Liner2, {Size = CurrentSize}, TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.In))
 	TweenManager.Interface(ChangeLogFrame, {Position = CurrentPos}, TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out))
 	TweenService:Create(BackgroundBlur, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {Size = 0}):Play()
@@ -430,7 +430,7 @@ CloseButton2.MouseButton1Click:Connect(function()
 end)
 
 
-PlayButton.MouseButton1Click:Connect(function()
+PlayButton.Activated:Connect(function()
 	Controls:Enable()
 	Camera.CameraType = Enum.CameraType.Custom
 	ClientRuntimeState.SetHasLoaded(player, true)

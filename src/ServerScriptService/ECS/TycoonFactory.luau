@@ -52,6 +52,8 @@ function Factory.spawn(model: Model): number
 		collectorAmount = 0,
 		displayUpdatePending = false,
 		cashMultiplier = 1,
+		power = false,
+		nukeCooldownReady = true,
 		active = true,
 	}
 	local buttonTemplate = buttons:Clone()

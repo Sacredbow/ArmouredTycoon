@@ -54,7 +54,7 @@ return function(context: any)
 			elseif ScheduledTask.kind == "KOTHTouchEndedCheck" then
 				local Player = ScheduledTask.player
 				local Character = ScheduledTask.character
-				if Player and Character then
+				if Player and Player.Parent == game:GetService("Players") and Character and Character.Parent and Player.Character == Character then
 					KOTHService.CheckTouchEndedActive(Player, Character)
 				end
 
@@ -123,7 +123,7 @@ return function(context: any)
 				KeepRunning = true
 			elseif ScheduledTask.kind == "RagdollRestore" then
 				local Character = ScheduledTask.character
-				if Character then
+				if Character and Character.Parent then
 					RagdollModule.RestoreScheduled(Character, ScheduledTask.sockets, ScheduledTask.motors)
 				end
 
@@ -154,6 +154,8 @@ return function(context: any)
 				local Player = ScheduledTask.player
 				local Character = ScheduledTask.character
 				local Humanoid = ScheduledTask.humanoid
+				local TycoonState = ScheduledTask.tycoonEntity and TycoonFactory.getState(ScheduledTask.tycoonEntity)
+				local TycoonOwner = ScheduledTask.tycoonEntity and World:get(ScheduledTask.tycoonEntity, Components.Owner)
 				if
 					Player
 					and Player.Parent
@@ -163,6 +165,10 @@ return function(context: any)
 					and Humanoid
 					and Humanoid.Parent == Character
 					and Humanoid.Health > 0
+					and TycoonState
+					and TycoonState.active ~= false
+					and TycoonOwner
+					and TycoonOwner.generation == ScheduledTask.ownerGeneration
 				then
 					local DamageEntity = World:entity()
 					World:set(DamageEntity, Components.DamageRequest, {

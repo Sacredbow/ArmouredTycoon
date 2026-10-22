@@ -9,7 +9,7 @@ local ECS = require(ReplicatedStorage.ECS)
 local Observers = require(ReplicatedStorage.Packages.Observers)
 local Factory = require(ServerScriptService.ECS.TycoonFactory)
 local Packets = require(ReplicatedStorage.Network.Packets)
-local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+
 local ValidatePromptRange = require(ServerScriptService.Classes.Tycoon.Utilities.ValidatePromptRange)
 
 local ElectricitySystem = {}
@@ -37,7 +37,7 @@ local function enableElectricity(hierarchy: any)
 	end
 end
 
-local function electrify(entity: number, player: Player, playerService: any)
+local function electrify(entity: number, player: Player, playerService: any, ownerGeneration: number)
 	if playerService:IsElectrified(player) then return end
 
 	local character = player.Character
@@ -61,6 +61,7 @@ local function electrify(entity: number, player: Player, playerService: any)
 			character = character,
 			humanoid = humanoid,
 			tycoonEntity = entity,
+			ownerGeneration = ownerGeneration,
 			sourceModel = Factory.getModel(entity),
 		},
 	})
@@ -96,7 +97,11 @@ function ElectricitySystem.setup(entity: number, playerService: any): (() -> ())
 				return
 			end
 			if not ValidatePromptRange(player, prompt) then return end
-			if PlayerRuntimeState.HasPower(player) then
+			local currentState = Factory.getState(entity)
+			if not currentState or currentState.owner ~= player then
+				return
+			end
+			if currentState.power then
 				toast(player, "info", "Power is already on")
 				return
 			end
@@ -104,7 +109,8 @@ function ElectricitySystem.setup(entity: number, playerService: any): (() -> ())
 				toast(player, "info", "Find the wires first")
 				return
 			end
-			PlayerRuntimeState.SetPower(player, true)
+			currentState.power = true
+			ECS.world:set(entity, ECS.Components.TycoonState, currentState)
 			enableElectricity(hierarchy)
 			toast(player, "success", "Power restored")
 		end))
@@ -118,12 +124,14 @@ function ElectricitySystem.setup(entity: number, playerService: any): (() -> ())
 		end
 
 		local connection = instance.Touched:Connect(function(hit: Instance)
-			local player = Players:GetPlayerFromCharacter(hit.Parent)
+			local character = hit:FindFirstAncestorOfClass("Model")
+			local player = character and Players:GetPlayerFromCharacter(character)
 			local ownerData = ECS.world:get(entity, ECS.Components.Owner)
+			local tycoonState = Factory.getState(entity)
 			local ownerPlayer = ownerData and ownerData.player
-			if not player or not ownerPlayer or not PlayerRuntimeState.HasPower(ownerPlayer) then return end
+			if not player or not ownerPlayer or not tycoonState or not tycoonState.power then return end
 			if ownerPlayer == player then return end
-			electrify(entity, player, playerService)
+			electrify(entity, player, playerService, ownerData.generation or 0)
 		end)
 
 		return function()

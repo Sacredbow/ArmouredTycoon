@@ -10,16 +10,32 @@ if not character then
 	error("[BaseMovement] Character model ancestor was not found")
 end
 
+local Janitor = require(ReplicatedStorage.Packages.janitor)
 local ECS = require(ReplicatedStorage.ECS)
-local CharacterManager = require(ReplicatedStorage.CharacterUtilities.CharacterManager)
-local CharacterRegistry = require(ReplicatedStorage.CharacterUtilities.CharacterRegistry)
-local manager = CharacterManager.new(character)
+local CharacterMovementSystem = require(ReplicatedStorage.CharacterUtilities.CharacterMovementSystem)
+local janitor = Janitor.new()
+
+local movement = {
+	MovementState = "Idle",
+	NextMovementState = nil,
+	IsRunning = false,
+	IsPerformingAction = false,
+	IsGrounded = true,
+	JumpHeld = false,
+	PressedKeys = {
+		W = false,
+		A = false,
+		S = false,
+		D = false,
+	},
+}
+
 local characterEntity = ECS.createEntity({
-	Name = `{player.Name}:Character`,
+	Name = player.Name .. ":Character",
 	Model = character,
 	Character = character,
+	CharacterMovement = movement,
 })
-CharacterRegistry.Register(characterEntity, manager)
 
 -- wasd and arrows feed the same movement snapshot
 local KEY_TO_DIRECTION = {
@@ -43,77 +59,86 @@ local function bindSprintButton()
 		end
 
 		boundButton = instance
-		instance.InputBegan:Connect(function(input: InputObject)
+		janitor:Add(instance.InputBegan:Connect(function(input: InputObject)
 			if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-				manager:SetRunning(true)
+				movement.IsRunning = true
 			end
-		end)
+		end), "Disconnect")
 
-		instance.InputEnded:Connect(function(input: InputObject)
+		janitor:Add(instance.InputEnded:Connect(function(input: InputObject)
 			if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-				manager:SetRunning(false)
+				movement.IsRunning = false
 			end
-		end)
+		end), "Disconnect")
 	end
 
-	for _, descendant in ipairs(playerGui:GetDescendants()) do
+	for _, descendant in playerGui:GetDescendants() do
 		tryBind(descendant)
 		if boundButton then
 			return
 		end
 	end
 
-	local connection: RBXScriptConnection?
-	connection = playerGui.DescendantAdded:Connect(function(descendant)
+	local connection = playerGui.DescendantAdded:Connect(function(descendant)
 		tryBind(descendant)
-		if boundButton and connection then
+		if boundButton then
 			connection:Disconnect()
 		end
 	end)
+	janitor:Add(connection, "Disconnect", "SprintButtonWatcher")
 end
 
 local function setMoveKeyFromInput(keyCode: Enum.KeyCode, isPressed: boolean)
 	local direction = KEY_TO_DIRECTION[keyCode]
 	if direction then
-		manager:SetMoveKey(direction :: "W" | "A" | "S" | "D", isPressed)
+		movement.PressedKeys[direction] = isPressed
 	end
 end
 
 bindSprintButton()
 
-UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
+janitor:Add(UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
 	if gameProcessed then
 		return
 	end
 
 	setMoveKeyFromInput(input.KeyCode, true)
 
-	-- sprint and jump are separate flags so ui buttons can use them too
 	if input.KeyCode == Enum.KeyCode.LeftShift then
-		manager:SetRunning(true)
+		movement.IsRunning = true
 	elseif input.KeyCode == Enum.KeyCode.Space then
-		manager:SetJumpHeld(true)
+		movement.JumpHeld = true
 	end
-end)
+end), "Disconnect", "InputBegan")
 
-UserInputService.InputEnded:Connect(function(input: InputObject, _gameProcessed: boolean)
+janitor:Add(UserInputService.InputEnded:Connect(function(input: InputObject, _gameProcessed: boolean)
 	-- Always release held input; UI focus can consume the key-up event.
 	setMoveKeyFromInput(input.KeyCode, false)
 
 	if input.KeyCode == Enum.KeyCode.LeftShift then
-		manager:SetRunning(false)
+		movement.IsRunning = false
 	elseif input.KeyCode == Enum.KeyCode.Space then
-		manager:SetJumpHeld(false)
+		movement.JumpHeld = false
 	end
-end)
+end), "Disconnect", "InputEnded")
 
-UserInputService.WindowFocusReleased:Connect(function()
-	-- losing focus can strand keys as pressed, so reset cleanly
-	manager:ClearMovementInput()
-end)
+janitor:Add(UserInputService.WindowFocusReleased:Connect(function()
+	-- losing focus can strand keys as pressed, so reset the whole snapshot
+	for key in movement.PressedKeys do
+		movement.PressedKeys[key] = false
+	end
+	movement.IsRunning = false
+	movement.JumpHeld = false
+end), "Disconnect", "WindowFocusReleased")
 
+local cleanedUp = false
 script.Destroying:Connect(function()
-	CharacterRegistry.Unregister(characterEntity)
-	manager:Destroy()
+	if cleanedUp then
+		return
+	end
+	cleanedUp = true
+
+	CharacterMovementSystem.Cleanup(characterEntity)
+	janitor:Destroy()
 	ECS.deleteEntity(characterEntity)
 end)

@@ -926,7 +926,15 @@ function Main.start(hostScript)
 
 	--// Lifecycle Cleanup
 
+	local cleanedUp = false
 	cleanupCharacter = function()
+		if cleanedUp then
+			return
+		end
+		cleanedUp = true
+		unset()
+		castController:Destroy()
+		crosshairController:destroy()
 		for _, conn in ipairs(connections) do conn:Disconnect() end
 		table.clear(connections)
 		RunService:UnbindFromRenderStep(renderStepName)

@@ -35,7 +35,6 @@ function InventoryServer:_removeTool(player: Player, tool: Instance?)
 		return
 	end
 
-	print("[InventoryServer] Removing tool", tool.Name, "from", player.Name)
 	tool:Destroy()
 end
 

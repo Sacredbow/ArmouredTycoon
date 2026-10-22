@@ -4,12 +4,20 @@
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 const Weapons = require(script.Parent.Parent.Core.Weapons)
+const NetworkGuard = require(script.Parent.Parent.Parent.Services.Networking.NetworkGuard)
 
 const Engine = ReplicatedStorage:WaitForChild("ACS_Engine")
 const Events = Engine:WaitForChild("Events") :: any
+const EQUIP_POLICY = { Rate = 12, Burst = 20 }
 
 function Bind()
 	Events.Equip.OnServerEvent:Connect(function(player: Player, weapon: Tool?, mode: number)
+		if not NetworkGuard.Allow(player, "ACSEquip", EQUIP_POLICY, weapon) then
+			return
+		end
+		if typeof(mode) ~= "number" or mode ~= math.floor(mode) or (mode ~= 1 and mode ~= 2) then
+			return
+		end
 		if typeof(weapon) ~= "Instance" or not weapon:IsA("Tool") then
 			return
 		end

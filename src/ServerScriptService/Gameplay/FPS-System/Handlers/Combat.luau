@@ -37,6 +37,7 @@ const MAX_GRENADE_THROW_DISTANCE = 300
 const SHIELD_HIT_POLICY = { Rate = 25, Burst = 40 }
 const DAMAGE_POLICY = { Rate = 25, Burst = 40 }
 const GRENADE_POLICY = { Rate = 2, Burst = 4 }
+const STANCE_POLICY = { Rate = 20, Burst = 30 }
 const SURRENDER_POLICY = { Rate = 8, Burst = 12 }
 const MAX_SURRENDER_DISTANCE = 12
 
@@ -124,6 +125,9 @@ function Bind()
 	end)
 
 	Events.Stance.OnServerEvent:Connect(function(player: Player, stance: number, lean: number)
+		if not NetworkGuard.Allow(player, "ACSStance", STANCE_POLICY, nil) then
+			return
+		end
 		local character = player.Character
 		if not character then
 			return
@@ -136,7 +140,7 @@ function Bind()
 
 		-- Stance/lean feed the ByteNet int32 packet; garbage types would
 		-- corrupt the broadcast to every client.
-		if typeof(stance) ~= "number" or typeof(lean) ~= "number" or stance ~= math.floor(stance) or stance < 0 or stance > 2 or lean < -1 or lean > 1 then
+		if typeof(stance) ~= "number" or typeof(lean) ~= "number" or stance ~= math.floor(stance) or stance < 0 or stance > 2 or lean ~= lean or lean == math.huge or lean == -math.huge or lean < -1 or lean > 1 then
 			warn(`[FPS.Combat] {player.Name} sent invalid stance payload`)
 			return
 		end

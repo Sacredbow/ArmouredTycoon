@@ -29,6 +29,7 @@ const KOTHService = require(ServerScriptService.Services.World.KOTHService)
 const CodeService = require(ServerScriptService.Services.Commerce.CodeService)
 const InventoryServer = require(ServerScriptService.Gameplay.Inventory.InventoryServer)
 const BuildService = require(ServerScriptService.Services.Tycoon.BuildService)
+const NukeService = require(ServerScriptService.Services.World.NukeService)
 
 --// Internal Utilities
 
@@ -86,6 +87,13 @@ end)
 if BuildSvc then
 	PlayerSvc.BuildService = BuildSvc
 end
+
+local _NukeSvc = LoadModule("NukeService", function()
+	local S = NukeService.new(TycoonSvc, PlayerSvc)
+	S:Init()
+	return S
+end)
+
 local _EnvironmentSvc = LoadModule("EnvironmentService", function()
 	local S = EnvironmentService.new({
 		LightingPackage = Assets.Lighting,

@@ -73,6 +73,21 @@ local function getAliveRoot(player: Player): BasePart?
 	return getRoot(player)
 end
 
+local function fireNearby(event: any, sourcePlayer: Player, center: Vector3?, ...)
+	local sourceRoot = getRoot(sourcePlayer)
+	local centerPosition = center or (sourceRoot and sourceRoot.Position)
+	if not centerPosition then
+		return
+	end
+
+	for _, recipient in Players:GetPlayers() do
+		local recipientRoot = getRoot(recipient)
+		if recipientRoot and (recipientRoot.Position - centerPosition).Magnitude <= MAX_EFFECT_RANGE then
+			event:FireClient(recipient, ...)
+		end
+	end
+end
+
 local function getEquippedTool(player: Player, requested: Tool?): Tool?
 	local character = player.Character
 	if not character then
@@ -185,7 +200,7 @@ function Bind()
 		if not CanBroadcast(player, "HitEffect") then
 			return
 		end
-		Events.HitEffect:FireAllClients(player, position, hitPart, normal, material, settings)
+		fireNearby(Events.HitEffect, player, position, player, position, hitPart, normal, material, settings)
 	end)
 
 	Events.GunStance.OnServerEvent:Connect(function(player: Player, stance: number, _clientData: any)
@@ -203,7 +218,7 @@ function Bind()
 		if not CanBroadcast(player, "GunStance") then
 			return
 		end
-		Events.GunStance:FireAllClients(player, stance, animations)
+		fireNearby(Events.GunStance, player, nil, player, stance, animations)
 	end)
 
 	Events.ServerBullet.OnServerEvent:Connect(function(
@@ -237,7 +252,7 @@ function Bind()
 		local tracerModifiers = {
 			MuzzleVelocity = modifiers.MuzzleVelocity,
 		}
-		Events.ServerBullet:FireAllClients(player, origin, direction.Unit, tracerData, tracerModifiers)
+		fireNearby(Events.ServerBullet, player, origin, player, origin, direction.Unit, tracerData, tracerModifiers)
 	end)
 
 	Events.HeadRot.OnServerEvent:Connect(function(player: Player, cframe: CFrame, aimPitch: number?, aiming: boolean?)
@@ -250,7 +265,7 @@ function Bind()
 		if not CanBroadcast(player, "HeadRot") then
 			return
 		end
-		Events.HeadRot:FireAllClients(player, cframe, if aimPitch then math.clamp(aimPitch, -1.1, 1.1) else nil, aiming)
+		fireNearby(Events.HeadRot, player, nil, player, cframe, if aimPitch then math.clamp(aimPitch, -1.1, 1.1) else nil, aiming)
 	end)
 
 	Events.SVLaser.OnServerEvent:Connect(function(
@@ -278,7 +293,7 @@ function Bind()
 		if not CanBroadcast(player, "SVLaser") then
 			return
 		end
-		Events.SVLaser:FireAllClients(player, position, mode, color, irMode, weapon)
+		fireNearby(Events.SVLaser, player, position, player, position, mode, color, irMode, weapon)
 	end)
 
 	Events.SVFlash.OnServerEvent:Connect(function(player: Player, requestedWeapon: Tool, mode: boolean)
@@ -292,7 +307,7 @@ function Bind()
 		if not CanBroadcast(player, "SVFlash") then
 			return
 		end
-		Events.SVFlash:FireAllClients(player, weapon, mode)
+		fireNearby(Events.SVFlash, player, nil, player, weapon, mode)
 	end)
 
 	Events.Atirar.OnServerEvent:Connect(function(player: Player, weapon: Tool, suppressor: boolean, flashHider: boolean)
@@ -305,7 +320,7 @@ function Bind()
 		if not CanBroadcast(player, "Atirar") then
 			return
 		end
-		Events.Atirar:FireAllClients(player, weapon, suppressor, flashHider)
+		fireNearby(Events.Atirar, player, nil, player, weapon, suppressor, flashHider)
 	end)
 
 	Events.Whizz.OnServerEvent:Connect(function(player: Player, victim: Player)
@@ -327,3 +342,32 @@ function Bind()
 		if not NetworkGuard.Allow(player, 'ACSReplication.Suppression', REPLICATION_POLICIES.Suppression, nil) then
 			return
 		end
+		local sourceRoot = getAliveRoot(player)
+		local victimRoot = victim and victim:IsA("Player") and getAliveRoot(victim)
+		if
+			not sourceRoot
+			or not victim
+			or not victim:IsA("Player")
+			or not victimRoot
+			or victim == player
+			or (sourceRoot.Position - victimRoot.Position).Magnitude > MAX_EFFECT_RANGE
+			or mode ~= 1
+			or (intensity ~= nil and not finiteNumber(intensity))
+			or (time ~= nil and not finiteNumber(time))
+		then
+			return
+		end
+
+		if not CanBroadcast(player, "Suppression") then
+			return
+		end
+
+		local safeIntensity = math.clamp(intensity or 1, 0, 1)
+		local safeTime = math.clamp(time or 1, 0.05, 5)
+		Events.Suppression:FireClient(victim, mode, safeIntensity, safeTime)
+	end)
+end
+
+return {
+	Bind = Bind,
+}

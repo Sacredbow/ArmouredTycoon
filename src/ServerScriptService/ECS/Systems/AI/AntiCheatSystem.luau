@@ -140,8 +140,6 @@ local function addViolation(state: any, reason: string, evidence): boolean
 
 	state.violations += 1
 	state.lastViolationTime = os.clock()
-	print("Violation:", state.violations)
-
 	if state.violations < 4 then
 		return false
 	end

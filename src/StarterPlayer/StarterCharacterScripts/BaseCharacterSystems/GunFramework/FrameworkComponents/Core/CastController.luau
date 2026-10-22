@@ -51,6 +51,9 @@ export type CastController = typeof(setmetatable({} :: {
 	_weaponInHand: Model?,
 	_gameRules: any,
 	_thirdPersonCallback: (() -> boolean)?,
+	_castConnections: { [RBXScriptConnection]: boolean },
+	_bullets: { [Instance]: boolean },
+	_destroyed: boolean,
 }, CastController))
 
 function CastController.new(
@@ -77,6 +80,9 @@ function CastController.new(
 		_modTable = nil,
 		_weaponInHand = nil,
 		_thirdPersonCallback = nil,
+	_castConnections = {},
+	_bullets = {},
+	_destroyed = false,
 	}, CastController)
 end
 
@@ -123,6 +129,18 @@ function CastController:checkForHumanoid(hitPart: Instance): (boolean, Humanoid?
 	return false, nil
 end
 
+function CastController:submitDamage(targetHumanoid: Humanoid, limb: number)
+	if self._destroyed then
+		return
+	end
+
+	local weaponTool = self._weaponTool
+	if not self._character.Parent or not weaponTool or weaponTool.Parent ~= self._character or not targetHumanoid.Parent or targetHumanoid.Health <= 0 then
+		return
+	end
+
+	self._events.Damage:InvokeServer(weaponTool, targetHumanoid, limb, self._modTable)
+end
 function CastController:tracerCalc(): boolean
 	if not self._weaponData.Tracer and not self._weaponData.BulletFlare then
 		return false
@@ -147,6 +165,9 @@ function CastController:createBullet(
 	aimming: boolean,
 	firstPerson: boolean
 )
+	if self._destroyed then
+		return
+	end
 	if not self._weaponInHand then
 		return
 	end
@@ -158,6 +179,7 @@ function CastController:createBullet(
 	bullet.Transparency = 1
 	bullet.Size = Vector3.new(1, 1, 1)
 	bullet.Parent = self._effectsFolder
+	self._bullets[bullet] = true
 
 	local origin = self._weaponInHand.Handle.Muzzle.WorldPosition
 	local direction = self._weaponInHand.Handle.Muzzle.WorldCFrame.LookVector
@@ -234,12 +256,18 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 	local connection: RBXScriptConnection?
 	local function cleanup()
 		if connection then
+			self._castConnections[connection] = nil
 			connection:Disconnect()
 			connection = nil
 		end
+		self._bullets[bullet] = nil
 	end
 
 	connection = RunService.Heartbeat:Connect(function()
+		if self._destroyed then
+			cleanup()
+			return
+		end
 		if not bullet or not bullet.Parent then
 			cleanup()
 			return
@@ -360,20 +388,40 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 
 			if hitPart.Name == "Head" or hitPart.Parent.Name == "Top" or hitPart.Parent.Name == "Headset"
 				or hitPart.Parent.Name == "Olho" or hitPart.Parent.Name == "Face" or hitPart.Parent.Name == "Numero" then
-				self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 1, self._modTable)
+				self:submitDamage(targetHumanoid, 1)
 			elseif hitPart.Name == "Torso" or hitPart.Name == "UpperTorso" or hitPart.Name == "LowerTorso"
 				or hitPart.Parent.Name == "Chest" or hitPart.Parent.Name == "Waist"
 				or hitPart.Name == "Right Arm" or hitPart.Name == "Left Arm"
 				or hitPart.Name == "RightUpperArm" or hitPart.Name == "RightLowerArm" or hitPart.Name == "RightHand"
 				or hitPart.Name == "LeftUpperArm" or hitPart.Name == "LeftLowerArm" or hitPart.Name == "LeftHand" then
-				self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 2, self._modTable)
+				self:submitDamage(targetHumanoid, 2)
 			elseif hitPart.Name == "Right Leg" or hitPart.Name == "Left Leg"
 				or hitPart.Name == "RightUpperLeg" or hitPart.Name == "RightLowerLeg" or hitPart.Name == "RightFoot"
 				or hitPart.Name == "LeftUpperLeg" or hitPart.Name == "LeftLowerLeg" or hitPart.Name == "LeftFoot" then
-				self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 3, self._modTable)
+				self:submitDamage(targetHumanoid, 3)
 			end
 		end
 	end)
+	if connection then
+		self._castConnections[connection] = true
+	end
+end
+
+function CastController:Destroy()
+	if self._destroyed then
+		return
+	end
+	self._destroyed = true
+	for connection in self._castConnections do
+		connection:Disconnect()
+	end
+	table.clear(self._castConnections)
+	for bullet in self._bullets do
+		if bullet.Parent then
+			bullet:Destroy()
+		end
+	end
+	table.clear(self._bullets)
 end
 
 function CastController:meleeCast()
@@ -480,20 +528,14 @@ function CastController:meleeCast()
 
 	if hitPart.Name == "Head" or hitPart.Parent.Name == "Top" or hitPart.Parent.Name == "Headset"
 		or hitPart.Parent.Name == "Olho" or hitPart.Parent.Name == "Face" or hitPart.Parent.Name == "Numero" then
-		task.spawn(function()
-			self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 1, self._modTable)
-		end)
+		self:submitDamage(targetHumanoid, 1)
 	elseif hitPart.Name == "Torso" or hitPart.Name == "UpperTorso" or hitPart.Name == "LowerTorso"
 		or hitPart.Parent.Name == "Chest" or hitPart.Parent.Name == "Waist"
 		or hitPart.Name == "RightUpperArm" or hitPart.Name == "RightLowerArm" or hitPart.Name == "RightHand"
 		or hitPart.Name == "LeftUpperArm" or hitPart.Name == "LeftLowerArm" or hitPart.Name == "LeftHand" then
-		task.spawn(function()
-			self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 2, self._modTable)
-		end)
+		self:submitDamage(targetHumanoid, 2)
 	else
-		task.spawn(function()
-			self._events.Damage:InvokeServer(self._weaponTool, targetHumanoid, 3, self._modTable)
-		end)
+		self:submitDamage(targetHumanoid, 3)
 	end
 end
 

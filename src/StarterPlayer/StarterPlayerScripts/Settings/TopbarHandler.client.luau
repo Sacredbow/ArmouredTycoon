@@ -1,6 +1,6 @@
 -- services
 
-print("Main Developer: Sacredbow1")
+
 local playersService = game:GetService("Players")
 local replicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -31,7 +31,7 @@ settingsButton.MouseEnter:Connect(function()
 	if debounce then return end
 	PlaySound("Roblox GUI - Hover 01")
 end)
-settingsButton.MouseButton1Click:Connect(function()
+settingsButton.Activated:Connect(function()
 	if debounce then return end
 	debounce = true
 	PlaySound("Roblox_UI_Small_Click")
@@ -48,7 +48,7 @@ end)
 closeButton.MouseEnter:Connect(function()
 	PlaySound("Roblox GUI - Hover 01")
 end)
-closeButton.MouseButton1Click:Connect(function()
+closeButton.Activated:Connect(function()
 	if debounce then return end
 	debounce = true
 	PlaySound("Roblox_UI_Small_Click")

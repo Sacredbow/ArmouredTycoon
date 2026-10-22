@@ -268,7 +268,6 @@ function Runtime.cleanup(entity: number, playerService: any, buildService: any?)
 	Runtime.disconnect(entity)
 	local player = owner(entity)
 	if player then
-		PlayerRuntimeState.SetPower(player, false)
 		PlayerRuntimeState.SetArmourEquipped(player, false)
 		if playerService and playerService.SetElectrified then playerService:SetElectrified(player, false) end
 	end
@@ -295,6 +294,7 @@ function Runtime.cleanup(entity: number, playerService: any, buildService: any?)
 	if current then
 		current.collectorAmount = 0
 		current.displayUpdatePending = false
+		current.power = false
 		ECS.world:set(entity, ECS.Components.TycoonState, current)
 	end
 	local purchased = ECS.world:get(entity, ECS.Components.PurchasedButtons)

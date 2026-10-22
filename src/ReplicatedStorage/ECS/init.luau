@@ -45,6 +45,7 @@ const ComponentNames = {
 	"Button",
 	"Purchased",
 	"Character",
+"CharacterMovement",
 	"TimedEmitter",
 	"DamageRequest",
 	"WeaponRig",

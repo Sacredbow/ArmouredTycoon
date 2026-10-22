@@ -1,5 +1,4 @@
 local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
@@ -8,10 +7,12 @@ local GridState = require(script.GridState)
 local BuildSpawner = require(script.BuildSpawner)
 local ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 local Factory = require(ServerScriptService.ECS.TycoonFactory)
+local NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
 
 local BuildService = {}
 
 local CELL_SIZE = 4
+local BUILD_POLICY = { Rate = 20, Burst = 30 }
 
 local function isFiniteNumber(value): boolean
 	return typeof(value) == "number" and value == value and math.abs(value) < math.huge
@@ -22,16 +23,12 @@ function BuildService.create(playerService, tycoonService)
 	self.PlayerService = playerService
 	self.TycoonService = tycoonService
 	self.GridStates = {}
-	self.LastRequests = setmetatable({}, { __mode = "k" })
 	self.MissingCompounds = {}
 	self.Spawner = BuildSpawner.create()
 	return self
 end
 
 function BuildService:Init()
-	Players.PlayerRemoving:Connect(function(player)
-		self.LastRequests[player] = nil
-	end)
 	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 	if not remotes then
 		remotes = Instance.new("Folder")
@@ -49,13 +46,9 @@ function BuildService:Init()
 	assert(action:IsA("RemoteFunction"), "Remotes.BuildAction must be a RemoteFunction")
 	local buildAction = action :: RemoteFunction
 	buildAction.OnServerInvoke = function(player: Player, request: string, payload)
-		local now = os.clock()
-		local lastRequest = self.LastRequests[player] or 0
-		if now - lastRequest < 0.05 then
-			warn(`[BuildService] {player.Name} exceeded request rate`)
+		if not NetworkGuard.Allow(player, "BuildAction", BUILD_POLICY, nil) then
 			return false, "Please wait before trying again."
 		end
-		self.LastRequests[player] = now
 
 		if request == "GetState" then
 			return self:GetState(player)
@@ -65,8 +58,7 @@ function BuildService:Init()
 			return self:Remove(player, payload)
 		end
 
-		warn(`[BuildService] {player.Name} sent unknown action: {tostring(request)}`)
-		return false, "Unknown build action."
+			return false, "Unknown build action."
 	end
 end
 
@@ -289,7 +281,6 @@ local container = model and model:FindFirstChild("PlacedBuilds")
 end
 
 function BuildService:ClearPlayer(player: Player, tycoon)
-	self.LastRequests[player] = nil
 	local buildData = self:_profileBuildData(player)
 	if buildData then
 		table.clear(buildData.PlacedBuilds)

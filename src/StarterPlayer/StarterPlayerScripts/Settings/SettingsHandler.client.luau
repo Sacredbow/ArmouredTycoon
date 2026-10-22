@@ -189,7 +189,7 @@ local function setupToggle(option, settingsName)
 	toggle.MouseEnter:Connect(function()
 		PlaySound("Roblox GUI - Hover 01")
 	end)
-	toggle.MouseButton1Click:Connect(function()
+	toggle.Activated:Connect(function()
 		PlaySound("Roblox_UI_Small_Click")
 		local newVal = not optionStates[settingsName]
 		optionUpdaters[settingsName](newVal)
@@ -239,8 +239,8 @@ local function setupSlider(option, settingsName)
 
 	leftBtn.MouseEnter:Connect(function() PlaySound("Roblox GUI - Hover 01") end)
 	rightBtn.MouseEnter:Connect(function() PlaySound("Roblox GUI - Hover 01") end)
-	leftBtn.MouseButton1Click:Connect(function() changeValue(-step) end)
-	rightBtn.MouseButton1Click:Connect(function() changeValue(step) end)
+	leftBtn.Activated:Connect(function() changeValue(-step) end)
+	rightBtn.Activated:Connect(function() changeValue(step) end)
 end
 
 ----------------------------------------------------------------
@@ -307,7 +307,7 @@ local function setupChoice(option, settingsName)
 				PlaySound("Roblox GUI - Hover 01")
 			end
 		end)
-		btn.MouseButton1Click:Connect(function()
+		btn.Activated:Connect(function()
 			if btn == currentBtn then return end
 			PlaySound("Roblox_UI_Small_Click")
 			currentBtn = btn
@@ -388,7 +388,7 @@ local function setupDropdown(option, settingsName)
 	end
 
 	dropdown.MouseEnter:Connect(function() PlaySound("Roblox GUI - Hover 01") end)
-	dropdown.MouseButton1Click:Connect(cycle)
+	dropdown.Activated:Connect(cycle)
 end
 
 ----------------------------------------------------------------
@@ -444,7 +444,7 @@ local function setupTabs()
 				PlaySound("Roblox GUI - Hover 01")
 			end
 		end)
-		btn.MouseButton1Click:Connect(function()
+		btn.Activated:Connect(function()
 			if name ~= activeTab then
 				switchTab(name)
 			end
@@ -541,19 +541,19 @@ setupTabs()
 
 -- Bottom bar buttons
 resetDefaultsBtn.MouseEnter:Connect(function() PlaySound("Roblox GUI - Hover 01") end)
-resetDefaultsBtn.MouseButton1Click:Connect(function()
+resetDefaultsBtn.Activated:Connect(function()
 	PlaySound("Roblox_UI_Small_Click")
 	showResetConfirmation()
 end)
 
 saveSettingsBtn.MouseEnter:Connect(function() PlaySound("Roblox GUI - Hover 01") end)
-saveSettingsBtn.MouseButton1Click:Connect(function()
+saveSettingsBtn.Activated:Connect(function()
 	saveSettings()
 end)
 
 -- Reset frame buttons
 yesBtn.MouseEnter:Connect(function() PlaySound("Roblox GUI - Hover 01") end)
-yesBtn.MouseButton1Click:Connect(function()
+yesBtn.Activated:Connect(function()
 	PlaySound("Roblox GUI - Negative")
 	hideResetConfirmation()
 	resetToDefaults()
@@ -565,13 +565,13 @@ end)
 
 
 noBtn.MouseEnter:Connect(function() PlaySound("Roblox GUI - Hover 01") end)
-noBtn.MouseButton1Click:Connect(function()
+noBtn.Activated:Connect(function()
 	PlaySound("Roblox GUI - Call Accept")
 	hideResetConfirmation()
 end)
 
 resetCloseBtn.MouseEnter:Connect(function() PlaySound("Roblox GUI - Hover 01") end)
-resetCloseBtn.MouseButton1Click:Connect(function()
+resetCloseBtn.Activated:Connect(function()
 	PlaySound("Roblox_UI_Small_Click")
 	hideResetConfirmation()
 end)

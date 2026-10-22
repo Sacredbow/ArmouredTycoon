@@ -31,11 +31,5 @@ return function(ByteNet: any)
 				clientWindow = ByteNet.float32,
 			}),
 		}),
-
-		NukeTarget = ByteNet.definePacket({
-			value = ByteNet.struct({
-				target = ByteNet.string,
-			}),
-		}),
 	}
 end

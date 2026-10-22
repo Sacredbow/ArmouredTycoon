@@ -58,7 +58,6 @@ local ByteNet = require(ReplicatedStorage.Packages["bytenet-max"])
 -- Each module exports a function(ByteNet) -> { [string]: definition }.
 local PacketGroups = {
 	require(script.NotificationPackets),
-	require(script.CombatPackets),
 	require(script.EnvironmentalPackets),
 	require(script.GameEventPackets),
 	require(script.ProfilePackets),

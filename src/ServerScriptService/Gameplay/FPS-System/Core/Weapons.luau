@@ -170,12 +170,6 @@ local function SetWeaponRigEntity(Player: Player, Character: Model, Weapon: Tool
 		},
 	})
 
-	Packets.packets.WeaponState.sendToAll({
-		["type"] = "Equip",
-		weaponName = Weapon.Name,
-		stance = nil,
-		lean = nil,
-	})
 end
 
 local function ClearWeaponRigEntity(Player: Player)
@@ -185,12 +179,6 @@ local function ClearWeaponRigEntity(Player: Player)
 		State.WeaponRigEntities[Player] = nil
 	end
 
-	Packets.packets.WeaponState.sendToAll({
-		["type"] = "Unequip",
-		weaponName = nil,
-		stance = nil,
-		lean = nil,
-	})
 end
 
 --// Public API — Equip / Unequip
@@ -359,12 +347,6 @@ function SetStanceState(Player: Player, Character: Model, Stance: number, Lean: 
 		updatedAt = os.clock(),
 	})
 
-	Packets.packets.WeaponState.sendToAll({
-		["type"] = "Stance",
-		weaponName = nil,
-		stance = Stance,
-		lean = Lean,
-	})
 end
 
 --// Public API — Grenades

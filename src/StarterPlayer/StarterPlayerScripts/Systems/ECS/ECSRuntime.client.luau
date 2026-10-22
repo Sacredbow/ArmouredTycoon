@@ -4,7 +4,7 @@
 
 	@desc
 	Client-side ECS runner. Registers systems that must run on every
-	render step (character management and projectile casting) and kicks them off with RunService.RenderStepped.
+	render step (character movement and projectile casting) and kicks them off with RunService.RenderStepped.
 ]]
 
 --// Services
@@ -17,10 +17,10 @@ const RunService = game:GetService("RunService")
 const ECS = require(ReplicatedStorage.ECS)
 const Runner = require(ReplicatedStorage.ECS.Runner)
 
-const CharacterManagerSystem = require(script.Parent.CharacterManagerSystem)
+const CharacterMovementSystem = require(ReplicatedStorage.CharacterUtilities.CharacterMovementSystem)
 
 --// Bootstrap
 
 const RunnerInstance = Runner.new("Client", ECS.world, ECS.Components)
-RunnerInstance:AddSystem("CharacterManagerSystem", CharacterManagerSystem)
+RunnerInstance:AddSystem("CharacterMovementSystem", CharacterMovementSystem.Run)
 RunnerInstance:Start(RunService.RenderStepped)

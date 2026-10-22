@@ -134,10 +134,12 @@ local function clearSession(session, reason: string?)
 		activeByNpc[session.context.NPC] = nil
 	end
 
-	Packets.packets.NPCConversation.sendTo({
-		action = "End",
-		reason = reason or "Done",
-	}, session.player)
+	if session.player.Parent == Players then
+		Packets.packets.NPCConversation.sendTo({
+			action = "End",
+			reason = reason or "Done",
+		}, session.player)
+	end
 end
 
 local function sendTurn(session)

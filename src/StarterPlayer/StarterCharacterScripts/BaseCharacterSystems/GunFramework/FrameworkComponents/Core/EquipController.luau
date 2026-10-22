@@ -300,24 +300,37 @@ function EquipController:setup(tool: Tool)
 	end
 
 	local gunModelCheck = self._gunModels:FindFirstChild(tool.Name)
-	if not gunModelCheck then
+	if not gunModelCheck or not gunModelCheck:IsA("Model") then
 		warn("Tool Or Gun Model Doesn't Exist")
 		return
 	end
 
-	self._toolEquip = true
-	WeaponUIState.setAiming(self._player, false)
-	self._cameraController:applyCameraMode()
+	local settingsModule = tool:FindFirstChild("ACS_Settings")
+	local animationsModule = tool:FindFirstChild("ACS_Animations")
+	if not settingsModule or not settingsModule:IsA("ModuleScript")
+		or not animationsModule or not animationsModule:IsA("ModuleScript") then
+		warn(`[ACS] {tool.Name} is missing authored settings or animations`)
+		return
+	end
+
+	local settingsOk, loadedSettings = pcall(require, settingsModule)
+	local animationsOk, loadedAnimations = pcall(require, animationsModule)
+	if not settingsOk or type(loadedSettings) ~= "table"
+		or not animationsOk or type(loadedAnimations) ~= "table"
+		or typeof(loadedAnimations.MainCFrame) ~= "CFrame"
+		or typeof(loadedAnimations.GunCFrame) ~= "CFrame" then
+		warn(`[ACS] {tool.Name} has invalid authored settings or animations`)
+		return
+	end
 
 	self._weaponTool = tool
-	self._weaponData = table.clone(require(tool:FindFirstChild("ACS_Settings")))
-	self._animData = require(tool:FindFirstChild("ACS_Animations"))
+	self._weaponData = table.clone(loadedSettings)
+	self._animData = loadedAnimations
 
 	self._weaponAnimator = WeaponAnimator.new(self._animData)
 	self._weaponInHand = gunModelCheck:Clone()
 	self._weaponInHand.PrimaryPart = self._weaponInHand:WaitForChild("Handle")
 
-	self._events.Equip:FireServer(tool, 1)
 
 	-- Clone viewmodel arms
 	self._viewModel = self._armModel:WaitForChild("Arms"):Clone()
@@ -454,6 +467,10 @@ function EquipController:setup(tool: Tool)
 
 	-- Update cast controller state
 	self._castController:setWeaponState(self._weaponTool, self._weaponData, self._modTable, self._weaponInHand)
+	WeaponUIState.setAiming(self._player, false)
+	self._cameraController:applyCameraMode()
+	self._toolEquip = true
+	self._events.Equip:FireServer(tool, 1)
 end
 
 function EquipController:unequip()

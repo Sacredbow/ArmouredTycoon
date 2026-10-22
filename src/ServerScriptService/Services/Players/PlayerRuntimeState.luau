@@ -7,7 +7,6 @@ local Packets = require(ReplicatedStorage.Network.Packets)
 
 export type State = {
 	Multiplier: number,
-	Power: boolean,
 	ArmourEquipped: boolean,
 	CanRebirth: boolean,
 	AntiCheatTeleportGraceUntil: number,
@@ -17,7 +16,6 @@ export type State = {
 
 local DefaultState: State = {
 	Multiplier = 1,
-	Power = false,
 	ArmourEquipped = false,
 	CanRebirth = false,
 	AntiCheatTeleportGraceUntil = 0,
@@ -66,7 +64,6 @@ end
 function PlayerRuntimeState.ResetTycoonState(player: Player)
 	local state = PlayerRuntimeState.Get(player)
 	state.Multiplier = DefaultState.Multiplier
-	state.Power = DefaultState.Power
 	state.ArmourEquipped = DefaultState.ArmourEquipped
 	PlayerRuntimeState.SetCanRebirth(player, DefaultState.CanRebirth)
 end
@@ -79,13 +76,6 @@ function PlayerRuntimeState.SetMultiplier(player: Player, value: number)
 	PlayerRuntimeState.Get(player).Multiplier = value
 end
 
-function PlayerRuntimeState.HasPower(player: Player): boolean
-	return PlayerRuntimeState.Get(player).Power
-end
-
-function PlayerRuntimeState.SetPower(player: Player, value: boolean)
-	PlayerRuntimeState.Get(player).Power = value
-end
 
 function PlayerRuntimeState.HasArmourEquipped(player: Player): boolean
 	return PlayerRuntimeState.Get(player).ArmourEquipped

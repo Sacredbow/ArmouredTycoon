@@ -17,7 +17,6 @@
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 
 local Signal = require(ReplicatedStorage.Packages.signal)
 local Janitor = require(ReplicatedStorage.Packages.janitor)
@@ -126,15 +125,11 @@ function GameStore:Start()
 		self.Changed:Fire()
 	end), "Disconnect", "NukeChanged")
 
-	-- Async start with packets (retry until available)
+	-- Async start with packets once the shared namespace is ready
 	self.Janitor:Add(task.spawn(function()
-		local Packets = self:TryGetPackets()
-		while self.Started and not Packets do
-			task.wait(0.5)
-			Packets = self:TryGetPackets()
-		end
-
-		if not self.Started or not Packets then
+		-- PacketBootstrap owns the single readiness wait for the ByteNet namespace.
+		local Packets = PacketBootstrap.Get()
+		if not self.Started then
 			return
 		end
 
@@ -158,9 +153,6 @@ function GameStore:Start()
 end
 
 function GameStore:TryGetPackets(): any
-	if RunService:IsStudio() and not RunService:IsRunning() then
-		return nil
-	end
 	return PacketBootstrap.TryGet()
 end
 --// Snapshot (combined from all sub-stores)

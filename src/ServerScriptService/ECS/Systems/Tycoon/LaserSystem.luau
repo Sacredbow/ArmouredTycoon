@@ -1,4 +1,4 @@
-﻿--!strict
+--!strict
 -- ECS laser hazard for a tycoon entity.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -25,7 +25,9 @@ function LaserSystem.setup(entity: number): (() -> ())?
 			if ownerData and ownerData.player == player then return end
 			local character = player.Character
 			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-			if humanoid then humanoid:TakeDamage(math.huge) end
+			if humanoid then
+				 humanoid:TakeDamage(math.huge)
+			end
 		end))
 	end
 	if #connections == 0 then return nil end
