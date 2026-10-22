@@ -637,7 +637,7 @@ local function InventoryView(props)
 
 	React.useEffect(function()
 		local inputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-			if not snapshot.isOpen then
+			if not snapshot.isOpen or gameProcessed or UserInputService:GetFocusedTextBox() then
 				return
 			end
 
@@ -651,10 +651,6 @@ local function InventoryView(props)
 				controller:UnequipSelected()
 			elseif input.KeyCode == Enum.KeyCode.Escape and confirmRemove then
 				closeRemoveConfirm()
-			end
-
-			if gameProcessed then
-				return
 			end
 		end)
 

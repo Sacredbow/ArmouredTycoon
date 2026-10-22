@@ -10,6 +10,7 @@
 --// Types
 
 const Types = require(script.Parent.Types)
+const WeaponDefinitionResolver = require(game:GetService("ReplicatedStorage").Weapons.Resolver)
 
 --// Public API
 
@@ -48,14 +49,14 @@ function CompareSettings(clientSettings: any, serverSettings: any): boolean
 		and clientSettings.HeadDamage[2] == serverSettings.HeadDamage[2]
 end
 
-function SecureModifiers(player: Player, modifiers: any): Types.ModifierSettings?
-	if type(modifiers) ~= "table" then
-		RejectRequest(player, "damage request with non-table modifiers")
+function SecureCombatState(player: Player, combatState: any): Types.ModifierSettings?
+	if type(combatState) ~= "table" then
+		RejectRequest(player, "damage request with invalid server combat state")
 		return nil
 	end
 
-	local damageMod = modifiers.DamageMod
-	local minDamageMod = modifiers.minDamageMod
+	local damageMod = combatState.DamageMod
+	local minDamageMod = combatState.minDamageMod
 
 	-- All ACS attachments use DamageMod in [0.1, 1.0] (Suppressor=0.85, rest=1.0)
 	-- Clamp to prevent exploiters from inflating damage multipliers
@@ -89,7 +90,7 @@ function SecureSettings(player: Player, gun: Tool?, clientSettings: any?): any?
 		return nil
 	end
 
-	local settingsModule = gun:FindFirstChild("ACS_Settings")
+	local settingsModule = WeaponDefinitionResolver.getSettings(gun)
 	if not settingsModule or not settingsModule:IsA("ModuleScript") then
 		RejectRequest(player, "weapon is missing ACS_Settings")
 		return nil
@@ -112,6 +113,6 @@ return {
 	RejectRequest = RejectRequest,
 	CompareSettings = CompareSettings,
 	SecureSettings = SecureSettings,
-	SecureModifiers = SecureModifiers,
+	SecureCombatState = SecureCombatState,
 }
 

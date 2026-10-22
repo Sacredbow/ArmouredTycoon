@@ -37,7 +37,7 @@ function NotificationStore.new(): NotificationStore
 	local self = setmetatable({}, NotificationStore) :: NotificationStore
 
 	self.Notifications = {}
-	self.Changed = Signal.new()
+	self.Changed = Signal.get("NotificationStoreChanged")
 	self.NextNotificationId = 0
 	self.LastWeatherNotificationType = nil
 	self.Destroyed = false
@@ -58,7 +58,6 @@ function NotificationStore:Start(Packets: any)
 	end
 
 	self.Started = true
-	print(self.Started)
 	
 	
 	type ControlsManager = {
@@ -86,6 +85,9 @@ function NotificationStore:Start(Packets: any)
 			Controls:Disable()
 			
 			task.wait(2)
+			if self.Destroyed or not self.Started then
+				return
+			end
 			Controls:Enable()
 			
 		end
@@ -125,7 +127,7 @@ function NotificationStore:PushNotification(Type: string, Message: string, Durat
 	self.Changed:Fire()
 end
 
-function NotificationStore:PushTutorialNotification(Message: string, duration: number)
+function NotificationStore:PushTutorialNotification(Message: string, duration: number?)
 	self:ClearNotificationsByKind("tutorial")
 	self:PushNotification("tutorial", Message, duration or 0)
 end
@@ -229,7 +231,7 @@ export type NotificationStore = typeof(setmetatable({} :: {
 
 	Start: (self: NotificationStore, Packets: any) -> (),
 	PushNotification: (self: NotificationStore, Type: string, Message: string, Duration: number?) -> (),
-	PushTutorialNotification: (self: NotificationStore, Message: string) -> (),
+	PushTutorialNotification: (self: NotificationStore, Message: string, duration: number?) -> (),
 	ClearNotificationsByKind: (self: NotificationStore, Kind: string) -> (),
 	DismissNotification: (self: NotificationStore, Id: number) -> (),
 	GetSnapshot: (self: NotificationStore) -> { Notification },

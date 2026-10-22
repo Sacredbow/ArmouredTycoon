@@ -28,7 +28,9 @@ const Workspace = game:GetService("Workspace")
 const ECS = require(ReplicatedStorage.ECS)
 const Types = require(script.Parent.Types)
 const Security = require(script.Parent.Security)
+const WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
 const ShotAuthority = require(script.Parent.ShotAuthority)
+const Weapons = require(script.Parent.Weapons)
 const State = require(script.Parent.State)
 
 --// Micro-Optimisations
@@ -120,7 +122,7 @@ function HandleShieldHit(player: Player, shieldModel: Model)
 		return
 	end
 	local weapon = character:FindFirstChildOfClass("Tool")
-	local settingsModule = weapon and weapon:FindFirstChild("ACS_Settings")
+	local settingsModule = weapon and WeaponDefinitionResolver.getSettings(weapon)
 	if not settingsModule or not settingsModule:IsA("ModuleScript") then
 		return
 	end
@@ -207,6 +209,26 @@ local function applyArmour(
 	return damage
 end
 
+local function classifyHitPart(hitPart: Instance): number
+	local name = hitPart.Name
+	local parentName = hitPart.Parent and hitPart.Parent.Name or ""
+
+	if name == "Head" or parentName == "Top" or parentName == "Headset"
+		or parentName == "Olho" or parentName == "Face" or parentName == "Numero" then
+		return HEAD_HIT_TYPE
+	end
+
+	if name == "Torso" or name == "UpperTorso" or name == "LowerTorso"
+		or parentName == "Chest" or parentName == "Waist"
+		or name == "Right Arm" or name == "Left Arm"
+		or name == "RightUpperArm" or name == "RightLowerArm" or name == "RightHand"
+		or name == "LeftUpperArm" or name == "LeftLowerArm" or name == "LeftHand" then
+		return TORSO_HIT_TYPE
+	end
+
+	return 3
+end
+
 local function HasLineOfSight(attackerCharacter: Model, targetCharacter: Model, origin: Vector3, targetPosition: Vector3): boolean
 	local direction = targetPosition - origin
 	if direction.Magnitude <= 0.01 then
@@ -281,8 +303,8 @@ function HandleDamageRequest(
 	player: Player,
 	weapon: Tool?,
 	targetHumanoid: Humanoid?,
-	hitType: number,
-	modifiers: any
+	hitPart: Instance?,
+	hitType: number
 )
 	local character = player.Character
 	if not character then
@@ -298,17 +320,19 @@ function HandleDamageRequest(
 	if hitType ~= HEAD_HIT_TYPE and hitType ~= TORSO_HIT_TYPE and hitType ~= 3 then
 		return
 	end
-	if type(modifiers) ~= "table" then
-		warn(`[FPS.Damage] {player.Name} sent invalid damage payload types`)
-		return
-	end
 
 	local serverSettings = Security.SecureSettings(player, weapon)
 	if not serverSettings then
 		return
 	end
 
+	local combatState = Weapons.GetCombatState(player, weapon)
+	if not combatState then
+		return
+	end
+
 	if typeof(targetHumanoid) ~= "Instance" or not targetHumanoid:IsA("Humanoid")
+		or typeof(hitPart) ~= "Instance" or not hitPart:IsA("BasePart")
 		or targetHumanoid == humanoid or targetHumanoid.Health <= 0
 		or not targetHumanoid:IsDescendantOf(workspace) then
 		return
@@ -324,10 +348,12 @@ function HandleDamageRequest(
 		return
 	end
 	local targetCharacter = targetHumanoid.Parent
-	if not targetCharacter or not targetCharacter:IsA("Model") then
+	if not targetCharacter or not targetCharacter:IsA("Model")
+		or not hitPart:IsDescendantOf(targetCharacter)
+		or classifyHitPart(hitPart) ~= hitType then
 		return
 	end
-	local targetPart = if hitType == HEAD_HIT_TYPE then targetCharacter:FindFirstChild("Head") else if hitType == TORSO_HIT_TYPE then targetCharacter:FindFirstChild("UpperTorso") or targetRoot else targetRoot
+	local targetPart = hitPart
 	if not targetPart or not targetPart:IsA("BasePart") or not HasLineOfSight(character, targetCharacter, attackerRoot.Position, targetPart.Position) then
 		return
 	end
@@ -337,7 +363,7 @@ function HandleDamageRequest(
 			return
 		end
 	end
-	local secureModifiers = Security.SecureModifiers(player, modifiers)
+	local secureModifiers = Security.SecureCombatState(player, combatState)
 	if not secureModifiers then
 		return
 	end

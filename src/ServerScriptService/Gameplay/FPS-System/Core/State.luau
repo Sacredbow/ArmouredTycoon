@@ -11,8 +11,6 @@ local State = {
 	-- ECS entity id for each player's active weapon rig / stance entity.
 	WeaponRigEntities = {} :: { [Player]: number },
 
-	-- CharacterAdded connections for each player.
-	CharacterConnections = {} :: { [Player]: RBXScriptConnection },
 
 	-- Resolved ACS GameRules.Config module (loaded by init.server.luau).
 	GameRules = nil :: any?,

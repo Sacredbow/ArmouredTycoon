@@ -3,18 +3,16 @@
 	@class ProfileStore
 
 	@desc
-	Manages player profile state: level, XP, quests, daily rewards.
-	Uses Replica for state syncing from the server.
+	Owns the client profile snapshot and applies server-authoritative ByteNet
+	updates. The store keeps the transport lifecycle separate from UI state.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 
 local Signal = require(ReplicatedStorage.Packages.signal)
 local Janitor = require(ReplicatedStorage.Packages.janitor)
 local QuestOptions = require(ReplicatedStorage.Progression.QuestOptions)
-
---// Types
 
 export type QuestProgress = {
 	Progress: number,
@@ -35,9 +33,7 @@ export type ProfileState = {
 	quests: { [string]: QuestProgress },
 }
 
---// Constants
-
-const DEFAULT_PROFILE: ProfileState = {
+local DEFAULT_PROFILE: ProfileState = {
 	hydrated = false,
 	level = 1,
 	experience = 0,
@@ -50,125 +46,162 @@ const DEFAULT_PROFILE: ProfileState = {
 	quests = QuestOptions.createProgressMap(),
 }
 
---// Internal Helpers
-
-local function CopyProfile(Profile: ProfileState): ProfileState
-	local Quests = {}
-	for QuestId, Quest in pairs(Profile.quests) do
-		Quests[QuestId] = table.clone(Quest)
+local function copyQuestMap(quests: any): { [string]: QuestProgress }
+	local copied = {}
+	if type(quests) ~= "table" then
+		return copied
 	end
 
+	for questId, quest in pairs(quests) do
+		if type(quest) == "table" then
+			copied[questId] = table.clone(quest)
+		end
+	end
+	return copied
+end
+
+local function copyProfile(profile: ProfileState): ProfileState
 	return {
-		hydrated = Profile.hydrated,
-		level = Profile.level,
-		experience = Profile.experience,
-		requiredExperience = Profile.requiredExperience,
-		onboarding = Profile.onboarding,
-		dailyReadyAt = Profile.dailyReadyAt,
-		dailySecondsRemaining = Profile.dailySecondsRemaining,
-		dailyQuestSecondsRemaining = Profile.dailyQuestSecondsRemaining,
-		weeklyQuestSecondsRemaining = Profile.weeklyQuestSecondsRemaining,
-		quests = Quests,
+		hydrated = profile.hydrated,
+		level = profile.level,
+		experience = profile.experience,
+		requiredExperience = profile.requiredExperience,
+		onboarding = profile.onboarding,
+		dailyReadyAt = profile.dailyReadyAt,
+		dailySecondsRemaining = profile.dailySecondsRemaining,
+		dailyQuestSecondsRemaining = profile.dailyQuestSecondsRemaining,
+		weeklyQuestSecondsRemaining = profile.weeklyQuestSecondsRemaining,
+		quests = copyQuestMap(profile.quests),
 	}
 end
 
---// Module
+local function profilesEqual(left: ProfileState, right: ProfileState): boolean
+    if left.hydrated ~= right.hydrated
+        or left.level ~= right.level
+        or left.experience ~= right.experience
+        or left.requiredExperience ~= right.requiredExperience
+        or left.onboarding ~= right.onboarding
+        or left.dailyReadyAt ~= right.dailyReadyAt
+        or left.dailySecondsRemaining ~= right.dailySecondsRemaining
+        or left.dailyQuestSecondsRemaining ~= right.dailyQuestSecondsRemaining
+        or left.weeklyQuestSecondsRemaining ~= right.weeklyQuestSecondsRemaining then
+        return false
+    end
+
+    local leftCount = 0
+    for questId, quest in pairs(left.quests) do
+        leftCount += 1
+        local other = right.quests[questId]
+        if not other
+            or quest.Progress ~= other.Progress
+            or quest.Completed ~= other.Completed
+            or quest.Claimed ~= other.Claimed then
+            return false
+        end
+    end
+
+    local rightCount = 0
+    for _ in pairs(right.quests) do
+        rightCount += 1
+    end
+    return leftCount == rightCount
+end
 
 local ProfileStore = {}
 ProfileStore.__index = ProfileStore
 
 function ProfileStore.new(): ProfileStore
 	local self = setmetatable({}, ProfileStore) :: ProfileStore
-
-	self.Profile = CopyProfile(DEFAULT_PROFILE)
-	self.Changed = Signal.new()
+	self.Profile = copyProfile(DEFAULT_PROFILE)
+	self.Changed = Signal.get("ProfileStoreChanged")
 	self.Janitor = Janitor.new()
-	self.ProfileReplicaJanitor = Janitor.new()
+	self.ProfileStateJanitor = Janitor.new()
 	self.Destroyed = false
-	self.ReplicaRequested = false
-
+	self.Started = false
+	self.StateListenerStarted = false
 	return self
 end
 
 function ProfileStore:Start(Packets: any)
-	if self.Started then
+	if self.Destroyed then
+		return
+	end
+	self.Started = true
+	if not Packets or self.StateListenerStarted then
 		return
 	end
 
-	self.Started = true
-	self.Janitor:Add(self.ProfileReplicaJanitor, "Destroy", "ProfileReplica")
-	self:StartProfileReplica(Packets)
+	self.StateListenerStarted = true
+	self.Janitor:Add(self.ProfileStateJanitor, "Destroy", "ProfileState")
+	self:StartProfileState(Packets)
 end
 
-function ProfileStore:StartProfileReplica(Packets: any)
-	if RunService:IsStudio() and not RunService:IsRunning() then
+function ProfileStore:StartProfileState(Packets: any)
+	local packet = Packets.packets and Packets.packets.ProfileState
+	if not packet then
 		return
 	end
 
-	local ReplicaModule = self:GetReplica()
-	if not ReplicaModule then
-		return
-	end
-
-	ReplicaModule.OnNew("ProfileState", function(Replica)
-		if not self.Started then
+	local disconnect = packet.listen(function(data: any)
+		if not self.Started or type(data) ~= "table" or type(data.payload) ~= "string" then
 			return
 		end
 
-		self.ProfileReplicaJanitor:Cleanup()
-		self:SetProfileState(Replica.Data)
-		self.ProfileReplicaJanitor:Add(Replica:OnChange(function()
-			self:SetProfileState(Replica.Data)
-		end), "Disconnect", "ProfileStateChanged")
-	end)
-
-	if not self.ReplicaRequested then
-		self.ReplicaRequested = true
-		ReplicaModule.RequestData()
-	end
-end
-
-function ProfileStore:GetReplica()
-	if RunService:IsStudio() and not RunService:IsRunning() then
-		return nil
-	end
-
-	if not self.CachedReplica then
-		local Ok, Result = pcall(function()
-			return require(ReplicatedStorage.Packages.replica)
-		end)
-		if not Ok then
-			return nil
+		local ok, state = pcall(HttpService.JSONDecode, HttpService, data.payload)
+		if ok then
+			self:SetProfileState(state)
 		end
-		self.CachedReplica = Result
-	end
+	end)
+	self.ProfileStateJanitor:Add(disconnect, true, "ProfileStateChanged")
 
-	return self.CachedReplica
-end
-
-function ProfileStore:SetProfileState(State: any)
-	if typeof(State) ~= "table" then
+	local query = Packets.queries and Packets.queries.ProfileAction
+	if not query then
 		return
 	end
 
-	self.Profile = {
-		hydrated = true,
-		level = tonumber(State.level) or self.Profile.level,
-		experience = tonumber(State.experience) or self.Profile.experience,
-		requiredExperience = tonumber(State.requiredExperience) or self.Profile.requiredExperience,
-		onboarding = State.onboarding == true,
-		dailyReadyAt = tonumber(State.dailyReadyAt) or 0,
-		dailySecondsRemaining = tonumber(State.dailySecondsRemaining) or self.Profile.dailySecondsRemaining,
-		dailyQuestSecondsRemaining = tonumber(State.dailyQuestSecondsRemaining) or self.Profile.dailyQuestSecondsRemaining,
-		weeklyQuestSecondsRemaining = tonumber(State.weeklyQuestSecondsRemaining) or self.Profile.weeklyQuestSecondsRemaining,
-		quests = State.quests or self.Profile.quests,
-	}
+	task.spawn(function()
+		local ok, result = pcall(function()
+			return query.invoke({ action = "GetState" })
+		end)
+		if not ok or type(result) ~= "table" or result.success ~= true or type(result.payload) ~= "string" then
+			return
+		end
 
-	self.Changed:Fire()
+		local decoded, state = pcall(HttpService.JSONDecode, HttpService, result.payload)
+		if decoded then
+			self:SetProfileState(state)
+		end
+	end)
+end
+
+function ProfileStore:SetProfileState(State: any)
+	if type(State) ~= "table" then
+		return
+	end
+
+    local nextProfile: ProfileState = {
+        hydrated = true,
+        level = tonumber(State.level) or self.Profile.level,
+        experience = tonumber(State.experience) or self.Profile.experience,
+        requiredExperience = tonumber(State.requiredExperience) or self.Profile.requiredExperience,
+        onboarding = State.onboarding == true,
+        dailyReadyAt = tonumber(State.dailyReadyAt) or 0,
+        dailySecondsRemaining = tonumber(State.dailySecondsRemaining) or self.Profile.dailySecondsRemaining,
+        dailyQuestSecondsRemaining = tonumber(State.dailyQuestSecondsRemaining) or self.Profile.dailyQuestSecondsRemaining,
+        weeklyQuestSecondsRemaining = tonumber(State.weeklyQuestSecondsRemaining) or self.Profile.weeklyQuestSecondsRemaining,
+        quests = copyQuestMap(State.quests),
+    }
+
+    if profilesEqual(self.Profile, nextProfile) then
+        return
+    end
+
+    self.Profile = nextProfile
+    self.Changed:Fire()
 end
 
 function ProfileStore:GetSnapshot(): ProfileState
-	return CopyProfile(self.Profile)
+	return copyProfile(self.Profile)
 end
 
 function ProfileStore:Destroy()
@@ -180,9 +213,9 @@ function ProfileStore:Destroy()
 	self.Started = false
 	self.Janitor:Destroy()
 
-	local Changed = self.Changed :: any
-	if Changed.Destroy then
-		Changed:Destroy()
+	local changed = self.Changed :: any
+	if changed.Destroy then
+		changed:Destroy()
 	end
 end
 
@@ -190,19 +223,15 @@ export type ProfileStore = typeof(setmetatable({} :: {
 	Profile: ProfileState,
 	Changed: any,
 	Janitor: any,
-	ProfileReplicaJanitor: any,
+	ProfileStateJanitor: any,
 	Destroyed: boolean,
 	Started: boolean,
-	ReplicaRequested: boolean,
-	CachedReplica: any,
-
+	StateListenerStarted: boolean,
 	Start: (self: ProfileStore, Packets: any) -> (),
-	StartProfileReplica: (self: ProfileStore, Packets: any) -> (),
-	GetReplica: (self: ProfileStore) -> any,
+	StartProfileState: (self: ProfileStore, Packets: any) -> (),
 	SetProfileState: (self: ProfileStore, State: any) -> (),
 	GetSnapshot: (self: ProfileStore) -> ProfileState,
 	Destroy: (self: ProfileStore) -> (),
 }, ProfileStore))
 
 return ProfileStore
-

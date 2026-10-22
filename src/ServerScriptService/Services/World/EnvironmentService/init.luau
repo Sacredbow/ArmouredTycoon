@@ -15,7 +15,6 @@
 --// Services
 
 const Lighting = game:GetService("Lighting")
-const Players = game:GetService("Players")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 --// Modules
@@ -24,6 +23,7 @@ const EnvironmentShared = require(ReplicatedStorage.Shared.World.EnvironmentShar
 const EnvironmentSchedule = require(script.EnvironmentSchedule)
 const LightningModule = require(script.LightningModule)
 const ECS = require(ReplicatedStorage.ECS)
+const Observers = require(ReplicatedStorage.Packages.Observers)
 
 --// Constants
 
@@ -246,6 +246,7 @@ function EnvironmentService.new(Dependencies: EnvironmentDependencies): Environm
 	self.WeatherLightingWeight = self.CurrentWeather.lightingWeight or 0
 	self.NightStormActive = false
 	self._WeatherLightingTweenToken = nil
+	self._WeatherPlayerObserverStop = nil
 	ActiveEnvironmentService = self
 
 	return self
@@ -386,9 +387,9 @@ end
 
 function EnvironmentService:_InitWeather()
 	self:_BroadcastWeather(nil :: Player?)
-	Players.PlayerAdded:Connect(function(Player: Player)
+	self._WeatherPlayerObserverStop = Observers.observePlayer(function(player: Player)
 		task.defer(function()
-			self:_BroadcastWeather(Player)
+			self:_BroadcastWeather(player)
 		end)
 	end)
 

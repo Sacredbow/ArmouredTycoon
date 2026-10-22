@@ -2,10 +2,11 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(script.Config)
 
-local LoggingEvent = require(ServerScriptService.Signals.LogSignal)
+local LoggingEvent = require(ReplicatedStorage.Packages.signal).get("ServerLogging")
 
 local secretLoaded, webhookURL = pcall(function()
 	return HttpService:GetSecret(Config.WebhookSecretName)

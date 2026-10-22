@@ -9,7 +9,7 @@
 
 	Sub-stores:
 	- StatsStore          — leaderstats, stat sync
-	- ProfileStore        — replica, XP, level, quests, daily
+	- ProfileStore        — ByteNet profile snapshot, XP, level, quests, daily
 	- NotificationStore   — toast queue, weather notifications
 	- NPCStore            — conversation state
 	- KOTHStore           - KOTH announcements
@@ -72,7 +72,7 @@ function GameStore.new(): GameStore
 	self.Started = false
 
 	-- Wire sub-store changes to unified change signal
-	self.Changed = Signal.new()
+	self.Changed = Signal.get("GameStoreChanged")
 
 	return self
 end
@@ -84,7 +84,7 @@ function GameStore:Start()
 
 	self.Started = true
 
-	-- Start sub-stores without packets first (for profile replica which uses its own)
+	-- Start sub-stores before packet readiness; packet-backed stores attach later
 	self.StatsStore:Start(nil)
 	self.ProfileStore:Start(nil)
 	self.NotificationStore:Start(nil)
@@ -189,7 +189,7 @@ function GameStore:PushNotification(Kind: string, Message: string, Duration: num
 	self.NotificationStore:PushNotification(Kind, Message, Duration)
 end
 
-function GameStore:PushTutorialNotification(Message: string, duration: number)
+function GameStore:PushTutorialNotification(Message: string, duration: number?)
 	self.NotificationStore:PushTutorialNotification(Message, duration)
 end
 
@@ -287,7 +287,7 @@ export type GameStore = typeof(setmetatable({} :: {
 	SetStat: (self: GameStore, StatName: string, Value: number) -> (),
 	SetProfileState: (self: GameStore, State: any) -> (),
 	PushNotification: (self: GameStore, Kind: string, Message: string, Duration: number?) -> (),
-	PushTutorialNotification: (self: GameStore, Message: string) -> (),
+	PushTutorialNotification: (self: GameStore, Message: string, duration: number?) -> (),
 	ClearNotificationsByKind: (self: GameStore, Kind: string) -> (),
 	DismissNotification: (self: GameStore, Id: number) -> (),
 	DismissKOTHAnnouncement: (self: GameStore, Id: number) -> (),

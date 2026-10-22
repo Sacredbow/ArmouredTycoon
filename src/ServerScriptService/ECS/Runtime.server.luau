@@ -11,6 +11,7 @@
 
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
 const RunService = game:GetService("RunService")
+const Observers = require(ReplicatedStorage.Packages.Observers)
 
 --// Modules
 
@@ -41,6 +42,27 @@ const TransformSyncSystem = require(ServerECS.Systems.World.TransformSyncSystem)
 const NPCUpdateSystem = require(ServerECS.Systems.AI.NPCUpdateSystem)
 const AntiCheatSystem = require(ServerECS.Systems.AI.AntiCheatSystem)
 
+-- Tagged world geometry is promoted to plain ECS data. Systems can query
+-- DamageZone without owning CollectionService connections or controller objects.
+local _StopDamageZoneObserver = Observers.observeTag("DamageZone", function(instance: Instance)
+	if not instance:IsA("BasePart") then
+		return nil
+	end
+
+	local entity = ECS.createEntity({
+		Name = instance:GetFullName() .. ":DamageZone",
+		Model = instance,
+		DamageZone = {
+			Part = instance,
+		},
+	})
+
+	return function()
+		if ECS.world:get(entity, ECS.Components.DamageZone) then
+			ECS.deleteEntity(entity)
+		end
+	end
+end, { workspace })
 --// Runner Initialization
 
 local RunnerInstance = Runner.new("Server", ECS.world, ECS.Components)

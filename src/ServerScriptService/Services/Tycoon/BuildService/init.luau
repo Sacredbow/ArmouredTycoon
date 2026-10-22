@@ -3,6 +3,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local BuildCatalog = require(ReplicatedStorage.BuildService.BuildCatalog)
+local Packets = require(ReplicatedStorage.Network.Packets)
 local GridState = require(script.GridState)
 local BuildSpawner = require(script.BuildSpawner)
 local ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
@@ -29,37 +30,66 @@ function BuildService.create(playerService, tycoonService)
 end
 
 function BuildService:Init()
-	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-	if not remotes then
-		remotes = Instance.new("Folder")
-		remotes.Name = "Remotes"
-		remotes.Parent = ReplicatedStorage
-	end
+	NetworkGuard.Query(Packets.queries.BuildAction, "BuildAction", {
+		Rate = BUILD_POLICY.Rate,
+		Burst = BUILD_POLICY.Burst,
+		Validate = function(request)
+			return type(request) == "table"
+				and (request.action == "GetState" or request.action == "Place" or request.action == "Remove")
+				and (request.payload == nil or (type(request.payload) == "string" and #request.payload <= 4096))
+		end,
+	}, function(request, player: Player)
+		if request.action == "GetState" then
+			local success, result = self:GetState(player)
+			if not success then
+				return { success = false, message = tostring(result) }
+			end
 
-	local action = remotes:FindFirstChild("BuildAction")
-	if not action then
-		action = Instance.new("RemoteFunction")
-		action.Name = "BuildAction"
-		action.Parent = remotes
-	end
+			local metadata = result.Metadata
+			local ok, occupied = pcall(HttpService.JSONEncode, HttpService, result.Occupied)
+			if not ok then
+				return { success = false, message = "Build state could not be encoded." }
+			end
 
-	assert(action:IsA("RemoteFunction"), "Remotes.BuildAction must be a RemoteFunction")
-	local buildAction = action :: RemoteFunction
-	buildAction.OnServerInvoke = function(player: Player, request: string, payload)
-		if not NetworkGuard.Allow(player, "BuildAction", BUILD_POLICY, nil) then
-			return false, "Please wait before trying again."
+			return {
+				success = true,
+				message = "",
+				state = {
+					cellSize = metadata.CellSize,
+					width = metadata.Width,
+					height = metadata.Height,
+					origin = metadata.Origin,
+					compoundSize = metadata.CompoundSize,
+					occupied = occupied,
+				},
+			}
 		end
 
-		if request == "GetState" then
-			return self:GetState(player)
-		elseif request == "Place" then
-			return self:Place(player, payload)
-		elseif request == "Remove" then
-			return self:Remove(player, payload)
+		local payload = nil
+		if request.payload ~= nil then
+			local decoded, result = pcall(HttpService.JSONDecode, HttpService, request.payload)
+			if not decoded or type(result) ~= "table" then
+				return { success = false, message = "Invalid build payload." }
+			end
+			payload = result
 		end
 
-			return false, "Unknown build action."
-	end
+		local success, result
+		if request.action == "Place" then
+			success, result = self:Place(player, payload)
+		else
+			success, result = self:Remove(player, payload)
+		end
+		if not success then
+			return { success = false, message = tostring(result) }
+		end
+
+		local encoded, encodedResult = pcall(HttpService.JSONEncode, HttpService, result)
+		if not encoded then
+			return { success = false, message = "Build result could not be encoded." }
+		end
+		return { success = true, message = "", payload = encodedResult }
+	end)
 end
 
 function BuildService:_profileBuildData(player: Player)

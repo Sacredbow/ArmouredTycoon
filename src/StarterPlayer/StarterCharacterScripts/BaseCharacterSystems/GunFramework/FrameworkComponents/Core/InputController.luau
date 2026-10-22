@@ -73,6 +73,12 @@ function InputController:unbindBipodToggle()
 	ContextActionService:UnbindAction("ToggleBipod")
 end
 
+function InputController:destroy()
+	self:unbindWeaponActions()
+	self:unbindBipodToggle()
+	self._handler = nil
+end
+
 --// Internal
 
 function InputController:_bindWheel()

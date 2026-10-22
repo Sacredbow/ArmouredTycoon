@@ -105,15 +105,6 @@ function Runtime.getAliveHumanoid(character: Model?): Humanoid?
 	return humanoid
 end
 
-function Runtime.getRemoteEvent(parent: Instance, name: string): RemoteEvent?
-	local event = parent:FindFirstChild(name)
-	if event and event:IsA("RemoteEvent") then
-		return event
-	end
-
-	return nil
-end
-
 function Runtime.getBindableEvent(parent: Instance, name: string): BindableEvent?
 	local event = parent:FindFirstChild(name)
 	if event and event:IsA("BindableEvent") then

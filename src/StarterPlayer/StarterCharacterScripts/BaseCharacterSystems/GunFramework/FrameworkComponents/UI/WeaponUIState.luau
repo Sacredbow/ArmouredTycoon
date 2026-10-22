@@ -75,7 +75,7 @@ function WeaponUIState.publishCrosshair(player: Player, info: CrosshairInfo)
 	})
 end
 
-function WeaponUIState.publishHud(player: Player, weaponData: WeaponData?, ammo: number?, storedAmmo: number?, safeMode: boolean)
+function WeaponUIState.publishHud(player: Player, weaponData: WeaponData?, ammo: number?, storedAmmo: number?, safeMode: boolean, shootType: number?, jammed: boolean?)
 	if not weaponData or weaponData.Type ~= "Gun" then
 		WeaponUIState.clear(player)
 		return
@@ -94,9 +94,9 @@ function WeaponUIState.publishHud(player: Player, weaponData: WeaponData?, ammo:
 		StoredAmmo = reserveAmmo,
 		MaxAmmo = maxAmmo,
 		Magazines = magazines,
-		Firemode = FIREMODE_NAMES[read(weaponData.ShootType, 1)] or "Semi",
+		Firemode = FIREMODE_NAMES[read(shootType, read(weaponData.ShootType, 1))] or "Semi",
 		BulletType = read(weaponData.BulletType, ""),
-		WeaponJammed = read(weaponData.Jammed, false),
+		WeaponJammed = read(jammed, read(weaponData.Jammed, false)),
 		WeaponSafe = safeMode,
 		ZeroText = zeroText,
 	})

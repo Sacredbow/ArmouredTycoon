@@ -3,6 +3,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ECS = require(ReplicatedStorage.ECS)
+local Observers = require(ReplicatedStorage.Packages.Observers)
 
 local LeaderboardService = {}
 LeaderboardService.__index = LeaderboardService
@@ -103,6 +104,8 @@ local function createBoard(config)
 		thumbnailCache = {},
 		trackedPlayers = {},
 		trackedStats = {},
+		playerConnections = {},
+		playerObserverStop = nil,
 		lastWriteByUserId = {},
 		lastPublishedValueByUserId = {},
 		pendingValuesByUserId = {},
@@ -289,17 +292,32 @@ function LeaderboardService:_bindBoard(board)
 end
 
 function LeaderboardService:_bindPlayers(board)
-	for _, player in ipairs(Players:GetPlayers()) do
-		self:_trackPlayer(board, player)
+	if board.playerObserverStop then
+		return
 	end
 
-	Players.PlayerAdded:Connect(function(player)
+	board.playerObserverStop = Observers.observePlayer(function(player: Player)
 		self:_trackPlayer(board, player)
-	end)
 
-	Players.PlayerRemoving:Connect(function(player)
-		self:_flushPlayer(board, player)
-		board.trackedPlayers[player] = nil
+		return function()
+			self:_flushPlayer(board, player)
+
+			local connections = board.playerConnections[player]
+			if connections then
+				for _, connection in connections do
+					connection:Disconnect()
+				end
+				board.playerConnections[player] = nil
+			end
+
+			for stat, trackedPlayer in board.trackedStats do
+				if trackedPlayer == player then
+					board.trackedStats[stat] = nil
+				end
+			end
+
+			board.trackedPlayers[player] = nil
+		end
 	end)
 end
 
@@ -309,6 +327,13 @@ function LeaderboardService:_trackPlayer(board, player)
 	end
 
 	board.trackedPlayers[player] = true
+	local connections = {}
+	board.playerConnections[player] = connections
+	local function connect(signal, callback)
+		local connection = signal:Connect(callback)
+		table.insert(connections, connection)
+		return connection
+	end
 
 	local function bindStat(stat)
 		if not stat:IsA("IntValue") and not stat:IsA("NumberValue") then
@@ -318,10 +343,10 @@ function LeaderboardService:_trackPlayer(board, player)
 			return
 		end
 
-		board.trackedStats[stat] = true
+		board.trackedStats[stat] = player
 		self:_publishValue(board, player, stat.Value, false)
 
-		stat.Changed:Connect(function(value)
+		connect(stat.Changed, function(value)
 			self:_publishValue(board, player, tonumber(value) or 0, false)
 		end)
 	end
@@ -333,14 +358,14 @@ function LeaderboardService:_trackPlayer(board, player)
 			bindStat(stat)
 		end
 
-		leaderstats.ChildAdded:Connect(function(child)
+		connect(leaderstats.ChildAdded, function(child)
 			if child.Name == board.config.statName then
 				bindStat(child)
 			end
 		end)
 	end
 
-	player.ChildAdded:Connect(function(child)
+	connect(player.ChildAdded, function(child)
 		if child.Name ~= "leaderstats" then
 			return
 		end
@@ -350,7 +375,7 @@ function LeaderboardService:_trackPlayer(board, player)
 			bindStat(stat)
 		end
 
-		child.ChildAdded:Connect(function(newStat)
+		connect(child.ChildAdded, function(newStat)
 			if newStat.Name == board.config.statName then
 				bindStat(newStat)
 			end

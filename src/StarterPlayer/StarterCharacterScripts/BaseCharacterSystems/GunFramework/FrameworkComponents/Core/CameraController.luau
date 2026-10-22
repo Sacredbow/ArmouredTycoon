@@ -37,6 +37,7 @@ export type CameraController = typeof(setmetatable({} :: {
 	_viewModelDescendants: { Instance },
 	_viewModelEnabledStates: { [Instance]: boolean },
 	_viewModelTransparencyStates: { [Instance]: number },
+	_viewModelVisible: boolean?,
 	_leanSpring: any,
 	_leanPeekFactor: number,
 	_leanDirPeek: number,
@@ -58,12 +59,17 @@ function CameraController.new(player: Player, camera: Camera, character: Model, 
 		_viewModelDescendants = {},
 		_viewModelEnabledStates = {},
 		_viewModelTransparencyStates = {},
+		_viewModelVisible = nil,
 		_leanSpring = nil,
 		_leanPeekFactor = math.rad(-15),
 		_leanDirPeek = 0,
 	}, CameraController)
 
 	return self
+end
+
+function CameraController:setCamera(camera: Camera)
+	self._camera = camera
 end
 
 function CameraController:setViewModel(viewModel: Model?)
@@ -95,6 +101,11 @@ function CameraController:setViewModelVisible(visible: boolean)
 		return
 	end
 
+	if self._viewModelVisible == visible then
+		return
+	end
+
+	self._viewModelVisible = visible
 	for _, descendant in self._viewModelDescendants do
 		if descendant:IsA("BasePart") then
 			descendant.LocalTransparencyModifier = if visible then 0 else 1
@@ -167,12 +178,12 @@ function CameraController:renderCam(cameraSpring: any)
 	)
 end
 
-function CameraController:updateLean(leanSpring: any, virar: number)
+function CameraController:updateLean(leanSpring: any, leanDirection: number)
 	if not leanSpring then
 		return
 	end
 
-	leanSpring.cornerPeek.t = self._leanPeekFactor * virar
+	leanSpring.cornerPeek.t = self._leanPeekFactor * leanDirection
 	local newLeanCF = CFrame.fromAxisAngle(Vector3.new(0, 0, 1), leanSpring.cornerPeek.p)
 	self._camera.CFrame = self._camera.CFrame * newLeanCF
 end

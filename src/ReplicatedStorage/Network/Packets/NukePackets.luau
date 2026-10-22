@@ -24,6 +24,14 @@ return function(ByteNet: any)
 			}),
 		}),
 
+		NukeScore = ByteNet.definePacket({
+			value = ByteNet.struct({
+				sessionId = ByteNet.string,
+				launcherScore = ByteNet.int32,
+				defenderScore = ByteNet.int32,
+			}),
+		}),
+
 		NukeClickBatch = ByteNet.definePacket({
 			value = ByteNet.struct({
 				sessionId = ByteNet.string,

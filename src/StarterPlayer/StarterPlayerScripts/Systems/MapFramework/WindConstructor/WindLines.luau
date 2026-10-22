@@ -1,4 +1,5 @@
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 local Terrain = workspace:FindFirstChildOfClass("Terrain")
 
 local EMPTY_TABLE = {}
@@ -96,9 +97,15 @@ function module:Create(Settings)
 	debug.profilebegin("Add Wind Line")
 	
 	Settings = Settings or EMPTY_TABLE
-
 	local Lifetime = Settings.Lifetime or module.Lifetime
-	local Position = Settings.Position or (workspace.CurrentCamera.CFrame*CFrame.Angles(math.rad(math.random(-30,70)),math.rad(math.random(-80,80)),0))*CFrame.new(0,0,math.random(200,600)*-0.1).Position
+	local Position = Settings.Position
+	if not Position then
+		local camera = Workspace.CurrentCamera
+		if not camera then
+			return
+		end
+		Position = (camera.CFrame * CFrame.Angles(math.rad(math.random(-30, 70)), math.rad(math.random(-80, 80)), 0) * CFrame.new(0, 0, math.random(200, 600) * -0.1)).Position
+	end
 	local Direction = Settings.Direction or module.Direction
 	local Speed = Settings.Speed or module.Speed
 	if Speed <= 0 then return end

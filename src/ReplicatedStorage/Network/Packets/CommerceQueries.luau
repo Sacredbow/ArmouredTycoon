@@ -4,6 +4,7 @@ return function(ByteNet: any)
 	local actionResponse = ByteNet.struct({
 		success = ByteNet.bool,
 		message = ByteNet.string,
+		payload = ByteNet.optional(ByteNet.string),
 	})
 
 	local actionRequest = ByteNet.struct({

@@ -37,7 +37,7 @@ function NPCStore.new(): NPCStore
 	local self = setmetatable({}, NPCStore) :: NPCStore
 
 	self.Conversation = nil
-	self.Changed = Signal.new()
+	self.Changed = Signal.get("NPCStoreChanged")
 	self.Destroyed = false
 
 	return self

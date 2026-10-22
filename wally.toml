@@ -5,12 +5,10 @@ registry = "https://github.com/UpliftGames/wally-index"
 realm = "shared"
 
 [dependencies]
-signal = "sleitnick/signal@2.0.3"
 bytenet-max = "elitriare/bytenet-max@0.2.5"
 jecs = "ukendio/jecs@0.1.0"
 react = "jsdotlua/react@17.2.1"
 ReactRoblox = "jsdotlua/react-roblox@17.2.1"
-replica = "ophidiedev/replica@0.2.0"
 janitor = "howmanysmall/janitor@1.18.3"
 Observers = "sleitnick/observers@0.4.0"
 replecs = "pepeeltoro41/replecs@0.3.1"

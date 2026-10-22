@@ -19,7 +19,8 @@ function LaserSystem.setup(entity: number): (() -> ())?
 		if not laser:IsA("BasePart") then continue end
 		table.insert(connections, laser.Touched:Connect(function(hit: Instance)
 			if laser.Transparency ~= 0 then return end
-			local player = Players:GetPlayerFromCharacter(hit.Parent)
+			local character = hit:FindFirstAncestorOfClass("Model")
+			local player = character and Players:GetPlayerFromCharacter(character)
 			if not player then return end
 			local ownerData = ECS.world:get(entity, ECS.Components.Owner)
 			if ownerData and ownerData.player == player then return end

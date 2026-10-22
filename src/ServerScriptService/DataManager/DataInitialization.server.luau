@@ -7,6 +7,7 @@ local ProfileStore = require(ServerScriptService.Libraries.ProfileStore)
 local DataTemplate = require(ServerScriptService.DataManager.DataTemplate)
 local ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 local Packets = require(ReplicatedStorage.Network.Packets)
+local Observers = require(ReplicatedStorage.Packages.Observers)
 local Janitor = require(ReplicatedStorage.Packages.janitor)
 
 
@@ -176,23 +177,21 @@ local function OnPlayerAdded(player : Player)
 	end
 end
 
-for _, player in Players:GetPlayers() do
-	task.defer(OnPlayerAdded, player)
-	-- Player joins the game before the script runs
-	
-end
-
-local function OnPlayerRemoving(player : Player)
+local function OnPlayerRemoving(player: Player)
 	local profile = ProfileManager.Profiles[player]
 	if not profile then
 		return
 	end
-	
+
 	profile:EndSession()
 	releasePlayerRuntime(player)
 	ProfileManager.Profiles[player] = nil
 end
 
-Players.PlayerAdded:Connect(OnPlayerAdded)
+local ProfileObserverStop = Observers.observePlayer(function(player: Player)
+	task.defer(OnPlayerAdded, player)
 
-Players.PlayerRemoving:Connect(OnPlayerRemoving)
+	return function()
+		OnPlayerRemoving(player)
+	end
+end)

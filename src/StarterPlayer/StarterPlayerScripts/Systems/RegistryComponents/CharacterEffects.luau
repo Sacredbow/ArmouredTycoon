@@ -1,7 +1,11 @@
 --!strict
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
 local Runtime = require(script.Parent:WaitForChild("Runtime"))
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+local Packets = PacketBootstrap.Get()
 
 type Context = {
 	events: Instance,
@@ -101,22 +105,6 @@ local function setLaserBeamEnabled(laser: BasePart, enabled: boolean)
 	end
 end
 
-local function pulseColorCorrection(startContrast: number, fadeTime: number)
-	local effect = Instance.new("ColorCorrectionEffect")
-	effect.Parent = Runtime.getCurrentCamera()
-
-	Runtime.tween(effect, TweenInfo.new(0.15, Enum.EasingStyle.Linear), {
-		Contrast = startContrast,
-	})
-
-	schedule(0.15, function()
-		Runtime.tween(effect, TweenInfo.new(fadeTime, Enum.EasingStyle.Sine, Enum.EasingDirection.In, 0, false, 0.15), {
-			Contrast = 0,
-		})
-		destroyLater(effect, fadeTime)
-	end, "CharacterEffect:ColorCorrectionFade")
-end
-
 local function playEarRing(context: Context, duration: number)
 	local earRing = context.fx:FindFirstChild("EarRing")
 	if not earRing or not earRing:IsA("Sound") then
@@ -166,34 +154,47 @@ local function bindNvg(context: Context)
 end
 
 local function bindHitEffect(context: Context)
-	local event = Runtime.getRemoteEvent(context.events, "HitEffect")
-	if not event then
-		return
-	end
-
-	event.OnClientEvent:Connect(function(player: Player, position: Vector3, hitPart: BasePart, normal: Vector3, material: Enum.Material, settings: any)
-		if player ~= Players.LocalPlayer then
-			context.hitmarker.HitEffect(Runtime.getRaycastIgnoreList(), position, hitPart, normal, material, settings)
-		end
-	end)
-end
-
-local function bindRemoteFire(context: Context)
-	local event = Runtime.getRemoteEvent(context.events, "Atirar")
-	if not event then
-		return
-	end
-
-	event.OnClientEvent:Connect(function(player: Player, weapon: Instance?, suppressor: boolean?, flashHider: boolean?)
-		if player == Players.LocalPlayer or not player.Character or not weapon then
+	Packets.packets.HitEffectPresentation.listen(function(data)
+		local player = Players:GetPlayerByUserId(data.shooterUserId)
+		local material = if typeof(data.material) == "string" then Enum.Material[data.material] else nil
+		local weapon = data.weapon
+		if not player or player == Players.LocalPlayer or not material or not data.hitPart or not data.hitPart:IsA("BasePart")
+			or not weapon or not weapon:IsA("Tool") then
 			return
 		end
 
-		local muzzle = Runtime.findMuzzle(player, weapon)
-		if muzzle then
-			Runtime.playChildSound(muzzle, if suppressor then "Supressor" else "Fire")
+		local settingsModule = WeaponDefinitionResolver.getSettings(weapon)
+		if not settingsModule or not settingsModule:IsA("ModuleScript") then
+			return
+		end
+		local settingsOk, settings = pcall(require, settingsModule)
+		if not settingsOk or type(settings) ~= "table" then
+			return
+		end
 
-			if not flashHider then
+		context.hitmarker.HitEffect(
+			Runtime.getRaycastIgnoreList(),
+			data.position,
+			data.hitPart,
+			data.normal,
+			material,
+			settings
+		)
+	end)
+end
+
+local function bindRemoteFire(_context: Context)
+	Packets.packets.WeaponFirePresentation.listen(function(data)
+		local player = Players:GetPlayerByUserId(data.shooterUserId)
+		if not player or player == Players.LocalPlayer or not player.Character or not data.weapon then
+			return
+		end
+
+		local muzzle = Runtime.findMuzzle(player, data.weapon)
+		if muzzle then
+			Runtime.playChildSound(muzzle, if data.suppressor then "Supressor" else "Fire")
+
+			if not data.flashHider then
 				Runtime.emitChild(muzzle, "FlashFX[Flash]", 10)
 			end
 
@@ -215,29 +216,24 @@ local function bindRemoteFire(context: Context)
 		end
 	end)
 end
-
-local function bindLaser(context: Context)
-	local event = Runtime.getRemoteEvent(context.events, "SVLaser")
-	if not event then
-		return
-	end
-
-	event.OnClientEvent:Connect(function(player: Player, position: Vector3, mode: number, color: Color3, infrared: boolean?, weapon: Instance?)
-		if player == Players.LocalPlayer or not player.Character or not weapon then
+local function bindLaser(_context: Context)
+	Packets.packets.LaserPresentation.listen(function(data)
+		local player = Players:GetPlayerByUserId(data.shooterUserId)
+		if not player or player == Players.LocalPlayer or not player.Character or not data.weapon then
 			return
 		end
 
-		if mode == 1 then
-			local laser = getLaserPart(player) or createLaserPart(player, color, weapon)
-			if not laser then
+		if data.mode == 1 then
+			local laser = getLaserPart(player) or createLaserPart(player, data.color, data.weapon)
+			if not laser or not data.position or not data.color then
 				return
 			end
 
-			laser.Position = position
-			laser.Color = color
-			laser.Transparency = if nvgEnabled then 0 elseif infrared then 1 else 0
+			laser.Position = data.position
+			laser.Color = data.color
+			laser.Transparency = if nvgEnabled then 0 elseif data.infrared then 1 else 0
 			setLaserBeamEnabled(laser, nvgEnabled)
-		elseif mode == 2 then
+		elseif data.mode == 2 then
 			local laser = getLaserPart(player)
 			if laser then
 				laser:Destroy()
@@ -246,31 +242,22 @@ local function bindLaser(context: Context)
 	end)
 end
 
-local function bindFlashlight(context: Context)
-	local event = Runtime.getRemoteEvent(context.events, "SVFlash")
-	if not event then
-		return
-	end
-
-	event.OnClientEvent:Connect(function(player: Player, weapon: Instance?, enabled: boolean)
-		if player == Players.LocalPlayer or not player.Character or not weapon then
+local function bindFlashlight(_context: Context)
+	Packets.packets.FlashPresentation.listen(function(data)
+		local player = Players:GetPlayerByUserId(data.shooterUserId)
+		if not player or player == Players.LocalPlayer or not player.Character or not data.weapon then
 			return
 		end
 
-		local weaponModel = Runtime.findRemoteWeapon(player, weapon)
+		local weaponModel = Runtime.findRemoteWeapon(player, data.weapon)
 		if weaponModel then
-			updateFlashPoints(weaponModel, enabled)
+			updateFlashPoints(weaponModel, data.enabled)
 		end
 	end)
 end
 
-local function bindWhizz(context: Context)
-	local event = Runtime.getRemoteEvent(context.events, "Whizz")
-	if not event then
-		return
-	end
-
-	event.OnClientEvent:Connect(function()
+local function bindWhizz(_context: Context)
+	Packets.packets.WhizzPresentation.listen(function()
 		local sound = Instance.new("Sound")
 		sound.SoundId = "rbxassetid://" .. WHIZZ_SOUNDS[math.random(1, #WHIZZ_SOUNDS)]
 		sound.Volume = 2
@@ -280,34 +267,9 @@ local function bindWhizz(context: Context)
 	end)
 end
 
-local function bindMedicalEffects(context: Context)
-	local medSys = context.events:FindFirstChild("MedSys")
-	local medHandler = medSys and medSys:FindFirstChild("MedHandler")
-
-	if not medHandler or not medHandler:IsA("RemoteEvent") then
-		return
-	end
-
-	medHandler.OnClientEvent:Connect(function(mode: number)
-		if mode == 4 then
-			pulseColorCorrection(-0.25, 1.5)
-		elseif mode == 5 then
-			pulseColorCorrection(0.5, 1.5)
-		elseif mode == 6 then
-			pulseColorCorrection(-0.25, 60)
-		elseif mode == 7 then
-			pulseColorCorrection(0.5, 30)
-		end
-	end)
-end
 
 local function bindSuppression(context: Context)
-	local event = Runtime.getRemoteEvent(context.events, "Suppression")
-	if not event then
-		return
-	end
-
-	event.OnClientEvent:Connect(function(mode: number, _intensity: number, duration: number)
+	Packets.packets.SuppressionPresentation.listen(function(data)
 		local player = Players.LocalPlayer
 		if not Runtime.getAliveHumanoid(player.Character) then
 			return
@@ -319,40 +281,28 @@ local function bindSuppression(context: Context)
 			return
 		end
 
-		if mode == 1 then
+		if data.mode == 1 then
 			local suppress = effects:FindFirstChild("Suppress")
 			if suppress and suppress:IsA("ImageLabel") then
 				pulseImage(suppress, 1)
 			end
-		elseif mode == 2 then
-			playEarRing(context, duration)
+		elseif data.mode == 2 then
+			playEarRing(context, data.duration)
 
 			local dirty = effects:FindFirstChild("Dirty")
 			if dirty and dirty:IsA("ImageLabel") then
-				pulseImage(dirty, duration)
+				pulseImage(dirty, data.duration)
 			end
 		else
-			playEarRing(context, duration)
+			playEarRing(context, data.duration)
 		end
 	end)
 end
 
-local function bindGunStance(context: Context)
-	local event = Runtime.getRemoteEvent(context.events, "GunStance")
-	if not event then
-		return
-	end
-
-	local stanceGoals = {
-		[0] = { "SV_RightArmPos", "SV_LeftArmPos" },
-		[2] = { "RightAim", "LeftAim" },
-		[1] = { "RightHighReady", "LeftHighReady" },
-		[-1] = { "RightLowReady", "LeftLowReady" },
-		[-2] = { "RightPatrol", "LeftPatrol" },
-	}
-
-	event.OnClientEvent:Connect(function(player: Player, stance: number, data: { [string]: CFrame })
-		if not Runtime.getAliveHumanoid(player.Character) then
+local function bindGunStance(_context: Context)
+	Packets.packets.GunStancePresentation.listen(function(data)
+		local player = Players:GetPlayerByUserId(data.shooterUserId)
+		if not player or not Runtime.getAliveHumanoid(player.Character) then
 			return
 		end
 
@@ -360,51 +310,52 @@ local function bindGunStance(context: Context)
 		local animBase = character:FindFirstChild("AnimBase")
 		local rightWeld = animBase and animBase:FindFirstChild("RAW")
 		local leftWeld = animBase and animBase:FindFirstChild("LAW")
-		local goals = stanceGoals[stance]
-
+		local stanceGoals = {
+			[0] = { "SV_RightArmPos", "SV_LeftArmPos" },
+			[2] = { "RightAim", "LeftAim" },
+			[1] = { "RightHighReady", "LeftHighReady" },
+			[-1] = { "RightLowReady", "LeftLowReady" },
+			[-2] = { "RightPatrol", "LeftPatrol" },
+		}
+		local goals = stanceGoals[data.stance]
 		if not goals or not rightWeld or not leftWeld then
 			return
 		end
 
-		Runtime.tween(rightWeld, TweenInfo.new(0.25, Enum.EasingStyle.Sine), {
-			C0 = data[goals[1]],
-		})
-
-		Runtime.tween(leftWeld, TweenInfo.new(0.25, Enum.EasingStyle.Sine), {
-			C0 = data[goals[2]],
-		})
-	end)
-end
-
-local function bindHeadRotation(context: Context)
-	local event = Runtime.getRemoteEvent(context.events, "HeadRot")
-	if not event then
-		return
-	end
-
-	event.OnClientEvent:Connect(function(player: Player, cframe: CFrame, aimPitch: number?, aiming: boolean?)
-		if player == Players.LocalPlayer or not player.Character then
+		local animationsModule: ModuleScript? = nil
+		for _, child in character:GetChildren() do
+			if child:IsA("Tool") then
+				local candidate = child:FindFirstChild("ACS_Animations")
+				if candidate and candidate:IsA("ModuleScript") then
+					animationsModule = candidate
+					break
+				end
+			end
+		end
+		if not animationsModule then
 			return
 		end
 
-		local torso = player.Character:FindFirstChild("Torso")
-		local neck = torso and torso:FindFirstChild("Neck")
-		if neck and neck:IsA("Motor6D") then
-			Runtime.tween(neck, TweenInfo.new(0.2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
-				C1 = cframe,
-			})
+		local loaded, animations = pcall(require, animationsModule)
+		if not loaded or type(animations) ~= "table" then
+			return
 		end
 
-		local animBase = player.Character:FindFirstChild("AnimBase")
-		local animWeld = animBase and animBase:FindFirstChild("AnimBaseW")
-		if animWeld and animWeld:IsA("Motor6D") then
-			local pitch = if aiming and typeof(aimPitch) == "number" then math.clamp(aimPitch, -1.1, 1.1) else 0
-			Runtime.tween(animWeld, TweenInfo.new(0.16, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
-				C0 = CFrame.Angles(pitch * 0.72, 0, 0),
-			})
+		local rightGoal = animations[goals[1]]
+		local leftGoal = animations[goals[2]]
+		if typeof(rightGoal) ~= "CFrame" or typeof(leftGoal) ~= "CFrame" then
+			return
 		end
+
+		Runtime.tween(rightWeld, TweenInfo.new(0.25, Enum.EasingStyle.Sine), {
+			C0 = rightGoal,
+		})
+		Runtime.tween(leftWeld, TweenInfo.new(0.25, Enum.EasingStyle.Sine), {
+			C0 = leftGoal,
+		})
 	end)
 end
+
 
 function CharacterEffects.start(context: Context)
 	bindNvg(context)
@@ -413,10 +364,8 @@ function CharacterEffects.start(context: Context)
 	bindLaser(context)
 	bindFlashlight(context)
 	bindWhizz(context)
-	bindMedicalEffects(context)
 	bindSuppression(context)
 	bindGunStance(context)
-	bindHeadRotation(context)
 end
 
 return CharacterEffects

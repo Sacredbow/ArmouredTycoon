@@ -27,7 +27,7 @@ return function(ByteNet: any)
 			value = ByteNet.struct({
 				startPosition = ByteNet.vec3,
 				direction = ByteNet.vec3,
-				impact = ByteNet.boolean,
+				impact = ByteNet.bool,
 			}),
 		}),
 

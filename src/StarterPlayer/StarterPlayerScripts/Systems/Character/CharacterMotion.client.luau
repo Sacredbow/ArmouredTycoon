@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
+local WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
 
 local player = Players.LocalPlayer
 
@@ -47,7 +48,7 @@ end
 
 local function hasEquippedACSWeapon(character: Model): boolean
 	for _, child in ipairs(character:GetChildren()) do
-		if child:IsA("Tool") and child:FindFirstChild("ACS_Settings") then
+		if child:IsA("Tool") and WeaponDefinitionResolver.getSettings(child) ~= nil then
 			return true
 		end
 	end

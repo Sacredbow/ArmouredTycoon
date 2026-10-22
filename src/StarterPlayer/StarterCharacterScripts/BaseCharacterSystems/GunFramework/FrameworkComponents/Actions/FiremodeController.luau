@@ -1,13 +1,5 @@
 --!strict
 
---[[
-	FiremodeController
-
-	Small state machine for cycling ACS fire modes. It mutates WeaponData because
-	the old framework stores the active mode directly on the settings table and
-	other parts of Main read that value.
-]]
-
 local FiremodeController = {}
 
 export type FireModes = {
@@ -23,8 +15,6 @@ export type WeaponData = {
 }
 
 local function bool<T>(value: T?, fallback: boolean): boolean
-	-- Config modules sometimes omit mode flags. Treat missing values as the
-	-- provided fallback instead of making every caller repeat nil checks.
 	if typeof(value) == "boolean" then
 		return value :: any
 	end
@@ -32,8 +22,8 @@ local function bool<T>(value: T?, fallback: boolean): boolean
 	return fallback
 end
 
-function FiremodeController.nextShootType(weaponData: WeaponData): number
-	local shootType = weaponData.ShootType
+function FiremodeController.nextShootType(weaponData: WeaponData, currentShootType: number?): number
+	local shootType = currentShootType or weaponData.ShootType
 	local modes = weaponData.FireModes
 
 	if shootType == 1 and bool(modes.Burst, false) then
@@ -63,11 +53,9 @@ function FiremodeController.nextShootType(weaponData: WeaponData): number
 	return shootType
 end
 
-function FiremodeController.cycle(weaponData: WeaponData): boolean
-	local nextType = FiremodeController.nextShootType(weaponData)
-	local changed = nextType ~= weaponData.ShootType
-	weaponData.ShootType = nextType
-	return changed
+function FiremodeController.cycle(weaponData: WeaponData, currentShootType: number): (boolean, number)
+	local nextType = FiremodeController.nextShootType(weaponData, currentShootType)
+	return nextType ~= currentShootType, nextType
 end
 
 return FiremodeController

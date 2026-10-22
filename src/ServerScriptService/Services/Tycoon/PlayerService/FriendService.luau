@@ -1,144 +1,155 @@
+--!strict
+--[[
+	FriendBoost is ECS-owned player state. This module performs the Roblox
+	friendship query and writes the resulting plain data to player entities.
+]]
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ECS = require(ReplicatedStorage.ECS)
+local Observers = require(ReplicatedStorage.Packages.Observers)
 local Packets = require(ReplicatedStorage.Network.Packets)
 
 local FriendService = {}
-local ActiveService: any? = nil
+local initialized = false
 
-function FriendService.create(playerService)
-	local self = {}
-	self.PlayerService = playerService
-	self.ActiveBoosts = {}
-	self.FriendPairs = {} 
-	ActiveService = self
-	return self
+type FriendBoostState = {
+	count: number,
+	friendUserIds: { [number]: boolean },
+}
+
+local function getEntity(player: Player): number?
+	for entity, playerRef in ECS.world:query(ECS.Components.PlayerRef) do
+		if playerRef == player then
+			return entity
+		end
+	end
+	return nil
 end
 
-function FriendService:CheckFriendBoost(player: Player)
-	if not player or not player.Parent then 
+local function getBoostState(player: Player): (number?, FriendBoostState?)
+	local entity = getEntity(player)
+	if not entity then
+		return nil, nil
+	end
+
+	local state = ECS.world:get(entity, ECS.Components.FriendBoost) :: FriendBoostState?
+	if not state then
+		state = { count = 0, friendUserIds = {} }
+		ECS.world:set(entity, ECS.Components.FriendBoost, state)
+	end
+	return entity, state
+end
+
+
+local function publish(player: Player, state: FriendBoostState, eventType: string)
+	Packets.packets.FriendBoost.sendTo({
+		["type"] = eventType,
+		percent = state.count * 10,
+	}, player)
+end
+
+function FriendService.CheckFriendBoost(player: Player)
+	if not player.Parent then
 		return
 	end
 
-	local friendsInGame = {}
+	local entity, state = getBoostState(player)
+	if not entity or not state then
+		return
+	end
 
-	for _, other in ipairs(Players:GetPlayers()) do
+	local friendUserIds: { [number]: boolean } = {}
+	for _, other in Players:GetPlayers() do
 		if other ~= player and other.Parent then
 			local success, isFriend = pcall(function()
 				return player:IsFriendsWithAsync(other.UserId)
 			end)
-
 			if success and isFriend then
-				table.insert(friendsInGame, other)
+				friendUserIds[other.UserId] = true
 			end
 		end
 	end
 
-	
-	local friendCount = #friendsInGame
-	self.ActiveBoosts[player] = friendCount
-	self.FriendPairs[player] = friendsInGame
+	state.friendUserIds = friendUserIds
+	state.count = 0
+	for _ in friendUserIds do
+		state.count += 1
+	end
+	ECS.world:set(entity, ECS.Components.FriendBoost, state)
+	publish(player, state, "Connected")
+end
 
-	if friendCount > 0 then
-		local FriendBoostMulti = 0.10
-		local MultiCalc = friendCount * FriendBoostMulti
-		local TextCalc = MultiCalc * 100
-
-	
-		self.PlayerService:SetFriendBoost(player, true)
-Packets.packets.FriendBoost.sendTo({ ["type"] = "Connected", percent = TextCalc }, player)
-	else
-		
-		self.PlayerService:SetFriendBoost(player, false)
-		Packets.packets.FriendBoost.sendTo({ ["type"] = "Connected", percent = 0 }, player)
+function FriendService.UpdateAllPlayers()
+	for _, player in Players:GetPlayers() do
+		FriendService.CheckFriendBoost(player)
 	end
 end
 
-function FriendService:UpdateAllPlayers()
-	for _, player in ipairs(Players:GetPlayers()) do
-		self:CheckFriendBoost(player)
-	end
+function FriendService.GetFriendCount(player: Player): number
+	local _, state = getBoostState(player)
+	return if state then state.count else 0
 end
 
-function FriendService:GetFriendCount(player: Player): number
-	return self.ActiveBoosts[player] or 0
+function FriendService.GetBoostMultiplier(player: Player): number
+	return 1 + FriendService.GetFriendCount(player) * 0.10
 end
 
-function FriendService:GetBoostMultiplier(player: Player): number
-	return 1 + (self:GetFriendCount(player) * 0.10)
-end
-
-function FriendService:OnPlayerLeaving(leavingPlayer: Player)
-	
-	self.ActiveBoosts[leavingPlayer] = nil
-	self.FriendPairs[leavingPlayer] = nil
-
-	
-	for player, friends in pairs(self.FriendPairs) do
-		if player ~= leavingPlayer and player.Parent then
-			for i, friend in ipairs(friends) do
-				if friend == leavingPlayer then
-					
-					table.remove(friends, i)
-
-					local newCount = #friends
-					self.ActiveBoosts[player] = newCount
-
-					if newCount > 0 then
-						
-						local FriendBoostMulti = 0.10
-						local MultiCalc = newCount * FriendBoostMulti
-						local TextCalc = MultiCalc * 100
-
-						Packets.packets.FriendBoost.sendTo({ ["type"] = "Disconnected", percent = TextCalc }, player)
-						
-					else
-						self.PlayerService:SetFriendBoost(player, false)
-						Packets.packets.FriendBoost.sendTo({ ["type"] = "Disconnected", percent = 0 }, player)
-					end
-					break
-				end
+function FriendService.OnPlayerLeaving(leavingPlayer: Player)
+	for entity, playerRef, state in ECS.world:query(ECS.Components.PlayerRef, ECS.Components.FriendBoost) do
+		if playerRef ~= leavingPlayer and typeof(playerRef) == "Instance" and playerRef:IsA("Player") and playerRef.Parent then
+			local friendState = state :: FriendBoostState
+			if friendState.friendUserIds[leavingPlayer.UserId] then
+				friendState.friendUserIds[leavingPlayer.UserId] = nil
+				friendState.count = math.max(0, friendState.count - 1)
+				ECS.world:set(entity, ECS.Components.FriendBoost, friendState)
+				publish(playerRef, friendState, "Disconnected")
 			end
 		end
 	end
 end
 
 function FriendService.RunInitialCheck(player: Player)
-	if ActiveService and player.Parent then
-		ActiveService:CheckFriendBoost(player)
-		ECS.createEntity({
-			Name = "FriendBoostRefresh:" .. player.Name,
-			ScheduledTask = {
-				delay = 0.5,
-				elapsed = 0,
-				kind = "FriendBoostRefresh",
-			},
-		})
+	if not player.Parent then
+		return
 	end
+
+	FriendService.CheckFriendBoost(player)
+	ECS.createEntity({
+		Name = "FriendBoostRefresh:" .. player.Name,
+		ScheduledTask = {
+			delay = 0.5,
+			elapsed = 0,
+			kind = "FriendBoostRefresh",
+		},
+	})
 end
 
 function FriendService.RefreshActive()
-	if ActiveService then
-		ActiveService:UpdateAllPlayers()
-	end
+	FriendService.UpdateAllPlayers()
 end
 
-function FriendService:Init()
-        Players.PlayerAdded:Connect(function(player)
-                ECS.createEntity({
-                        Name = "FriendBoostCheck:" .. player.Name,
-                        ScheduledTask = {
-                                delay = 2,
-                                elapsed = 0,
-                                kind = "FriendBoostInitial",
-                                player = player,
-                        },
-                })
-        end)
+function FriendService.Init()
+	if initialized then
+		return
+	end
+	initialized = true
 
-	Players.PlayerRemoving:Connect(function(player)
-		self:OnPlayerLeaving(player)
+	Observers.observePlayer(function(player: Player)
+		ECS.createEntity({
+			Name = "FriendBoostCheck:" .. player.Name,
+			ScheduledTask = {
+				delay = 2,
+				elapsed = 0,
+				kind = "FriendBoostInitial",
+				player = player,
+			},
+		})
+
+		return function()
+			FriendService.OnPlayerLeaving(player)
+		end
 	end)
 end
 

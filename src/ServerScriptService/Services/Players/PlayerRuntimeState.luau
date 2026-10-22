@@ -1,144 +1,139 @@
 --!strict
 
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+const Players = game:GetService("Players")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Packets = require(ReplicatedStorage.Network.Packets)
+const Packets = require(ReplicatedStorage.Network.Packets)
+const Observers = require(ReplicatedStorage.Packages.Observers)
 
 export type State = {
 	Multiplier: number,
 	ArmourEquipped: boolean,
 	CanRebirth: boolean,
-	AntiCheatTeleportGraceUntil: number,
+	TeleportGraceExpiry: number,
 	Surrender: boolean,
 	GamepassOwnership: { [number]: boolean },
 }
 
-local DefaultState: State = {
+const DefaultState: State = {
 	Multiplier = 1,
 	ArmourEquipped = false,
 	CanRebirth = false,
-	AntiCheatTeleportGraceUntil = 0,
+	TeleportGraceExpiry = 0,
 	Surrender = false,
 	GamepassOwnership = {},
 }
 
-local StatesByPlayer: { [Player]: State } = {}
-
-local PlayerRuntimeState = {}
-local CharacterConnections: { [Player]: RBXScriptConnection } = {}
-
-local function bindCharacter(player: Player)
-	CharacterConnections[player] = player.CharacterAdded:Connect(function()
-		local state = StatesByPlayer[player]
-		if state then
-			state.ArmourEquipped = false
-			state.Surrender = false
-			state.AntiCheatTeleportGraceUntil = 0
-		end
-	end)
+local function CreateDefaultState(): State
+	return {
+		Multiplier = DefaultState.Multiplier,
+		ArmourEquipped = DefaultState.ArmourEquipped,
+		CanRebirth = DefaultState.CanRebirth,
+		TeleportGraceExpiry = DefaultState.TeleportGraceExpiry,
+		Surrender = DefaultState.Surrender,
+		GamepassOwnership = {},
+	}
 end
 
-local function cloneDefaults(): State
-	local state = table.clone(DefaultState)
-	state.GamepassOwnership = {}
-	return state
-end
+const StatesByPlayer: { [Player]: State } = {}
+const PlayerRuntimeState = {}
 
-function PlayerRuntimeState.Get(player: Player): State
-	local state = StatesByPlayer[player]
-	if not state then
-		state = cloneDefaults()
-		if player.Parent == Players then
-			StatesByPlayer[player] = state
+function PlayerRuntimeState.Get(Player: Player): State
+	local State = StatesByPlayer[Player]
+	if not State then
+		State = CreateDefaultState()
+		if Player.Parent == Players then
+			StatesByPlayer[Player] = State
 		end
 	end
 
-	return state
+	return State
 end
 
-function PlayerRuntimeState.Clear(player: Player)
-	StatesByPlayer[player] = nil
+function PlayerRuntimeState.Clear(Player: Player)
+	StatesByPlayer[Player] = nil
 end
 
-function PlayerRuntimeState.ResetTycoonState(player: Player)
-	local state = PlayerRuntimeState.Get(player)
-	state.Multiplier = DefaultState.Multiplier
-	state.ArmourEquipped = DefaultState.ArmourEquipped
-	PlayerRuntimeState.SetCanRebirth(player, DefaultState.CanRebirth)
+function PlayerRuntimeState.ResetTycoonState(Player: Player)
+	const State = PlayerRuntimeState.Get(Player)
+	State.Multiplier = DefaultState.Multiplier
+	State.ArmourEquipped = DefaultState.ArmourEquipped
+	PlayerRuntimeState.SetCanRebirth(Player, DefaultState.CanRebirth)
 end
 
-function PlayerRuntimeState.GetMultiplier(player: Player): number
-	return PlayerRuntimeState.Get(player).Multiplier
+function PlayerRuntimeState.GetMultiplier(Player: Player): number
+	return PlayerRuntimeState.Get(Player).Multiplier
 end
 
-function PlayerRuntimeState.SetMultiplier(player: Player, value: number)
-	PlayerRuntimeState.Get(player).Multiplier = value
+function PlayerRuntimeState.SetMultiplier(Player: Player, Value: number)
+	PlayerRuntimeState.Get(Player).Multiplier = Value
 end
 
-
-function PlayerRuntimeState.HasArmourEquipped(player: Player): boolean
-	return PlayerRuntimeState.Get(player).ArmourEquipped
+function PlayerRuntimeState.HasArmourEquipped(Player: Player): boolean
+	return PlayerRuntimeState.Get(Player).ArmourEquipped
 end
 
-function PlayerRuntimeState.SetArmourEquipped(player: Player, value: boolean)
-	PlayerRuntimeState.Get(player).ArmourEquipped = value
+function PlayerRuntimeState.SetArmourEquipped(Player: Player, Value: boolean)
+	PlayerRuntimeState.Get(Player).ArmourEquipped = Value
 end
 
-function PlayerRuntimeState.CanRebirth(player: Player): boolean
-	return PlayerRuntimeState.Get(player).CanRebirth
+function PlayerRuntimeState.CanRebirth(Player: Player): boolean
+	return PlayerRuntimeState.Get(Player).CanRebirth
 end
 
-function PlayerRuntimeState.SetCanRebirth(player: Player, value: boolean)
-	local state = PlayerRuntimeState.Get(player)
-	if state.CanRebirth == value then
+function PlayerRuntimeState.SetCanRebirth(Player: Player, Value: boolean)
+	const State = PlayerRuntimeState.Get(Player)
+	if State.CanRebirth == Value then
 		return
 	end
 
-	state.CanRebirth = value
-	Packets.packets.GameEvent.sendTo({ ["type"] = "CanRebirth", valueBoolean = value }, player)
+	State.CanRebirth = Value
+	Packets.packets.GameEvent.sendTo({ ["type"] = "CanRebirth", valueBoolean = Value }, Player)
 end
 
-function PlayerRuntimeState.GetAntiCheatTeleportGraceUntil(player: Player): number
-	return PlayerRuntimeState.Get(player).AntiCheatTeleportGraceUntil
+function PlayerRuntimeState.GetTeleportGraceExpiry(Player: Player): number
+	return PlayerRuntimeState.Get(Player).TeleportGraceExpiry
 end
 
-function PlayerRuntimeState.SetAntiCheatTeleportGraceUntil(player: Player, value: number)
-	PlayerRuntimeState.Get(player).AntiCheatTeleportGraceUntil = value
+function PlayerRuntimeState.SetTeleportGraceExpiry(Player: Player, Value: number)
+	PlayerRuntimeState.Get(Player).TeleportGraceExpiry = Value
 end
 
-function PlayerRuntimeState.IsSurrendering(player: Player): boolean
-	return PlayerRuntimeState.Get(player).Surrender
+function PlayerRuntimeState.IsSurrendering(Player: Player): boolean
+	return PlayerRuntimeState.Get(Player).Surrender
 end
 
-function PlayerRuntimeState.SetSurrendering(player: Player, value: boolean)
-	PlayerRuntimeState.Get(player).Surrender = value
+function PlayerRuntimeState.SetSurrendering(Player: Player, Value: boolean)
+	PlayerRuntimeState.Get(Player).Surrender = Value
 end
 
-function PlayerRuntimeState.GetGamepassOwnership(player: Player, gamepassId: number): boolean?
-	return PlayerRuntimeState.Get(player).GamepassOwnership[gamepassId]
+function PlayerRuntimeState.GetGamepassOwnership(Player: Player, GamepassId: number): boolean?
+	return PlayerRuntimeState.Get(Player).GamepassOwnership[GamepassId]
 end
 
-function PlayerRuntimeState.HasGamepassOwned(player: Player, gamepassId: number): boolean
-	return PlayerRuntimeState.Get(player).GamepassOwnership[gamepassId] == true
+function PlayerRuntimeState.HasGamepassOwned(Player: Player, GamepassId: number): boolean
+	return PlayerRuntimeState.Get(Player).GamepassOwnership[GamepassId] == true
 end
 
-function PlayerRuntimeState.SetGamepassOwned(player: Player, gamepassId: number, value: boolean)
-	PlayerRuntimeState.Get(player).GamepassOwnership[gamepassId] = value
+function PlayerRuntimeState.SetGamepassOwned(Player: Player, GamepassId: number, Value: boolean)
+	PlayerRuntimeState.Get(Player).GamepassOwnership[GamepassId] = Value
 end
 
-for _, player in Players:GetPlayers() do
-	bindCharacter(player)
-end
+Observers.observePlayer(function(Player: Player)
+	PlayerRuntimeState.Get(Player)
 
-Players.PlayerAdded:Connect(bindCharacter)
-Players.PlayerRemoving:Connect(function(player)
-	local connection = CharacterConnections[player]
-	if connection then
-		connection:Disconnect()
-		CharacterConnections[player] = nil
+	return function()
+		PlayerRuntimeState.Clear(Player)
 	end
-	PlayerRuntimeState.Clear(player)
+end)
+
+Observers.observeCharacter(function(Player: Player, _Character: Model)
+	const State = StatesByPlayer[Player]
+	if State then
+		State.ArmourEquipped = false
+		State.Surrender = false
+		State.TeleportGraceExpiry = 0
+	end
 end)
 
 return PlayerRuntimeState

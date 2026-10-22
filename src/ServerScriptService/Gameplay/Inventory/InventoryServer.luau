@@ -50,7 +50,9 @@ function InventoryServer:Start()
 			Rate = 8,
 			Burst = 12,
 			Validate = function(payload)
-				return type(payload) == "table" and payload.action == "RemoveTool"
+				return type(payload) == "table"
+					and payload.action == "RemoveTool"
+					and (payload.tool == nil or typeof(payload.tool) == "Instance")
 			end,
 		},
 		function(payload, player)

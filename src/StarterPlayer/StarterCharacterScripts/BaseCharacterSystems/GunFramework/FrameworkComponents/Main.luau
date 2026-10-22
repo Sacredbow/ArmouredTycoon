@@ -37,9 +37,10 @@ const PlayersService = game:GetService("Players")
 --// Modules
 
 local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+local Packets = PacketBootstrap.Get()
 
 local Engine = ReplicatedStorage:WaitForChild("ACS_Engine")
-local Events = Engine:WaitForChild("Events")
 local Mods = Engine:WaitForChild("Modules")
 local HUDs = Engine:WaitForChild("HUD")
 local ArmModel = Engine:WaitForChild("ArmModel")
@@ -59,6 +60,7 @@ local Runtime = require(script.Parent.Core.Runtime)
 local FeatureFlags = require(script.Parent.Core.FeatureFlags)
 local InputBindings = require(script.Parent.Core.InputBindings)
 local WeaponToolClassifier = require(script.Parent.Core.WeaponToolClassifier)
+local WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
 local InputController = require(script.Parent.Core.InputController)
 local EquipController = require(script.Parent.Core.EquipController)
 local CameraController = require(script.Parent.Core.CameraController)
@@ -117,23 +119,22 @@ function Main.start(hostScript)
 
 	-- Raycast ignore list
 	local ignoreModel = { cam, char, effectsFolder }
-	local IGNORE_MODEL_MAX = 200
-	local function addIgnore(inst: Instance)
-		if #ignoreModel > IGNORE_MODEL_MAX then
-			table.remove(ignoreModel, 4)
-		end
-		table.insert(ignoreModel, inst)
-	end
 
 	-- Connection lifecycle
 	local connections: { RBXScriptConnection } = {}
+	local lifecycleGeneration = 0
+	local cleanedUp = false
 	local function connect(sig: RBXScriptConnection)
 		table.insert(connections, sig)
 		return sig
 	end
 
 	local function destroyLater(inst: Instance, lifetime: number)
+		local generation = lifecycleGeneration
 		task.delay(lifetime, function()
+			if cleanedUp or lifecycleGeneration ~= generation then
+				return
+			end
 			if inst and inst.Parent then
 				inst:Destroy()
 			end
@@ -141,7 +142,16 @@ function Main.start(hostScript)
 	end
 
 	local function schedule(delay: number, callback: () -> (), _name: string?)
-		task.delay(delay, callback)
+		if cleanedUp then
+			return
+		end
+		local generation = lifecycleGeneration
+		task.delay(delay, function()
+			if cleanedUp or lifecycleGeneration ~= generation then
+				return
+			end
+			callback()
+		end)
 	end
 
 	--// Character Parts
@@ -179,9 +189,10 @@ function Main.start(hostScript)
 
 	local crosshairController = CrosshairController.new(plr)
 	local cameraController = CameraController.new(plr, cam, char, humanoid, rootPart, torso, acsClient)
-	local castController = CastController.new(plr, cam, char, effectsFolder, Events, gameRules, destroyLater)
-	local equipController = EquipController.new(plr, cam, char, humanoid, Events, GunModels, ArmModel, AttModels, AttModules, AttachmentModifiers.createDefault(), crosshairController, cameraController, castController)
+	local castController = CastController.new(plr, cam, char, effectsFolder, ignoreModel, gameRules, destroyLater)
+	local equipController = EquipController.new(plr, cam, char, humanoid, GunModels, ArmModel, AttModels, AttModules, AttachmentModifiers.createDefault(), crosshairController, cameraController, castController)
 	local inputController = InputController.new(plr, mouse)
+
 
 	local cleanupCharacter: (() -> ())?
 	local equipGeneration = 0
@@ -204,10 +215,10 @@ function Main.start(hostScript)
 		nvg = false,
 		gunStance = 0,
 		stances = 0,
-		virar = 0,
+		leanDirection = 0,
 		cameraX = 0,
 		cameraY = 0,
-		sentado = false,
+		seated = false,
 		swimming = false,
 		steady = false,
 		changeStance = true,
@@ -215,6 +226,29 @@ function Main.start(hostScript)
 		halfStep = false,
 	}
 
+	local lastCrosshairData: any = nil
+	local lastCrosshairEquipped: boolean? = nil
+	local lastCrosshairAiming: boolean? = nil
+	local lastCrosshairName = ""
+
+	local function updateCrosshair()
+		local weaponData = equipController:getWeaponData()
+		local equipped = equipController:isEquipped()
+		local aiming = state.aiming
+		local weaponName = (equipController:getWeaponTool() and equipController:getWeaponTool().Name) or ""
+		if weaponData == lastCrosshairData
+			and equipped == lastCrosshairEquipped
+			and aiming == lastCrosshairAiming
+			and weaponName == lastCrosshairName then
+			return
+		end
+
+		lastCrosshairData = weaponData
+		lastCrosshairEquipped = equipped
+		lastCrosshairAiming = aiming
+		lastCrosshairName = weaponName
+		crosshairController:update(weaponData, equipped, aiming, weaponName)
+	end
 	--// CFrames passed to RenderController
 
 	local renderCF = {
@@ -236,7 +270,6 @@ function Main.start(hostScript)
 		featureFlags = FeatureFlags,
 		runtime = Runtime,
 		gameRules = gameRules,
-		events = Events,
 		ignoreModel = ignoreModel,
 		cameraSpring = cameraSpring,
 		swaySpring = swaySpring,
@@ -250,9 +283,36 @@ function Main.start(hostScript)
 		aimTween = aimTween,
 		state = state,
 		isThirdPersonCamera = function() return RuntimeSettings.GetBoolean("Third Person", true) end,
-		updateCrosshair = function() crosshairController:update(equipController:getWeaponData(), equipController:isEquipped(), state.aiming, (equipController:getWeaponTool() and equipController:getWeaponTool().Name) or "") end,
+		updateCrosshair = updateCrosshair,
 	}
 	local renderController = RenderController.new(cam, renderCtx)
+
+	local function updateCameraReference(): boolean
+		local currentCamera = workspace.CurrentCamera
+		if not currentCamera then
+			return false
+		end
+		if currentCamera == cam then
+			return true
+		end
+
+		for index, ignored in ignoreModel do
+			if ignored == cam then
+				table.remove(ignoreModel, index)
+				break
+			end
+		end
+		table.insert(ignoreModel, 1, currentCamera)
+		cam = currentCamera
+
+		cameraController:setCamera(currentCamera)
+		castController:setCamera(currentCamera)
+		equipController:setCamera(currentCamera)
+		renderController:setCamera(currentCamera)
+		return true
+	end
+
+	connect(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(updateCameraReference))
 
 	--// HUD
 
@@ -307,9 +367,9 @@ function Main.start(hostScript)
 	local function updateGui()
 		local weaponData = equipController:getWeaponData()
 		if weaponData then
-			WeaponUIState.publishHud(plr, weaponData, equipController:getAmmo(), equipController:getStoredAmmo(), state.safeMode)
-			crosshairController:update(weaponData, equipController:isEquipped(), state.aiming, (equipController:getWeaponTool() and equipController:getWeaponTool().Name) or "")
-			WeaponHudAdapter.update(seGui, weaponData, equipController:getAmmo(), equipController:getStoredAmmo(), state.safeMode, equipController:getSuppressor(), equipController:getBipodAtt(), equipController:getSens())
+			WeaponUIState.publishHud(plr, weaponData, equipController:getAmmo(), equipController:getStoredAmmo(), state.safeMode, equipController:getShootType(), equipController:getJammed())
+			updateCrosshair()
+			WeaponHudAdapter.update(seGui, weaponData, equipController:getAmmo(), equipController:getStoredAmmo(), state.safeMode, equipController:getSuppressor(), equipController:getBipodAtt(), equipController:getSens(), equipController:getShootType(), equipController:getJammed())
 		end
 	end
 
@@ -340,11 +400,11 @@ function Main.start(hostScript)
 		if state.runKeyDown then
 			state.mouse1down = false
 			state.gunStance = 3
-			Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
+			Packets.packets.GunStanceIntent.send({ stance = state.gunStance })
 			playWeaponAnimation("SprintAnim")
 		else
 			state.gunStance = if state.aiming then 2 else 0
-			Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
+			Packets.packets.GunStanceIntent.send({ stance = state.gunStance })
 			playWeaponAnimation("IdleAnim")
 		end
 	end
@@ -352,13 +412,13 @@ function Main.start(hostScript)
 	--// Stance actions
 
 	local function stand()
-		Events.Stance:FireServer(state.stances, state.virar)
+		Packets.packets.StanceIntent.send({ stance = state.stances, lean = state.leanDirection })
 		tweenStanceCameraOffset()
 		StanceController.applyStand(getStanceContext(), state.steady)
 	end
 
 	local function crouch()
-		Events.Stance:FireServer(state.stances, state.virar)
+		Packets.packets.StanceIntent.send({ stance = state.stances, lean = state.leanDirection })
 		tweenStanceCameraOffset()
 		StanceController.applyCrouch(getStanceContext())
 	end
@@ -407,7 +467,7 @@ function Main.start(hostScript)
 		local weaponData = equipController:getWeaponData()
 		if not weaponData then return end
 
-		Events.Atirar:FireServer(equipController:getWeaponTool(), equipController:getSuppressor(), equipController:getFlashHider())
+		Packets.packets.WeaponFireIntent.send({ weapon = equipController:getWeaponTool() })
 
 		for _ = 1, weaponData.Bullets do
 			Thread:Spawn(function()
@@ -424,10 +484,8 @@ function Main.start(hostScript)
 		equipController:setAmmo(ammo)
 		gunFx()
 
-		if weaponData.Jammed == nil then
-			weaponData.Jammed = false
-		end
-		if JamController.roll(weaponData, { ammo = ammo }, math_random) then
+		if JamController.roll(weaponData, equipController:getJammed(), { ammo = ammo }, math_random) then
+			equipController:setJammed(true)
 			local weaponInHand = equipController:getWeaponInHand()
 			if weaponInHand and weaponInHand.Handle:FindFirstChild("Click") then
 				weaponInHand.Handle.Click:Play()
@@ -449,7 +507,7 @@ function Main.start(hostScript)
 		state.reloading = true
 		state.safeMode = false
 		state.gunStance = 0
-		Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
+		Packets.packets.GunStanceIntent.send({ stance = state.gunStance })
 		updateGui()
 
 		if weaponData.ShellInsert then
@@ -493,15 +551,15 @@ function Main.start(hostScript)
 
 	local function jammed()
 		local weaponData = equipController:getWeaponData()
-		if not JamController.canClear(weaponData) then return end
+		if not JamController.canClear(weaponData, equipController:getJammed()) then return end
 		state.mouse1down = false
 		state.reloading = true
 		state.safeMode = false
 		state.gunStance = 0
-		Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
+		Packets.packets.GunStanceIntent.send({ stance = state.gunStance })
 		updateGui()
 		playWeaponAnimation("JammedAnim")
-		weaponData.Jammed = false
+		equipController:setJammed(false)
 		updateGui()
 		state.reloading = false
 		runCheck()
@@ -517,6 +575,8 @@ function Main.start(hostScript)
 			runKeyDown = state.runKeyDown,
 			safeMode = state.safeMode,
 			checkingMag = equipController:getCheckingMag(),
+			jammed = equipController:getJammed(),
+			shootType = equipController:getShootType(),
 			mouseDown = state.mouse1down,
 		}
 
@@ -530,10 +590,11 @@ function Main.start(hostScript)
 			fireRound = function()
 				fireRound()
 				shotState.ammo = equipController:getAmmo()
+				shotState.jammed = equipController:getJammed()
 			end,
 			firePumpRound = function()
 				if not weaponData then return end
-				Events.Atirar:FireServer(equipController:getWeaponTool(), equipController:getSuppressor(), equipController:getFlashHider())
+				Packets.packets.WeaponFireIntent.send({ weapon = equipController:getWeaponTool() })
 				for _ = 1, weaponData.Bullets do
 					Thread:Spawn(function()
 						castController:createBullet(equipController:getBSpread(), state.charspeed, state.aiming, not isThirdPersonCamera())
@@ -578,8 +639,8 @@ function Main.start(hostScript)
 		local wih = equipController:getWeaponInHand()
 		if wih and wih.Handle:FindFirstChild("AimDown") then wih.Handle.AimDown:Play() end
 		state.gunStance = 2
-		Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
-		crosshairController:update(equipController:getWeaponData(), equipController:isEquipped(), state.aiming, (equipController:getWeaponTool() and equipController:getWeaponTool().Name) or "")
+		Packets.packets.GunStanceIntent.send({ stance = state.gunStance })
+		updateCrosshair()
 	end
 
 	--// Input Dispatch Table (replaces ~25-branch elseif chain)
@@ -599,13 +660,12 @@ function Main.start(hostScript)
 		if inputState ~= Enum.UserInputState.Begin then return end
 		if state.animDebounce and not equipController:getCheckingMag() and not state.reloading then
 			local weaponData = equipController:getWeaponData()
-			if weaponData and weaponData.Jammed then jammed() else reload() end
+			if weaponData and equipController:getJammed() then jammed() else reload() end
 		elseif state.reloading then
 			local weaponData = equipController:getWeaponData()
 			if weaponData and weaponData.ShellInsert then state.cancelReload = true end
 		end
 	end
-
 	function actionHandlers.CycleFiremode(actionName, inputState, _inputObject)
 		if inputState ~= Enum.UserInputState.Begin then return end
 		local weaponData = equipController:getWeaponData()
@@ -613,7 +673,9 @@ function Main.start(hostScript)
 			state.mouse1down = false
 			local wih = equipController:getWeaponInHand()
 			if wih and wih.Handle:FindFirstChild("SafetyClick") then wih.Handle.SafetyClick:Play() end
-			FiremodeController.cycle(weaponData); updateGui()
+			local changed, nextShootType = FiremodeController.cycle(weaponData, equipController:getShootType())
+			equipController:setShootType(nextShootType)
+			if changed then updateGui() end
 		end
 	end
 
@@ -630,27 +692,27 @@ function Main.start(hostScript)
 			local wih = equipController:getWeaponInHand()
 			if wih and wih.Handle:FindFirstChild("AimDown") then wih.Handle.AimDown:Play() end
 			state.gunStance = 2
-			Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
+			Packets.packets.GunStanceIntent.send({ stance = state.gunStance })
 		else
 			UserInputService.MouseDeltaSensitivity = 1
 			local wih = equipController:getWeaponInHand()
 			if wih and wih.Handle:FindFirstChild("AimUp") then wih.Handle.AimUp:Play() end
 			state.gunStance = 0
-			Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
+			Packets.packets.GunStanceIntent.send({ stance = state.gunStance })
 		end
-		crosshairController:update(equipController:getWeaponData(), equipController:isEquipped(), state.aiming, (equipController:getWeaponTool() and equipController:getWeaponTool().Name) or "")
+		updateCrosshair()
 	end
 
 	function actionHandlers.Stand(actionName, inputState, _inputObject)
-		if inputState ~= Enum.UserInputState.Begin or not state.changeStance or state.swimming or state.sentado or state.runKeyDown or acsClient:GetAttribute("Collapsed") then return end
+		if inputState ~= Enum.UserInputState.Begin or not state.changeStance or state.swimming or state.seated or state.runKeyDown or acsClient:GetAttribute("Collapsed") then return end
 		if state.stances == 2 then state.stances = 1; state.cameraY = -1; crouch()
 		elseif state.stances == 1 then state.stances = 0; state.cameraY = 0; stand() end
 	end
 
 	function actionHandlers.Crouch(actionName, inputState, _inputObject)
-		if inputState ~= Enum.UserInputState.Begin or not state.changeStance or state.swimming or state.sentado or state.runKeyDown or acsClient:GetAttribute("Collapsed") then return end
+		if inputState ~= Enum.UserInputState.Begin or not state.changeStance or state.swimming or state.seated or state.runKeyDown or acsClient:GetAttribute("Collapsed") then return end
 		if state.stances == 0 then state.stances = 1; state.cameraY = -1; crouch()
-		elseif state.stances == 1 then state.stances = 2; state.cameraX = 0; state.cameraY = -3.25; state.virar = 0 end
+		elseif state.stances == 1 then state.stances = 2; state.cameraX = 0; state.cameraY = -3.25; state.leanDirection = 0 end
 	end
 
 	function actionHandlers.ToggleWalk(actionName, inputState, _inputObject)
@@ -662,22 +724,22 @@ function Main.start(hostScript)
 	function actionHandlers.Run(actionName, inputState, _inputObject)
 		if inputState == Enum.UserInputState.Begin and state.running and not hostScript.Parent:GetAttribute("Injured") then
 			state.mouse1down = false; state.runKeyDown = true
-			stand(); state.stances = 0; state.virar = 0; state.cameraX = 0; state.cameraY = 0
-			humanoid.WalkSpeed = gameRules.RunWalkSpeed
+			stand(); state.stances = 0; state.leanDirection = 0; state.cameraX = 0; state.cameraY = 0
+			hostScript.Parent:SetAttribute("CombatWalkSpeed", gameRules.RunWalkSpeed)
 			if state.aiming then
 				state.aiming = false; WeaponUIState.setAiming(plr, false)
 				UserInputService.MouseDeltaSensitivity = 1
 				local wih = equipController:getWeaponInHand()
 				if wih and wih.Handle:FindFirstChild("AimUp") then wih.Handle.AimUp:Play() end
 				state.gunStance = 0
-				Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
-				crosshairController:update(equipController:getWeaponData(), equipController:isEquipped(), state.aiming, (equipController:getWeaponTool() and equipController:getWeaponTool().Name) or "")
+				Packets.packets.GunStanceIntent.send({ stance = state.gunStance })
+				updateCrosshair()
 			end
 			if not equipController:getCheckingMag() and not state.reloading then
 				local weaponData = equipController:getWeaponData()
 				if weaponData and weaponData.Type ~= "Grenade" and (state.gunStance == 0 or state.gunStance == 2 or state.gunStance == 3) then
 					state.gunStance = 3
-					Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
+					Packets.packets.GunStanceIntent.send({ stance = state.gunStance })
 					playWeaponAnimation("SprintAnim")
 				end
 			end
@@ -687,7 +749,7 @@ function Main.start(hostScript)
 				local weaponData = equipController:getWeaponData()
 				if weaponData and weaponData.Type ~= "Grenade" and (state.gunStance == 0 or state.gunStance == 2 or state.gunStance == 3) then
 					state.gunStance = 0
-					Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
+					Packets.packets.GunStanceIntent.send({ stance = state.gunStance })
 					playWeaponAnimation("IdleAnim")
 				end
 			end
@@ -699,9 +761,9 @@ function Main.start(hostScript)
 		local weaponData = equipController:getWeaponData()
 		if toolEquip and not equipController:getCheckingMag() and not state.aiming and not state.reloading and not state.runKeyDown and state.animDebounce and weaponData and weaponData.Type == "Gun" then
 			state.mouse1down = false
-			if state.gunStance == 0 then state.safeMode = true; state.gunStance = -1; updateGui(); Events.GunStance:FireServer(-1, equipController:getAnimData()); playWeaponAnimation("LowReady")
-			elseif state.gunStance == -1 then state.safeMode = true; state.gunStance = -2; updateGui(); Events.GunStance:FireServer(-2, equipController:getAnimData()); playWeaponAnimation("Patrol")
-			elseif state.gunStance == 1 then state.safeMode = false; state.gunStance = 0; updateGui(); Events.GunStance:FireServer(0, equipController:getAnimData()); playWeaponAnimation("IdleAnim") end
+			if state.gunStance == 0 then state.safeMode = true; state.gunStance = -1; updateGui(); Packets.packets.GunStanceIntent.send({ stance = -1 }); playWeaponAnimation("LowReady")
+			elseif state.gunStance == -1 then state.safeMode = true; state.gunStance = -2; updateGui(); Packets.packets.GunStanceIntent.send({ stance = -2 }); playWeaponAnimation("Patrol")
+			elseif state.gunStance == 1 then state.safeMode = false; state.gunStance = 0; updateGui(); Packets.packets.GunStanceIntent.send({ stance = 0 }); playWeaponAnimation("IdleAnim") end
 		end
 		if toolEquip and state.aiming and equipController:getSens() > 5 then
 			equipController:setSens(equipController:getSens() - 5); updateGui()
@@ -714,9 +776,9 @@ function Main.start(hostScript)
 		local weaponData = equipController:getWeaponData()
 		if toolEquip and not equipController:getCheckingMag() and not state.aiming and not state.reloading and not state.runKeyDown and state.animDebounce and weaponData and weaponData.Type == "Gun" then
 			state.mouse1down = false
-			if state.gunStance == 0 then state.safeMode = true; state.gunStance = 1; updateGui(); Events.GunStance:FireServer(1, equipController:getAnimData()); playWeaponAnimation("HighReady")
-			elseif state.gunStance == -1 then state.safeMode = false; state.gunStance = 0; updateGui(); Events.GunStance:FireServer(0, equipController:getAnimData()); playWeaponAnimation("IdleAnim")
-			elseif state.gunStance == -2 then state.safeMode = true; state.gunStance = -1; updateGui(); Events.GunStance:FireServer(-1, equipController:getAnimData()); playWeaponAnimation("LowReady") end
+			if state.gunStance == 0 then state.safeMode = true; state.gunStance = 1; updateGui(); Packets.packets.GunStanceIntent.send({ stance = 1 }); playWeaponAnimation("HighReady")
+			elseif state.gunStance == -1 then state.safeMode = false; state.gunStance = 0; updateGui(); Packets.packets.GunStanceIntent.send({ stance = 0 }); playWeaponAnimation("IdleAnim")
+			elseif state.gunStance == -2 then state.safeMode = true; state.gunStance = -1; updateGui(); Packets.packets.GunStanceIntent.send({ stance = -1 }); playWeaponAnimation("LowReady") end
 		end
 		if toolEquip and state.aiming and equipController:getSens() < 100 then
 			equipController:setSens(equipController:getSens() + 5); updateGui()
@@ -742,13 +804,15 @@ function Main.start(hostScript)
 		local toolData = WeaponToolClassifier.readSettings(tool)
 		if not WeaponToolClassifier.canEquip(toolData, FeatureFlags) then return end
 		if humanoid.Sit and humanoid.SeatPart and humanoid.SeatPart:IsA("VehicleSeat") then return end
-
 		equipGeneration += 1
-		equipController:setup(tool)
+		if not equipController:setup(tool) then
+			equipGeneration -= 1
+			return
+		end
 		applyWeaponCameraMode()
 
 		state.safeMode = false; state.gunStance = 0
-		Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
+		Packets.packets.GunStanceIntent.send({ stance = state.gunStance })
 
 		inputController:bindWeaponActions(handleAction)
 		if FeatureFlags.WeaponUtilitiesEnabled and equipController:getBipodAtt() then
@@ -756,7 +820,7 @@ function Main.start(hostScript)
 		end
 
 		UserInputService.MouseIconEnabled = false
-		crosshairController:update(equipController:getWeaponData(), true, false, tool.Name)
+		updateCrosshair()
 
 		state.animDebounce = false
 		playWeaponAnimation("EquipAnim")
@@ -769,7 +833,7 @@ function Main.start(hostScript)
 			end
 			if equipController:isEquipped() and state.gunStance ~= 0 and state.gunStance ~= 2 then
 				state.gunStance = 0
-				Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
+				Packets.packets.GunStanceIntent.send({ stance = state.gunStance })
 				playWeaponAnimation("IdleAnim")
 				state.safeMode = false; updateGui()
 			end
@@ -780,7 +844,8 @@ function Main.start(hostScript)
 	end
 
 	local function unset()
-	equipGeneration += 1
+		local laserWeapon = equipController:getWeaponTool()
+		equipGeneration += 1
 		equipController:unequip()
 		inputController:unbindWeaponActions()
 		if FeatureFlags.WeaponUtilitiesEnabled then inputController:unbindBipodToggle() end
@@ -791,20 +856,24 @@ function Main.start(hostScript)
 
 		TweenService:Create(cam, aimTween, { FieldOfView = 70 }):Play()
 		WeaponUIState.clear(plr); crosshairController:clear()
+		lastCrosshairData = nil
+		lastCrosshairEquipped = nil
+		lastCrosshairAiming = nil
+		lastCrosshairName = ""
 		UserInputService.MouseIconEnabled = true; UserInputService.MouseDeltaSensitivity = 1
 		cam.CameraType = Enum.CameraType.Custom; plr.CameraMode = Enum.CameraMode.Classic
 		WeaponHudAdapter.setVisible(seGui, false); WeaponHudAdapter.hideGrenadeForce(seGui)
 		renderController:reset()
 
 		if gameRules.ReplicatedLaser then
-			Events.SVLaser:FireServer(nil, 2, nil, false, equipController:getWeaponTool())
+			Packets.packets.LaserIntent.send({ mode = 2, infrared = false, weapon = laserWeapon })
 		end
 	end
 
 	--// Camera Lean Update
 
 	RunService:BindToRenderStep(renderStepName, 200, function()
-		leanSpring.cornerPeek.t = leanSpring.peekFactor * state.virar
+		leanSpring.cornerPeek.t = leanSpring.peekFactor * state.leanDirection
 		local newLeanCF = CFrame.fromAxisAngle(Vector3.new(0, 0, 1), leanSpring.cornerPeek.p)
 		cam.CFrame = cam.CFrame * newLeanCF
 	end)
@@ -835,7 +904,7 @@ function Main.start(hostScript)
 	connect(humanoid.Died:Connect(function()
 		TweenService:Create(humanoid, TweenInfo.new(1), { CameraOffset = Vector3.new(0, 0, 0) }):Play()
 		state.changeStance = false; stand(); state.stances = 0
-		state.virar = 0; state.cameraX = 0; state.cameraY = 0
+		state.leanDirection = 0; state.cameraX = 0; state.cameraY = 0
 		unset()
 	end))
 
@@ -846,8 +915,8 @@ function Main.start(hostScript)
 		else
 			plr.CameraMaxZoomDistance = game.StarterPlayer.CameraMaxZoomDistance
 		end
-		state.sentado = isSeated
-		if isSeated then state.stances = 0; state.virar = 0; state.cameraX = 0; state.cameraY = 0; stand() end
+		state.seated = isSeated
+		if isSeated then state.stances = 0; state.leanDirection = 0; state.cameraX = 0; state.cameraY = 0; stand() end
 	end))
 
 	connect(humanoid.Changed:Connect(function(prop)
@@ -863,7 +932,7 @@ function Main.start(hostScript)
 
 	connect(humanoid.StateChanged:Connect(function(_oldState, newState)
 		if newState == Enum.HumanoidStateType.Swimming then
-			state.swimming = true; state.stances = 0; state.virar = 0; state.cameraX = 0; state.cameraY = 0; stand()
+			state.swimming = true; state.stances = 0; state.leanDirection = 0; state.cameraX = 0; state.cameraY = 0; stand()
 		else state.swimming = false end
 	end))
 
@@ -875,7 +944,7 @@ function Main.start(hostScript)
 				local weaponData = equipController:getWeaponData()
 				if weaponData and weaponData.Type ~= "Grenade" and (state.gunStance == 0 or state.gunStance == 2 or state.gunStance == 3) then
 					state.gunStance = 0
-					Events.GunStance:FireServer(state.gunStance, equipController:getAnimData())
+					Packets.packets.GunStanceIntent.send({ stance = state.gunStance })
 					playWeaponAnimation("IdleAnim")
 				end
 			end
@@ -885,19 +954,30 @@ function Main.start(hostScript)
 
 	connect(acsClient:GetAttributeChangedSignal("Collapsed"):Connect(function()
 		if not acsClient:GetAttribute("Collapsed") then return end
-		state.runKeyDown = true; stand(); state.stances = 0; state.virar = 0; state.cameraX = 0; state.cameraY = 0
+		state.runKeyDown = true; stand(); state.stances = 0; state.leanDirection = 0; state.cameraX = 0; state.cameraY = 0
 	end))
 
 	--// Settings Observer
 
 	local settingsConn = RuntimeSettings.Observe("Third Person", function()
-		if equipController:isEquipped() then applyWeaponCameraMode() end
+		lastCrosshairData = nil
+		lastCrosshairEquipped = nil
+		lastCrosshairAiming = nil
+		lastCrosshairName = ""
+		if equipController:isEquipped() then
+			applyWeaponCameraMode()
+			updateCrosshair()
+		end
 	end)
 	if settingsConn and settingsConn.Disconnect then connect(settingsConn) end
 
 	--// Render Loop
 
 	connect(RunService.RenderStepped:Connect(function(deltaTime)
+		if not updateCameraReference() then
+			return
+		end
+
 		-- Camera head movement
 		cameraController:headMovement(equipController:isEquipped(), state.aiming, equipController:getWeaponData(), acsClient, deltaTime)
 
@@ -907,33 +987,50 @@ function Main.start(hostScript)
 
 	--// Events
 
-	connect(Events.Refil.OnClientEvent:Connect(function(tool, infinite, stored)
-		local data = require(tool.ACS_Settings)
+	local stopRefillPresentation = Packets.packets.RefillPresentation.listen(function(data)
+		local tool = data.tool
+		if not tool or not tool:IsA("Tool") or not WeaponDefinitionResolver.getSettings(tool) then
+			return
+		end
+		local settingsModule = WeaponDefinitionResolver.getSettings(tool)
+		local settingsLoaded = false
+		local dataModule: any = nil
+		if settingsModule then
+			settingsLoaded, dataModule = pcall(require, settingsModule)
+		end
+		if not settingsLoaded or type(dataModule) ~= "table" then
+			return
+		end
 		local storedAmmo = equipController:getStoredAmmo()
-		if infinite then
-			local configuredReserve = if typeof(data.StoredAmmo) == "number" then data.StoredAmmo else storedAmmo
-			local maxReserve = if typeof(data.MaxStoredAmmo) == "number" then data.MaxStoredAmmo else configuredReserve
+		if data.infinite then
+			local configuredReserve = if typeof(dataModule.StoredAmmo) == "number" then dataModule.StoredAmmo else storedAmmo
+			local maxReserve = if typeof(dataModule.MaxStoredAmmo) == "number" then dataModule.MaxStoredAmmo else configuredReserve
 			if maxReserve == math.huge then
 				equipController:setStoredAmmo(math_max(storedAmmo, configuredReserve))
 			else equipController:setStoredAmmo(maxReserve) end
-			data.StoredAmmo = equipController:getStoredAmmo(); updateGui(); return
+			updateGui(); return
 		end
-		local newStored = math_min(data.MaxStoredAmmo - storedAmmo, stored.Value)
+		local maxStored = if typeof(dataModule.MaxStoredAmmo) == "number" then dataModule.MaxStoredAmmo else storedAmmo
+		local newStored = math_min(maxStored - storedAmmo, math.max(data.amount, 0))
 		equipController:setStoredAmmo(storedAmmo + newStored)
-		data.StoredAmmo = equipController:getStoredAmmo(); updateGui()
-		if not infinite then Events.Refil:FireServer(stored, newStored) end
-	end))
+		updateGui()
+	end)
 
 	--// Lifecycle Cleanup
 
-	local cleanedUp = false
 	cleanupCharacter = function()
 		if cleanedUp then
 			return
 		end
 		cleanedUp = true
+		lifecycleGeneration += 1
+		if stopRefillPresentation then
+			stopRefillPresentation()
+		end
 		unset()
+		renderController:destroy()
 		castController:Destroy()
+		inputController:destroy()
 		crosshairController:destroy()
 		for _, conn in ipairs(connections) do conn:Disconnect() end
 		table.clear(connections)

@@ -7,37 +7,38 @@
 	instead of being captured by ScheduledTask callbacks.
 ]]
 
-local ServerScriptService = game:GetService("ServerScriptService")
+const ServerScriptService = game:GetService("ServerScriptService")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
-local LoggingEvent = require(ServerScriptService.Signals.LogSignal)
-local Config = require(ServerScriptService.Services.External.ServerAuthority.Utilities.Config)
-local Whitelist = require(ServerScriptService.Services.External.ServerAuthority.Utilities.Whitelist)
+const PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+const LoggingEvent = require(ReplicatedStorage.Packages.signal).get("ServerLogging")
+const Config = require(ServerScriptService.Services.External.ServerAuthority.Utilities.Config)
+const Whitelist = require(ServerScriptService.Services.External.ServerAuthority.Utilities.Whitelist)
 
-local CHECK_INTERVAL = 0.5
+const CheckInterval = 0.5
 
-local function createCharacterRayParams(character: Model): RaycastParams
+local function CreateCharacterRayParams(character: Model): RaycastParams
 	local rayParams = RaycastParams.new()
 	rayParams.FilterDescendantsInstances = { character }
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
 	return rayParams
 end
 
-local function getHorizontalSpeed(lastPosition: Vector3, currentPosition: Vector3, deltaTime: number): number
+local function GetHorizontalSpeed(lastPosition: Vector3, currentPosition: Vector3, deltaTime: number): number
 	local horizontalDelta = Vector3.new(currentPosition.X - lastPosition.X, 0, currentPosition.Z - lastPosition.Z)
 	return horizontalDelta.Magnitude / deltaTime
 end
 
-local function getHorizontalDistance(fromPosition: Vector3, toPosition: Vector3): number
+local function GetHorizontalDistance(fromPosition: Vector3, toPosition: Vector3): number
 	local horizontalDelta = Vector3.new(toPosition.X - fromPosition.X, 0, toPosition.Z - fromPosition.Z)
 	return horizontalDelta.Magnitude
 end
 
-local function getHeightAboveGround(humanoidRootPart: BasePart, character: Model): number
+local function GetHeightAboveGround(humanoidRootPart: BasePart, character: Model): number
 	local result = workspace:Raycast(
 		humanoidRootPart.Position,
 		Vector3.new(0, -300, 0),
-		createCharacterRayParams(character)
+		CreateCharacterRayParams(character)
 	)
 	if result then
 		return humanoidRootPart.Position.Y - result.Position.Y
@@ -46,7 +47,7 @@ local function getHeightAboveGround(humanoidRootPart: BasePart, character: Model
 	return 0
 end
 
-local function checkNoclip(lastPosition: Vector3, currentPosition: Vector3, character: Model): boolean
+local function CheckNoclip(lastPosition: Vector3, currentPosition: Vector3, character: Model): boolean
 	local direction = currentPosition - lastPosition
 	local distance = direction.Magnitude
 	if distance < Config.Noclip.MinDistance then
@@ -54,7 +55,7 @@ local function checkNoclip(lastPosition: Vector3, currentPosition: Vector3, char
 	end
 
 	local unitDirection = direction.Unit
-	local result = workspace:Raycast(lastPosition, unitDirection * distance, createCharacterRayParams(character))
+	local result = workspace:Raycast(lastPosition, unitDirection * distance, CreateCharacterRayParams(character))
 	if not result or not result.Instance.CanCollide then
 		return false
 	end
@@ -71,8 +72,8 @@ local function checkNoclip(lastPosition: Vector3, currentPosition: Vector3, char
 	return math.abs(result.Normal:Dot(unitDirection)) >= Config.Noclip.RequiredNormalAlignment
 end
 
-local function checkTeleport(lastPosition: Vector3, currentPosition: Vector3): boolean
-	local horizontalDistance = getHorizontalDistance(lastPosition, currentPosition)
+local function CheckTeleport(lastPosition: Vector3, currentPosition: Vector3): boolean
+	local horizontalDistance = GetHorizontalDistance(lastPosition, currentPosition)
 	local verticalDistance = math.abs(currentPosition.Y - lastPosition.Y)
 
 	if horizontalDistance < Config.Teleport.MinDistance then
@@ -82,7 +83,7 @@ local function checkTeleport(lastPosition: Vector3, currentPosition: Vector3): b
 	return verticalDistance <= Config.Teleport.MaxVerticalDistance
 end
 
-local function copyPositionHistory(history: { any }): { any }
+local function CopyPositionHistory(history: { any }): { any }
 	local copiedHistory = {}
 	for index, sample in ipairs(history) do
 		copiedHistory[index] = {
@@ -93,12 +94,12 @@ local function copyPositionHistory(history: { any }): { any }
 	return copiedHistory
 end
 
-local function isServerTeleportAllowed(player: Player, now: number): boolean
-	local graceUntil = PlayerRuntimeState.GetAntiCheatTeleportGraceUntil(player)
-	return type(graceUntil) == "number" and now <= graceUntil
+local function IsServerTeleportAllowed(Player: Player, Now: number): boolean
+	const TeleportGraceExpiry = PlayerRuntimeState.GetTeleportGraceExpiry(Player)
+	return type(TeleportGraceExpiry) == "number" and Now <= TeleportGraceExpiry
 end
 
-local function resetCharacterToPosition(character: Model, humanoidRootPart: BasePart, targetPosition: Vector3)
+local function ResetCharacterToPosition(character: Model, humanoidRootPart: BasePart, targetPosition: Vector3)
 	local targetCFrame = CFrame.new(targetPosition) * (humanoidRootPart.CFrame - humanoidRootPart.Position)
 	character:PivotTo(targetCFrame)
 
@@ -108,7 +109,7 @@ local function resetCharacterToPosition(character: Model, humanoidRootPart: Base
 	end
 end
 
-local function buildEvidence(state: any, currentPosition: Vector3, speed: number?, heightAboveGround: number?)
+local function BuildEvidence(state: any, currentPosition: Vector3, speed: number?, heightAboveGround: number?)
 	local humanoidState = "Unknown"
 	local success, stateName = pcall(function()
 		return state.humanoid:GetState().Name
@@ -122,17 +123,17 @@ local function buildEvidence(state: any, currentPosition: Vector3, speed: number
 		LastPosition = state.lastPosition,
 		Speed = speed,
 		HeightAboveGround = heightAboveGround,
-		TeleportDistance = getHorizontalDistance(state.lastPosition, currentPosition),
+		TeleportDistance = GetHorizontalDistance(state.lastPosition, currentPosition),
 		VerticalDelta = math.abs(currentPosition.Y - state.lastPosition.Y),
 		Violations = state.violations + 1,
 		NoclipStrikes = state.noclipStrikes,
 		TeleportStrikes = state.teleportStrikes,
 		HumanoidState = humanoidState,
-		PositionHistory = copyPositionHistory(state.positionHistory),
+		PositionHistory = CopyPositionHistory(state.positionHistory),
 	}
 end
 
-local function addViolation(state: any, reason: string, evidence): boolean
+local function AddViolation(state: any, reason: string, evidence): boolean
 	local player = state.player
 	if Whitelist[player.UserId] then
 		return false
@@ -149,7 +150,7 @@ local function addViolation(state: any, reason: string, evidence): boolean
 	return true
 end
 
-local function runCheck(state: any): boolean
+local function RunCheck(state: any): boolean
 	local character = state.character
 	local player = state.player
 	local humanoid = state.humanoid
@@ -182,7 +183,7 @@ local function runCheck(state: any): boolean
 		state.violations = math.max(0, state.violations - 1)
 	end
 
-	if isServerTeleportAllowed(player, now) then
+	if IsServerTeleportAllowed(player, now) then
 		state.lastPosition = currentPosition
 		state.lastInputTime = now
 		state.teleportStrikes = 0
@@ -190,16 +191,16 @@ local function runCheck(state: any): boolean
 		return true
 	end
 
-	local speed = getHorizontalSpeed(state.lastPosition, currentPosition, delta)
+	local speed = GetHorizontalSpeed(state.lastPosition, currentPosition, delta)
 
-	if checkTeleport(state.lastPosition, currentPosition) then
+	if CheckTeleport(state.lastPosition, currentPosition) then
 		state.teleportStrikes += 1
 		if state.teleportStrikes >= Config.Teleport.RequiredStrikes then
-			local evidence = buildEvidence(state, currentPosition, speed, nil)
-			resetCharacterToPosition(character, humanoidRootPart, state.lastPosition)
+			local evidence = BuildEvidence(state, currentPosition, speed, nil)
+			ResetCharacterToPosition(character, humanoidRootPart, state.lastPosition)
 			state.teleportStrikes = 0
 
-			if addViolation(state, "Anomalous Behaviour Detected: Teleport Exploits", evidence) then
+			if AddViolation(state, "Anomalous Behaviour Detected: Teleport Exploits", evidence) then
 				return false
 			end
 
@@ -213,8 +214,8 @@ local function runCheck(state: any): boolean
 	end
 
 	if speed > Config.MaxSpeed then
-		local evidence = buildEvidence(state, currentPosition, speed, nil)
-		if addViolation(state, "Anomalous Behaviour Detected: Speed Exploits", evidence) then
+		local evidence = BuildEvidence(state, currentPosition, speed, nil)
+		if AddViolation(state, "Anomalous Behaviour Detected: Speed Exploits", evidence) then
 			return false
 		end
 
@@ -225,10 +226,10 @@ local function runCheck(state: any): boolean
 	end
 
 	if humanoid.FloorMaterial == Enum.Material.Air then
-		local heightAboveGround = getHeightAboveGround(humanoidRootPart, character)
+		local heightAboveGround = GetHeightAboveGround(humanoidRootPart, character)
 		if heightAboveGround > Config.MaxJumpHeight then
-			local evidence = buildEvidence(state, currentPosition, speed, heightAboveGround)
-			if addViolation(state, "Anomalous Behaviour Detected: Jump Exploits", evidence) then
+			local evidence = BuildEvidence(state, currentPosition, speed, heightAboveGround)
+			if AddViolation(state, "Anomalous Behaviour Detected: Jump Exploits", evidence) then
 				return false
 			end
 
@@ -241,7 +242,7 @@ local function runCheck(state: any): boolean
 
 	state.tickCount += 1
 	if state.tickCount % Config.Noclip.CheckIntervalTicks == 0 then
-		if checkNoclip(state.lastPosition, currentPosition, character) then
+		if CheckNoclip(state.lastPosition, currentPosition, character) then
 			state.noclipStrikes += 1
 			if state.noclipStrikes < Config.Noclip.RequiredStrikes then
 				state.lastPosition = currentPosition
@@ -249,9 +250,9 @@ local function runCheck(state: any): boolean
 				return true
 			end
 
-			local evidence = buildEvidence(state, currentPosition, speed, nil)
+			local evidence = BuildEvidence(state, currentPosition, speed, nil)
 			state.noclipStrikes = 0
-			if addViolation(state, "Anomalous Behaviour Detected: Noclip Exploits", evidence) then
+			if AddViolation(state, "Anomalous Behaviour Detected: Noclip Exploits", evidence) then
 				return false
 			end
 
@@ -282,13 +283,13 @@ return function(context: any)
 		end
 
 		state.elapsed += dt
-		if state.elapsed < CHECK_INTERVAL then
+		if state.elapsed < CheckInterval then
 			world:set(entity, Components.AntiCheatState, state)
 			continue
 		end
 
-		state.elapsed -= CHECK_INTERVAL
-		if runCheck(state) then
+		state.elapsed -= CheckInterval
+		if RunCheck(state) then
 			world:set(entity, Components.AntiCheatState, state)
 		else
 			world:delete(entity)

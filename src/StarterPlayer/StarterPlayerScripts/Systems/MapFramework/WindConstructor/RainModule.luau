@@ -14,6 +14,7 @@ local RAIN_TRANSPARENCY_T1 = .25
 local RAIN_TRANSPARENCY_T2 = .75
 
 local RAIN_SCANHEIGHT = 3000
+local RAIN_SHELTER_MARGIN = 1
 							
 
 local RAIN_EMITTER_DIM_DEFAULT = 40							
@@ -130,6 +131,7 @@ local RAIN_VOLUME_SCAN_GRID = {								-- Unit range grid for scanning how far a
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local GlobalModifier = Instance.new("NumberValue")			-- modifier for rain visibility for disabling/enabling over time span
 GlobalModifier.Value = 1									-- 0 = fully visible, 1 = invisible
@@ -285,7 +287,7 @@ local ignoreEmitterList = { Emitter }
 local raycastParams = RaycastParams.new()
 raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 
-local function raycast(ray, ignoreCharacter)
+local function raycast(ray: Ray, ignoreCharacter: boolean)
 	local filter = ignoreEmitterList
 	if ignoreCharacter then
 		filter = { Emitter }
@@ -296,7 +298,12 @@ local function raycast(ray, ignoreCharacter)
 	end
 
 	raycastParams.FilterDescendantsInstances = filter
-	return castRay(ray.Origin, ray.Direction, raycastParams)
+	local result = Workspace:Raycast(ray.Origin, ray.Direction, raycastParams)
+	if not result then
+		return nil, nil, nil
+	end
+
+	return result.Instance, result.Position, result.Normal
 end
 
 local function connectLoop()
@@ -307,14 +314,18 @@ local function connectLoop()
 	
 	-- Update Emitter on RenderStepped since it needs to be synced to Camera
 	table.insert(connections, RunService.RenderStepped:Connect(function()
-		local camera = workspace.CurrentCamera
+		local camera = Workspace.CurrentCamera
 		if not camera then
 			return
 		end
+		if Emitter.Parent ~= camera then
+			Emitter.Parent = camera
+		end
 		
 		-- Check if camera is outside or inside
-		local part, position, normal = raycast(Ray.new(camera.CFrame.p, -rainDirection * RAIN_SCANHEIGHT), true)
-		if part and position and normal and normal.Y > 0.35 and rainDirection.Y < 0 then
+		local part, position = raycast(Ray.new(camera.CFrame.Position, -rainDirection * RAIN_SCANHEIGHT), true)
+		-- Shelter follows the actual rain path so sloped roofs and oblique wind are handled.
+		if part and position and rainDirection.Y < -0.1 and position.Y >= camera.CFrame.Position.Y + RAIN_SHELTER_MARGIN then
 			currentCeiling = position.Y
 		else
 			currentCeiling = nil
@@ -376,7 +387,7 @@ local function connectLoop()
 	-- Do the other effects on Stepped
 	local signal = RunService:IsRunning() and RunService.Stepped or RunService.RenderStepped
 	table.insert(connections, signal:Connect(function(timeOrDelta, steppedDeltaTime)
-		local camera = workspace.CurrentCamera
+		local camera = Workspace.CurrentCamera
 		if not camera then
 			return
 		end
@@ -666,7 +677,7 @@ function Rain:Enable(tweenInfo)
 	
 	Emitter.RainStraight.Enabled = true
 	Emitter.RainTopDown.Enabled = true
-	Emitter.Parent = workspace.CurrentCamera
+	Emitter.Parent = Workspace.CurrentCamera
 	
 	for i = 1, RAIN_SPLASH_NUM do
 		splashAttachments[i].Parent = workspace.Terrain

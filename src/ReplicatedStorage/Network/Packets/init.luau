@@ -21,8 +21,6 @@
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-
 
 --local function WaitForClientNamespace(): boolean
 
@@ -65,10 +63,14 @@ local PacketGroups = {
 	require(script.NukePackets),
 	require(script.InventoryPackets),
 	require(script.WorldPackets),
+	require(script.CombatPackets),
+	require(script.AdminPackets),
 }
 
 local QueryGroups = {
 	require(script.CommerceQueries),
+	require(script.SettingsQueries),
+	require(script.BuildQueries),
 }
 
 -- Merge multiple definition tables, warning on duplicate names.

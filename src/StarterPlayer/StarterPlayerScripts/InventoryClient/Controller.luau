@@ -6,6 +6,7 @@ local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
 local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
 
 local Signal = require(ReplicatedStorage.Packages.signal)
@@ -84,7 +85,7 @@ function InventoryController.new()
 	self._items = {}
 	self._selectedSlot = 1
 	self._maxSlots = InventoryShared.MAX_SLOTS
-	self._changed = Signal.new()
+	self._changed = Signal.get("InventoryClientChanged")
 	self._started = false
 	self._inputConnection = nil
 	self._connections = {}
@@ -154,7 +155,7 @@ local function readToolNumber(tool: Tool, names: { string }): number?
 end
 
 local function readAcsSettings(tool: Tool): { [any]: any }?
-	local settingsModule = tool:FindFirstChild("ACS_Settings")
+	local settingsModule = WeaponDefinitionResolver.getSettings(tool)
 	if not settingsModule or not settingsModule:IsA("ModuleScript") then
 		return nil
 	end
@@ -169,7 +170,7 @@ end
 
 local function getWeaponStats(tool: Tool): { [string]: number }?
 	local settings = readAcsSettings(tool)
-	if not settings and not tool:FindFirstChild("ACS_Settings") and not string.find(string.lower(tool.Name), "gun", 1, true) then
+	if not settings and WeaponDefinitionResolver.getSettings(tool) == nil and not string.find(string.lower(tool.Name), "gun", 1, true) then
 		return nil
 	end
 
@@ -414,6 +415,7 @@ function InventoryController:Start()
 	self:_refreshTools()
 
 	self._inputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		-- Inventory shortcuts must not fire while Roblox or a text box owns input.
 		if gameProcessed or UserInputService:GetFocusedTextBox() then
 			return
 		end
@@ -447,9 +449,6 @@ function InventoryController:Start()
 			return
 		end
 
-		if gameProcessed then
-			return
-		end
 	end)
 end
 

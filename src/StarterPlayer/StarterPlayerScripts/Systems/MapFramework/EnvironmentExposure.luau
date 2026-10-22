@@ -38,6 +38,7 @@ type EnvironmentExposureState = {
 	_lastSampleAt: number,
 	_sampleInterval: number,
 	_state: State,
+	_raycastParams: RaycastParams,
 }
 
 local EnvironmentExposure = {}
@@ -64,7 +65,7 @@ local function sample(state: EnvironmentExposureState): State
 		return state._state
 	end
 
-	local params = RaycastParams.new()
+	local params = state._raycastParams
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = if character then { character } else {}
 	params.IgnoreWater = true
@@ -101,6 +102,7 @@ function EnvironmentExposure.new(sampleInterval: number?): EnvironmentExposureSt
 	return setmetatable({
 		_lastSampleAt = -math.huge,
 		_sampleInterval = math.max(sampleInterval or 0.4, 0.1),
+		_raycastParams = RaycastParams.new(),
 		_state = {
 			exposure = 1,
 			roofCover = 0,

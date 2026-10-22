@@ -5,48 +5,31 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Runtime = require(script.Parent:WaitForChild("Runtime"))
 local ProjectileVisuals = require(ReplicatedStorage.Modules:WaitForChild("ProjectileVisuals"))
-
-type Context = {
-	events: Instance,
-	fx: Instance,
-	hitmarker: any,
-}
-
-type WeaponData = {
-	WalkMult: number?,
-	RainbowMode: boolean?,
-	TracerColor: Color3?,
-	Tracer: boolean?,
-	BulletFlare: boolean?,
-	MuzzleVelocity: number?,
-}
-
-type WeaponModifierData = {
-	WalkMult: number?,
-	MuzzleVelocity: number?,
-}
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+local Packets = PacketBootstrap.Get()
 
 local ProjectileEffects = {}
 
-function ProjectileEffects.start(context: Context)
-	local event = Runtime.getRemoteEvent(context.events, "ServerBullet")
-	if not event then
-		return
-	end
-
-	event.OnClientEvent:Connect(function(player: Player, origin: Vector3, direction: Vector3, weaponData: WeaponData, modifierData: WeaponModifierData)
-		if player == Players.LocalPlayer or not player.Character then
+function ProjectileEffects.start(_context: any)
+	Packets.packets.ProjectilePresentation.listen(function(data)
+		local player = Players:GetPlayerByUserId(data.shooterUserId)
+		if not player or player == Players.LocalPlayer or not player.Character then
 			return
 		end
 
-		if weaponData.Tracer ~= true and weaponData.BulletFlare ~= true then
+		if data.tracer ~= true and data.bulletFlare ~= true then
 			return
 		end
 
-		ProjectileVisuals.spawnTracer(origin, direction, {
+		ProjectileVisuals.spawnTracer(data.origin, data.direction, {
 			parent = Runtime.getEffectsFolder(),
-			weaponData = weaponData,
-			velocityScale = Runtime.getNumber(modifierData.MuzzleVelocity, 1),
+			weaponData = {
+				Tracer = data.tracer,
+				BulletFlare = data.bulletFlare,
+				TracerColor = data.tracerColor,
+				MuzzleVelocity = data.muzzleVelocity,
+			},
+			velocityScale = Runtime.getNumber(data.muzzleVelocity, 1),
 			width = 0.05,
 		})
 	end)

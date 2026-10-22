@@ -1,12 +1,11 @@
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 
 local ProfileManager = {}
 local Packets = require(ReplicatedStorage.Network.Packets)
 local Janitor = require(ReplicatedStorage.Packages.janitor)
-local Replica = require(ReplicatedStorage.Packages.replica)
 local QuestOptions = require(ReplicatedStorage.Progression.QuestOptions)
 local QuestProgression = require(ServerScriptService.Gameplay.Progression.QuestProgression)
 local SoundManager = require(ServerScriptService.Utilities.SoundManager)
@@ -15,24 +14,9 @@ local NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuar
 -- Store profiles from the Profile Store.
 
 ProfileManager.Profiles = {}
-ProfileManager.ProfileReplicas = {}
-ProfileManager.ProfileReplicaJanitors = {}
 ProfileManager.QuestTrackingJanitors = {}
 
 local DAILY_COOLDOWN = QuestOptions.DailyCooldown
-local ProfileStateToken = Replica.Token("ProfileState")
-local PROFILE_STATE_KEYS = {
-    "level",
-    "experience",
-    "requiredExperience",
-    "onboarding",
-    "dailyReadyAt",
-    "dailySecondsRemaining",
-    "dailyQuestSecondsRemaining",
-    "weeklyQuestSecondsRemaining",
-    "quests",
-}
-
 local function copyQuestState(quests: { [string]: any }): { [string]: any }
     local copied = {}
     for questId, quest in pairs(quests) do
@@ -79,62 +63,30 @@ local function buildProfileState(player: Player)
 	}
 end
 
-local function subscribeProfileReplica(player: Player, replica, janitor)
-	if Replica.ReadyPlayers[player] then
-		replica:Subscribe(player)
-		return
+local function encodeProfileState(state: { [string]: any }): string?
+	local ok, encoded = pcall(HttpService.JSONEncode, HttpService, state)
+	if not ok then
+		return nil
 	end
-
-	janitor:Add(Replica.NewReadyPlayer:Connect(function(readyPlayer: Player)
-		if readyPlayer ~= player then
-			return
-		end
-
-		janitor:Remove("ReadyConnection")
-		if ProfileManager.ProfileReplicas[player] == replica and player.Parent == Players then
-			replica:Subscribe(player)
-		end
-	end), "Disconnect", "ReadyConnection")
-end
-
-local function updateProfileReplica(player: Player, state: { [string]: any })
-	local replica = ProfileManager.ProfileReplicas[player]
-	if not replica then
-		local janitor = Janitor.new()
-		replica = Replica.new({
-			Token = ProfileStateToken,
-			Tags = {
-				Player = player.Name,
-			},
-			Data = state,
-		})
-		ProfileManager.ProfileReplicas[player] = replica
-		ProfileManager.ProfileReplicaJanitors[player] = janitor
-		janitor:Add(replica, "Destroy", "Replica")
-		subscribeProfileReplica(player, replica, janitor)
-		return
-	end
-
-	for _, key in ipairs(PROFILE_STATE_KEYS) do
-		replica:Set({ key }, state[key])
-	end
+	return encoded
 end
 
 function ProfileManager.SyncProfileState(player: Player)
 	local state = buildProfileState(player)
-	if state then
-		updateProfileReplica(player, state)
+	if not state then
+		return
 	end
+
+	local payload = encodeProfileState(state)
+	if not payload then
+		warn(("[ProfileManager] Failed to encode profile state for %s"):format(player.Name))
+		return
+	end
+
+	Packets.packets.ProfileState.sendTo({ payload = payload }, player)
 end
 
 function ProfileManager.ReleaseProfileState(player: Player)
-	local replicaJanitor = ProfileManager.ProfileReplicaJanitors[player]
-	if replicaJanitor then
-		replicaJanitor:Destroy()
-		ProfileManager.ProfileReplicaJanitors[player] = nil
-	end
-	ProfileManager.ProfileReplicas[player] = nil
-
 	local questJanitor = ProfileManager.QuestTrackingJanitors[player]
 	if questJanitor then
 		questJanitor:Destroy()
@@ -371,16 +323,25 @@ end
 
 do
 	NetworkGuard.Query(Packets.queries.ProfileAction, "ProfileAction", {
-	Rate = 8,
-	Burst = 12,
-	Validate = function(request)
-		return type(request) == "table"
-			and (request.action == "ClaimDaily" or request.action == "ClaimQuest")
-			and (request.payload == nil or (type(request.payload) == "string" and #request.payload <= 64))
-	end,
-}, function(request, player: Player?)
+		Rate = 8,
+		Burst = 12,
+		Validate = function(request)
+			return type(request) == "table"
+				and (request.action == "GetState" or request.action == "ClaimDaily" or request.action == "ClaimQuest")
+				and (request.payload == nil or (type(request.payload) == "string" and #request.payload <= 64))
+		end,
+	}, function(request, player: Player?)
 		if not player then
 			return { success = false, message = "Player unavailable." }
+		end
+
+		if request.action == "GetState" then
+			local state = buildProfileState(player)
+			local payload = state and encodeProfileState(state)
+			if not payload then
+				return { success = false, message = "Profile unavailable." }
+			end
+			return { success = true, message = "", payload = payload }
 		end
 
 		if request.action == "ClaimDaily" then
@@ -391,12 +352,10 @@ do
 			return { success = success == true, message = tostring(message) }
 		end
 
-warn(`[ProfileManager] {player.Name} sent unknown or malformed action: {tostring(request.action)}`)
+		warn(("[ProfileManager] %s sent unknown or malformed action: %s"):format(player.Name, tostring(request.action)))
 		return { success = false, message = "Unknown profile action." }
 	end)
 end
-
-
 function ProfileManager.HasCompletedOnboarding(player: Player): boolean
 	local profile = ProfileManager.Profiles[player]
 	if not profile then
@@ -419,7 +378,3 @@ end
 
 
 return ProfileManager
-
-
-
-

@@ -23,7 +23,7 @@ local ShootingController = {}
 
 export type WeaponData = {
 	Type: string?,
-	Jammed: boolean?,
+
 	ShootRate: number,
 	ShootType: number,
 	BurstShot: number?,
@@ -37,6 +37,8 @@ export type State = {
 	runKeyDown: boolean,
 	safeMode: boolean,
 	checkingMag: boolean,
+	jammed: boolean,
+	shootType: number,
 	mouseDown: boolean,
 }
 
@@ -68,7 +70,7 @@ function ShootingController.canFire(weaponData: WeaponData?, state: State): bool
 	-- all stop firing consistently even if they change mid-stream.
 	return weaponData ~= nil
 		and state.ammo > 0
-		and weaponData.Jammed ~= true
+		and not state.jammed
 		and not state.reloading
 		and not state.runKeyDown
 		and not state.safeMode
@@ -84,7 +86,7 @@ function ShootingController.shoot(weaponData: WeaponData?, state: State, callbac
 			return
 		end
 
-		if state.ammo <= 0 or weaponData.Jammed then
+		if state.ammo <= 0 or state.jammed then
 			callbacks.playEmptyClick()
 			callbacks.setMouseDown(false)
 			return
@@ -103,14 +105,14 @@ function ShootingController.shoot(weaponData: WeaponData?, state: State, callbac
 			callbacks.setShooting(false)
 		end
 
-		if weaponData.ShootType == 1 then
+		if state.shootType == 1 then
 			callbacks.setShooting(true)
 			callbacks.fireRound()
 			callbacks.schedule(fireInterval, finishShot, "ACS:SemiCooldown")
 			return
 		end
 
-		if weaponData.ShootType == 2 then
+		if state.shootType == 2 then
 			local burstIndex = 0
 			local burstShot = positive(weaponData.BurstShot, 1)
 
@@ -134,7 +136,7 @@ function ShootingController.shoot(weaponData: WeaponData?, state: State, callbac
 			return
 		end
 
-		if weaponData.ShootType == 3 then
+		if state.shootType == 3 then
 			local function fireAutomatic()
 				if not callbacks.isMouseDown() or not canFireNext() then
 					callbacks.setShooting(false)
@@ -154,7 +156,7 @@ function ShootingController.shoot(weaponData: WeaponData?, state: State, callbac
 			return
 		end
 
-		if weaponData.ShootType == 4 or weaponData.ShootType == 5 then
+		if state.shootType == 4 or state.shootType == 5 then
 			callbacks.setShooting(true)
 			callbacks.firePumpRound()
 			callbacks.pump()

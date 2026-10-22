@@ -13,6 +13,7 @@ local ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
 local Packets = require(ReplicatedStorage.Network.Packets)
 local ECS = require(ReplicatedStorage.ECS)
+local Observers = require(ReplicatedStorage.Packages.Observers)
 local Factory = require(ServerScriptService.ECS.TycoonFactory)
 local TycoonRuntime = require(ServerScriptService.ECS.TycoonRuntime)
 local NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
@@ -38,8 +39,9 @@ function TycoonService.create(playerService: any, purchaseService: any)
 	local self = {}
 	self.PlayerService = playerService
 	self.PurchaseService = purchaseService
-	self.Entities = {}
-	self.PlayerAddedConnection = nil
+	self.Initialized = false
+	self.PlayerObserverStop = nil
+	self.PlayerCleanupObserverStop = nil
 	return self
 end
 
@@ -59,19 +61,27 @@ function TycoonService:_sendAvailableTycoonDoors(player: Player)
 end
 
 function TycoonService:_startOnboardingDoorGuidance()
-	for _, player in Players:GetPlayers() do
-		task.defer(function() self:_sendAvailableTycoonDoors(player) end)
+	if self.PlayerObserverStop then
+		return
 	end
-	if self.PlayerAddedConnection then self.PlayerAddedConnection:Disconnect() end
-	self.PlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
-		task.defer(function() self:_sendAvailableTycoonDoors(player) end)
+
+	self.PlayerObserverStop = Observers.observePlayer(function(player: Player)
+		task.defer(function()
+			self:_sendAvailableTycoonDoors(player)
+		end)
 	end)
 end
 
 function TycoonService:Init()
+	if self.Initialized then
+		return
+	end
+	self.Initialized = true
 	self:_setupRemotes()
-	Players.PlayerRemoving:Connect(function(player)
-		self:_onPlayerRemoving(player)
+	self.PlayerCleanupObserverStop = Observers.observePlayer(function(player: Player)
+		return function()
+			self:_onPlayerRemoving(player)
+		end
 	end)
 	local tycoonsFolder = workspace:FindFirstChild("Tycoons")
 	if not tycoonsFolder then
@@ -81,8 +91,16 @@ function TycoonService:Init()
 	for _, tycoonModel in tycoonsFolder:GetChildren() do
 		if tycoonModel:IsA("Model") then
 			local entity = Factory.spawn(tycoonModel)
-			table.insert(self.Entities, entity)
+
 			TycoonRuntime.init(entity, self.PlayerService, self.PurchaseService, self.PlayerService.BuildService)
+			local destroyingConnection
+			destroyingConnection = tycoonModel.Destroying:Connect(function()
+				if destroyingConnection then
+					destroyingConnection:Disconnect()
+				end
+				TycoonRuntime.destroy(entity)
+				Factory.destroy(entity)
+			end)
 		end
 	end
 	self:_startOnboardingDoorGuidance()

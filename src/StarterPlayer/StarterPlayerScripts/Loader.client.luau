@@ -4,10 +4,10 @@
 
 	@desc
 	Client bootstrapper. Waits for the ByteNet namespace to be ready before
-	requiring packets (so client replicators can decode bytenet payloads),
+	waiting for the shared ByteNet namespace,
 	then runs the ModuleLoader to mount all UI systems.
 	Also cleans up legacy UI containers (Window/ScreenGui/MainMenu)
-	when the ClientReplicator signals.
+	when the admin UI is mounted.
 ]]
 
 --// Services
@@ -26,23 +26,29 @@ const PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
 --// Runtime State
 
 const Player = Players.LocalPlayer
-const ClientReplicator = ReplicatedStorage.Remotes.Interface:WaitForChild("ClientReplicator")
+
 
 --// Internal Utilities
 
 local function EnsurePacketsReady()
-	task.defer(function()
-		PacketBootstrap.Get()
-	end)
+	PacketBootstrap.Get()
 end
 local function ClearLegacyUI()
-	ClientReplicator.OnClientEvent:Connect(function()
+	local function clear()
 		for _, Instance in Player.PlayerGui:GetChildren() do
 			if Instance.Name == "Window" or Instance.Name == "ScreenGui" or Instance.Name == "MainMenu" then
 				Instance:Destroy()
 			end
 		end
-	end)
+	end
+
+	clear()
+
+	local Packets = PacketBootstrap.TryGet()
+	local packet = Packets and Packets.packets.AdminUiReady
+	if packet then
+		packet.listen(clear)
+	end
 end
 
 --// Bootstrap

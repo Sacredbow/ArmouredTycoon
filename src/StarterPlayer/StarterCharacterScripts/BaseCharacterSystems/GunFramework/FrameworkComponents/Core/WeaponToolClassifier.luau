@@ -8,6 +8,8 @@
 	current feature flags.
 ]]
 
+local WeaponDefinitionResolver = require(game:GetService("ReplicatedStorage").Weapons.Resolver)
+
 local WeaponToolClassifier = {}
 
 export type WeaponSettings = {
@@ -34,7 +36,7 @@ end
 function WeaponToolClassifier.readSettings(tool: Instance?): WeaponSettings?
 	-- A tool without ACS_Settings is just a normal Roblox tool and should be
 	-- ignored by the gun framework.
-	local settings = tool and tool:FindFirstChild("ACS_Settings")
+	local settings = WeaponDefinitionResolver.getSettings(tool)
 	if not settings or not settings:IsA("ModuleScript") then
 		return nil
 	end

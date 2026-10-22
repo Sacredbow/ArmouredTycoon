@@ -1,4 +1,4 @@
-﻿--!strict
+--!strict
 --[[
 	TycoonRuntime contains the Tycoon domain systems. Each function operates on
 	an ECS entity and component data; no Tycoon instance or metatable is used.
@@ -27,6 +27,8 @@ local ElectricitySystem = require(ServerScriptService.ECS.Systems.Tycoon.Electri
 
 local Runtime = {}
 local connections: {[number]: {any}} = {}
+local buttonConnections: {[number]: {RBXScriptConnection}} = {}
+local purchaseServices: {[number]: any} = {}
 local purchaseDebounce: {[BasePart]: number} = setmetatable({}, {__mode = "k"})
 local buttonEntities: {[BasePart]: number} = setmetatable({}, {__mode = "k"})
 
@@ -256,6 +258,71 @@ local function claim(entity: number, player: Player, playerService: any, buildSe
 	return true
 end
 
+local function disconnectButtons(entity: number)
+	local list = buttonConnections[entity]
+	if list then
+		for _, connection in list do
+			connection:Disconnect()
+		end
+		buttonConnections[entity] = nil
+	end
+end
+
+local function bindButtons(entity: number, purchaseService: any?)
+	local h = hierarchy(entity)
+	local tycoonModel = model(entity)
+	if not h or not h.Buttons or not tycoonModel then return end
+
+	disconnectButtons(entity)
+	local list: {RBXScriptConnection} = {}
+	buttonConnections[entity] = list
+	local activePurchaseService = purchaseService or purchaseServices[entity]
+
+	for _, button in h.Buttons:GetChildren() do
+		if not button:IsA("BasePart") then continue end
+		local config = ButtonConfiguration.Get(button.Name)
+		if not config then continue end
+		ButtonConfiguration.ApplyVisual(button, config)
+		local buttonEntity = ECS.createEntity({
+			Name = string.format("%s:%s:Button", tycoonModel.Name, button.Name),
+			Model = button,
+			Button = {tycoonEntity = entity, button = button, visible = ButtonConfiguration.StartsVisible(config)},
+		})
+		buttonEntities[button] = buttonEntity
+		table.insert(list, button.Touched:Connect(function(hit)
+			if button.Transparency == 1 then return end
+			local hitCharacter = hit:FindFirstAncestorOfClass("Model")
+			local player = hitCharacter and Players:GetPlayerFromCharacter(hitCharacter)
+			if not player then return end
+			if owner(entity) ~= player then
+				Notify(player, "info", "Only the tycoon owner can buy buttons.")
+				return
+			end
+			if not dependenciesMet(entity, config) then
+				Notify(player, "info", "Purchase the required buttons first.")
+				return
+			end
+			local gamepass = ButtonConfiguration.GetGamepass(config)
+			if gamepass then
+				local now = os.clock()
+				if purchaseDebounce[button] and now - purchaseDebounce[button] < 1.5 then return end
+				purchaseDebounce[button] = now
+				if activePurchaseService then
+					activePurchaseService:PromptGamepass(player, button, entity, gamepass)
+				end
+				return
+			end
+			local price = ButtonConfiguration.GetPrice(config)
+			local profile = ProfileManager.Profiles[player]
+			if price and profile and profile.Data.Cash >= price then
+				ProfileManager.AddCash(player, -price)
+				Runtime.applyPurchasedButton(entity, button)
+				PlayerRuntimeState.SetCanRebirth(player, Runtime.checkCompletion(entity))
+			end
+		end))
+	end
+end
+
 function Runtime.cleanup(entity: number, playerService: any, buildService: any?)
 	for producerEntity, producer in ECS.world:query(ECS.Components.Producer) do
 		if producer.tycoonEntity == entity then ECS.deleteEntity(producerEntity) end
@@ -265,7 +332,21 @@ function Runtime.cleanup(entity: number, playerService: any, buildService: any?)
 		local currentModel = model(entity)
 		if currentModel and itemValue and itemValue:IsDescendantOf(currentModel) then ECS.deleteEntity(itemEntity) end
 	end
-	Runtime.disconnect(entity)
+	disconnectButtons(entity)
+	for taskEntity, taskData in ECS.world:query(ECS.Components.ScheduledTask) do
+		if taskData.tycoonEntity == entity then
+			ECS.world:delete(taskEntity)
+		end
+	end
+	for buttonEntity, buttonData in ECS.world:query(ECS.Components.Button) do
+		if buttonData.tycoonEntity == entity then
+			if buttonData.button then
+				buttonEntities[buttonData.button] = nil
+				purchaseDebounce[buttonData.button] = nil
+			end
+			ECS.world:delete(buttonEntity)
+		end
+	end
 	local player = owner(entity)
 	if player then
 		PlayerRuntimeState.SetArmourEquipped(player, false)
@@ -289,6 +370,7 @@ function Runtime.cleanup(entity: number, playerService: any, buildService: any?)
 			for _, item in purchased:GetChildren() do item:Destroy() end
 		end
 	end
+	bindButtons(entity)
 	Factory.setOwner(entity, nil)
 	local current = state(entity)
 	if current then
@@ -306,6 +388,7 @@ function Runtime.cleanup(entity: number, playerService: any, buildService: any?)
 end
 
 function Runtime.init(entity: number, playerService: any, purchaseService: any, buildService: any?)
+	purchaseServices[entity] = purchaseService
 	local h = hierarchy(entity)
 	if not h then return end
 	if connections[entity] then return end
@@ -329,7 +412,8 @@ function Runtime.init(entity: number, playerService: any, purchaseService: any, 
 	local door = ownerDoor and ownerDoor:FindFirstChild("Door")
 	if door and door:IsA("BasePart") then
 		table.insert(connections[entity], door.Touched:Connect(function(hit)
-			local player = Players:GetPlayerFromCharacter(hit.Parent)
+			local hitCharacter = hit:FindFirstAncestorOfClass("Model")
+			local player = hitCharacter and Players:GetPlayerFromCharacter(hitCharacter)
 			if player and (not playerService:OwnsTycoon(player) or owner(entity) == player) then
 				claim(entity, player, playerService, playerService.BuildService or buildService)
 			end
@@ -360,53 +444,48 @@ function Runtime.init(entity: number, playerService: any, purchaseService: any, 
 			ProfileManager.AddCash(player, amount)
 		end))
 	end
-	for _, button in h.Buttons:GetChildren() do
-		if not button:IsA("BasePart") then continue end
-		local config = ButtonConfiguration.Get(button.Name)
-		if not config then continue end
-		ButtonConfiguration.ApplyVisual(button, config)
-		local buttonEntity = ECS.createEntity({
-			Name = string.format("%s:%s:Button", model(entity).Name, button.Name),
-			Model = button,
-			Button = {tycoonEntity = entity, button = button, visible = ButtonConfiguration.StartsVisible(config)},
-		})
-		buttonEntities[button] = buttonEntity
-		table.insert(connections[entity], button.Touched:Connect(function(hit)
-			if button.Transparency == 1 then return end
-			local player = Players:GetPlayerFromCharacter(hit.Parent)
-			if not player then return end
-			if owner(entity) ~= player then
-				Notify(player, "info", "Only the tycoon owner can buy buttons.")
-				return
-			end
-			if not dependenciesMet(entity, config) then
-				Notify(player, "info", "Purchase the required buttons first.")
-				return
-			end
-			local gamepass = ButtonConfiguration.GetGamepass(config)
-			if gamepass then
-				local now = os.clock()
-				if purchaseDebounce[button] and now - purchaseDebounce[button] < 1.5 then return end
-				purchaseDebounce[button] = now
-				purchaseService:PromptGamepass(player, button, entity, gamepass)
-				return
-			end
-			local price = ButtonConfiguration.GetPrice(config)
-			local profile = ProfileManager.Profiles[player]
-			if price and profile and profile.Data.Cash >= price then
-				ProfileManager.AddCash(player, -price)
-				Runtime.applyPurchasedButton(entity, button)
-				PlayerRuntimeState.SetCanRebirth(player, Runtime.checkCompletion(entity))
-			end
-		end))
-	end
+	bindButtons(entity, purchaseService)
 end
 
 function Runtime.disconnect(entity: number)
+	disconnectButtons(entity)
+	purchaseServices[entity] = nil
 	local list = connections[entity]
 	if list then
 		for _, connection in list do connection:Disconnect() end
 		connections[entity] = nil
+	end
+end
+
+-- Permanently removes a tycoon runtime when its authored model is removed.
+-- Normal rebirth/player cleanup intentionally keeps the runtime alive so the
+-- same plot can be claimed again.
+function Runtime.destroy(entity: number)
+	Runtime.disconnect(entity)
+	local currentModel = model(entity)
+	for producerEntity, producer in ECS.world:query(ECS.Components.Producer) do
+		if producer.tycoonEntity == entity then
+			ECS.deleteEntity(producerEntity)
+		end
+	end
+	for itemEntity, item in ECS.world:query(ECS.Components.BuildItem) do
+		if currentModel and item.item and item.item:IsDescendantOf(currentModel) then
+			ECS.deleteEntity(itemEntity)
+		end
+	end
+	for taskEntity, taskData in ECS.world:query(ECS.Components.ScheduledTask) do
+		if taskData.tycoonEntity == entity then
+			ECS.deleteEntity(taskEntity)
+		end
+	end
+	for buttonEntity, buttonData in ECS.world:query(ECS.Components.Button) do
+		if buttonData.tycoonEntity == entity then
+			if buttonData.button then
+				buttonEntities[buttonData.button] = nil
+				purchaseDebounce[buttonData.button] = nil
+			end
+			ECS.deleteEntity(buttonEntity)
+		end
 	end
 end
 

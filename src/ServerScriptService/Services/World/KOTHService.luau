@@ -5,8 +5,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local ECS = require(ReplicatedStorage.ECS)
+local Observers = require(ReplicatedStorage.Packages.Observers)
 local Packets = require(ReplicatedStorage.Network.Packets)
 local ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
+local Janitor = require(ReplicatedStorage.Packages.janitor)
 
 local KOTHService = {}
 KOTHService.__index = KOTHService
@@ -50,6 +52,7 @@ function KOTHService.new()
 	self._king = nil :: Player?
 	self._kingStartedAt = 0
 	self._lastAnnouncedInterval = 0
+	self._janitor = Janitor.new()
 	ActiveService = self
 
 	return self
@@ -72,19 +75,25 @@ function KOTHService:Init()
 	self._contest = contest
 	self._kingLabel = self:_findKingLabel(contest)
 
-	contest.Touched:Connect(function(hit)
+	self._janitor:Add(contest.Touched:Connect(function(hit)
 		self:_onTouched(hit)
-	end)
+	end), "Disconnect", "ContestTouched")
 
-	contest.TouchEnded:Connect(function(hit)
+	self._janitor:Add(contest.TouchEnded:Connect(function(hit)
 		self:_onTouchEnded(hit)
-	end)
+	end), "Disconnect", "ContestTouchEnded")
 
-	Players.PlayerRemoving:Connect(function(player)
-		self:_removeContester(player)
+	self._playerObserverStop = Observers.observePlayer(function(player: Player)
+		return function()
+			self:_removeContester(player)
+		end
 	end)
 
 	self:_refreshKing()
+
+	self._janitor:Add(script.Destroying:Connect(function()
+		self:Destroy()
+	end), "Disconnect", "ScriptDestroying")
 
 	ECS.createEntity({
 		Name = "KOTH:AwardTick",
@@ -95,6 +104,22 @@ function KOTHService:Init()
 			kind = "KOTHAwardTick",
 		},
 	})
+end
+
+function KOTHService:Destroy()
+	if self._janitor then
+		self._janitor:Destroy()
+		self._janitor = nil
+	end
+	if self._playerObserverStop then
+		self._playerObserverStop()
+		self._playerObserverStop = nil
+	end
+	table.clear(self._contesters)
+	self._king = nil
+	if ActiveService == self then
+		ActiveService = nil
+	end
 end
 
 function KOTHService.TickAwardActive()

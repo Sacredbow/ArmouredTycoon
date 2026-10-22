@@ -27,6 +27,9 @@ local restoredSubject: Instance? = nil
 local flashGui: ScreenGui? = nil
 local terminalConnection: RBXScriptConnection? = nil
 local nukeLightingConnection: RBXScriptConnection? = nil
+local hasCinematicFocus = false
+local activeSessionId: string? = nil
+local nukeEffectGeneration = 0
 local launchStartedAt = 0
 local savedLighting: { ClockTime: number, Brightness: number, ExposureCompensation: number, Ambient: Color3, OutdoorAmbient: Color3 }? = nil
 
@@ -169,7 +172,22 @@ local function getRootPosition(): Vector3?
 	return nil
 end
 
-local function startLaunchCamera(sourcePosition: Vector3, targetPosition: Vector3, role: string?)
+local function isNearTarget(payload: any, multiplier: number): boolean
+	local targetPosition = payload.targetPosition
+	if typeof(targetPosition) ~= "Vector3" then
+		return false
+	end
+
+	local rootPosition = getRootPosition()
+	if not rootPosition then
+		return false
+	end
+
+	local deathRange = if typeof(payload.deathRange) == "number" then math.max(payload.deathRange, 0) else 900
+	return (rootPosition - targetPosition).Magnitude <= deathRange * multiplier
+end
+
+local function startLaunchCamera(sourcePosition: Vector3, targetPosition: Vector3, _role: string?)
 	local currentCamera = getCamera()
 	if not currentCamera then
 		return
@@ -207,7 +225,7 @@ local function startLaunchCamera(sourcePosition: Vector3, targetPosition: Vector
 	end)
 end
 
-local function startTerminalCuts(sourcePosition: Vector3, targetPosition: Vector3)
+local function startTerminalCuts(targetPosition: Vector3)
 	local currentCamera = getCamera()
 	if not currentCamera then
 		return
@@ -269,21 +287,57 @@ local function startTerminalCuts(sourcePosition: Vector3, targetPosition: Vector
 	end)
 end
 
-Packets.packets.NukeCinematic.listen(function(payload)
+local disconnectNukeCinematic = Packets.packets.NukeCinematic.listen(function(payload)
+	if typeof(payload.sessionId) ~= "string" or payload.sessionId == "" then
+		return
+	end
+	if payload.action == "Warning" then
+		if hasCinematicFocus then
+			restoreCamera()
+		end
+		activeSessionId = payload.sessionId
+		hasCinematicFocus = false
+		nukeEffectGeneration += 1
+		return
+	end
+	if activeSessionId ~= payload.sessionId then
+		return
+	end
 	if payload.action == "Focus" and payload.sourcePosition and payload.targetPosition then
+		hasCinematicFocus = true
+		nukeEffectGeneration += 1
+		local effectGeneration = nukeEffectGeneration
 		startLaunchCamera(payload.sourcePosition, payload.targetPosition, payload.role)
 		shaker:ShakeOnce(1.6, 4, 0.4, 3, Vector3.new(0.25, 0.22, 0.25), Vector3.new(0.7, 0.5, 0.7))
-		task.delay(5, tweenNukeNight)
-	elseif payload.action == "Phase" and payload.phase == "launch" then
+		task.delay(5, function()
+			if effectGeneration == nukeEffectGeneration then
+				tweenNukeNight()
+			end
+		end)
+	elseif payload.action == "Phase" and payload.phase == "launch" and (hasCinematicFocus or isNearTarget(payload, 2)) then
 		shaker:ShakeOnce(6.5, 11, 0.15, 5.5, Vector3.new(1.05, 0.85, 1.05), Vector3.new(3, 2, 3))
-	elseif payload.action == "Phase" and payload.phase == "terminal" and payload.sourcePosition and payload.targetPosition then
-		startTerminalCuts(payload.sourcePosition, payload.targetPosition)
+	elseif payload.action == "Phase" and payload.phase == "terminal" and hasCinematicFocus and payload.sourcePosition and payload.targetPosition then
+		startTerminalCuts(payload.targetPosition)
 	elseif payload.action == "MashStart" then
 		shaker:ShakeOnce(3.5, 8, 0.2, 9, Vector3.new(0.7, 0.55, 0.7), Vector3.new(2, 1.3, 2))
-	elseif payload.action == "Impact" then
+	elseif payload.action == "Impact" and isNearTarget(payload, 1.5) then
 		makeFlash()
 		shaker:ShakeOnce(13, 22, 0.05, 6, Vector3.new(1.8, 1.45, 1.8), Vector3.new(5, 3.6, 5))
 	elseif payload.action == "End" then
+		hasCinematicFocus = false
+		activeSessionId = nil
+		nukeEffectGeneration += 1
 		restoreCamera()
 	end
+end)
+
+script.Destroying:Connect(function()
+	if disconnectNukeCinematic then
+		disconnectNukeCinematic()
+		disconnectNukeCinematic = nil
+	end
+	hasCinematicFocus = false
+	activeSessionId = nil
+	nukeEffectGeneration += 1
+	restoreCamera()
 end)

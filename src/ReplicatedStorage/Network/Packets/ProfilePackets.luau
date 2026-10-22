@@ -2,6 +2,12 @@
 
 return function(ByteNet: any)
 	return {
+		ProfileState = ByteNet.definePacket({
+			value = ByteNet.struct({
+				payload = ByteNet.string,
+			}),
+		}),
+
 		StatSync = ByteNet.definePacket({
 			value = ByteNet.struct({
 				stat = ByteNet.string,

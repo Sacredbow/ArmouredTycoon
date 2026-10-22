@@ -2,6 +2,8 @@
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
 
 local Types = require(script.Parent.Parent.Core.Types)
 
@@ -203,7 +205,7 @@ function WorldQuery.IsPlayerArmed(root: BasePart?): boolean
 	end
 
 	for _, child in ipairs(player.Character:GetChildren()) do
-		if child:IsA("Tool") and child:FindFirstChild("ACS_Settings") then
+		if child:IsA("Tool") and WeaponDefinitionResolver.getSettings(child) ~= nil then
 			return true
 		end
 	end

@@ -3,9 +3,7 @@
 	@class FPSWeapons
 
 	@desc
-	Server-side weapon rigging and spawning for the ACS combat engine:
-	attachment loading, R6 weapon model construction, stance ECS state,
-	ammunition refill, and grenade spawning.
+	Server-side weapon rigging for the ACS combat engine: attachment loading, R6 weapon model construction, stance ECS state, and ammunition refill.
 ]]
 
 --// Services
@@ -22,11 +20,10 @@ const State = require(script.Parent.State)
 
 const Engine = ReplicatedStorage:WaitForChild("ACS_Engine")
 const GunModels = Engine:WaitForChild("GunModels") :: any
-const GrenadeModels = Engine:WaitForChild("GrenadeModels") :: any
 const AttModels = Engine:WaitForChild("AttModels") :: any
+const AttModules = Engine:WaitForChild("AttModules") :: any
 const Mods = Engine:WaitForChild("Modules") :: any
-const Ultil = require(Mods:WaitForChild("Utilities")) :: any
-const ACS_Workspace = workspace:WaitForChild("ACS_WorkSpace") :: any
+const Utilities = require(Mods:WaitForChild("Utilities")) :: any
 
 --// Internal Methods — Attachments
 
@@ -80,7 +77,7 @@ local function LoadAttachment(Weapon: any, WeaponData: any)
 				if not Key:IsA("BasePart") then
 					continue
 				end
-				Ultil.Weld(Handle, Key)
+				Utilities.Weld(Handle, Key)
 				Key.Anchored = false
 				Key.CanCollide = false
 			end
@@ -103,7 +100,7 @@ local function LoadAttachment(Weapon: any, WeaponData: any)
 				if not Key:IsA("BasePart") then
 					continue
 				end
-				Ultil.Weld(Handle, Key)
+				Utilities.Weld(Handle, Key)
 				Key.Anchored = false
 				Key.CanCollide = false
 			end
@@ -120,7 +117,7 @@ local function LoadAttachment(Weapon: any, WeaponData: any)
 				if not Key:IsA("BasePart") then
 					continue
 				end
-				Ultil.Weld(Handle, Key)
+				Utilities.Weld(Handle, Key)
 				Key.Anchored = false
 				Key.CanCollide = false
 			end
@@ -137,7 +134,7 @@ local function LoadAttachment(Weapon: any, WeaponData: any)
 				if not Key:IsA("BasePart") then
 					continue
 				end
-				Ultil.Weld(Handle, Key)
+				Utilities.Weld(Handle, Key)
 				Key.Anchored = false
 				Key.CanCollide = false
 			end
@@ -147,7 +144,43 @@ end
 
 --// Internal Methods — Rig state
 
-type ActiveRig = { tool: Tool, character: Model, model: Model, animBase: BasePart }
+local function ReadCombatState(WeaponData: any): any
+	local state = {
+		DamageMod = 1,
+		minDamageMod = 1,
+		suppressor = false,
+		flashHider = false,
+	}
+	if type(WeaponData) ~= "table" then
+		return state
+	end
+
+	local function readMultiplier(value: any): number
+		if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
+			return 1
+		end
+		return math.clamp(value, 0.1, 1)
+	end
+	for _, attachmentName in { WeaponData.SightAtt, WeaponData.BarrelAtt, WeaponData.UnderBarrelAtt, WeaponData.OtherAtt } do
+		if type(attachmentName) ~= "string" or attachmentName == "" then
+			continue
+		end
+		local module = AttModules:FindFirstChild(attachmentName)
+		if not module or not module:IsA("ModuleScript") then
+			continue
+		end
+		local success, attachmentData = pcall(require, module)
+		if not success or type(attachmentData) ~= "table" then
+			continue
+		end
+		state.DamageMod *= readMultiplier(attachmentData.DamageMod)
+		state.minDamageMod *= readMultiplier(attachmentData.minDamageMod)
+		state.suppressor = state.suppressor or attachmentData.IsSuppressor == true
+		state.flashHider = state.flashHider or attachmentData.IsFlashHider == true
+	end
+	return state
+end
+type ActiveRig = { tool: Tool, character: Model, model: Model, animBase: BasePart, combatState: any }
 local ActiveRigs: { [Player]: ActiveRig } = setmetatable({}, { __mode = "k" })
 
 local function SetWeaponRigEntity(Player: Player, Character: Model, Weapon: Tool, ServerGun: Model, AnimBase: BasePart)
@@ -181,250 +214,10 @@ local function ClearWeaponRigEntity(Player: Player)
 
 end
 
---// Public API — Equip / Unequip
-
-local function ClearEquippedRig(Player: Player, expectedWeapon: Tool?): boolean
-	local rig = ActiveRigs[Player]
-	if not rig or (expectedWeapon and rig.tool ~= expectedWeapon) then
-		return false
-	end
-	ActiveRigs[Player] = nil
-	rig.model:Destroy()
-	rig.animBase:Destroy()
-	local torso = rig.character:FindFirstChild("Torso")
-	if torso then
-		local rightShoulder = torso:FindFirstChild("Right Shoulder")
-		local leftShoulder = torso:FindFirstChild("Left Shoulder")
-		if rightShoulder and rightShoulder:IsA("Motor6D") then
-			rightShoulder.Enabled = true
-		end
-		if leftShoulder and leftShoulder:IsA("Motor6D") then
-			leftShoulder.Enabled = true
-		end
-	end
-	ClearWeaponRigEntity(Player)
-	return true
-end
-
-function Equip(Player: Player, Weapon: Tool, Mode: number, Settings: any, Anim: { [string]: CFrame })
-	if Mode == 2 then
-		ClearEquippedRig(Player, Weapon)
-		return
-	end
-	const Character = Player.Character
-	if not Character then
-		return
-	end
-
-	const Head = Character:FindFirstChild("Head")
-	const Torso = Character:FindFirstChild("Torso")
-	const LeftArm = Character:FindFirstChild("Left Arm")
-	const RightArm = Character:FindFirstChild("Right Arm")
-	if not Head or not Torso or not LeftArm or not RightArm then
-		return
-	end
-
-	const RS = Torso:FindFirstChild("Right Shoulder")
-	const LS = Torso:FindFirstChild("Left Shoulder")
-	if not RS or not LS then
-		return
-	end
-
-	--// EQUIP
-	if Mode == 1 then
-		local activeRig = ActiveRigs[Player]
-		if activeRig and activeRig.tool == Weapon and activeRig.character == Character
-			and activeRig.model.Parent == Character and activeRig.animBase.Parent == Character then
-			return
-		end
-		ClearEquippedRig(Player)
-
-		const GunModel = GunModels:FindFirstChild(Weapon.Name)
-		if not GunModel then
-			warn(`[ACS] {Player.Name}: Couldn't load server-side weapon model`)
-			return
-		end
-
-		local ServerGun = GunModel:Clone()
-		ServerGun.Name = "S" .. Weapon.Name
-
-		const ServerHandle = ServerGun:FindFirstChild("Handle")
-		if not ServerHandle then
-			warn(`[ACS] {Player.Name}: server gun model {Weapon.Name} is missing a Handle; aborting equip`)
-			ServerGun:Destroy()
-			return
-		end
-
-		const AnimBase = Instance.new("Part", Character)
-		AnimBase.CanCollide = false
-		AnimBase.Transparency = 1
-		AnimBase.Anchored = false
-		AnimBase.Name = "AnimBase"
-		AnimBase.Size = Vector3.new(0.1, 0.1, 0.1)
-
-		local AnimBaseW = Instance.new("Motor6D")
-		AnimBaseW.Part0 = Head :: BasePart
-		AnimBaseW.Part1 = AnimBase
-		AnimBaseW.Parent = AnimBase
-		AnimBaseW.Name = "AnimBaseW"
-
-		local Raw = Instance.new("Motor6D")
-		Raw.Name = "RAW"
-		Raw.Part0 = RightArm :: BasePart
-		Raw.Part1 = AnimBase
-		Raw.Parent = AnimBase
-		Raw.C0 = Anim.SV_RightArmPos
-		RS.Enabled = false
-
-		local Law = Instance.new("Motor6D")
-		Law.Name = "LAW"
-		Law.Part0 = LeftArm :: BasePart
-		Law.Part1 = AnimBase
-		Law.Parent = AnimBase
-		Law.C0 = Anim.SV_LeftArmPos
-		LS.Enabled = false
-
-		ServerGun.Parent = Character
-		LoadAttachment(ServerGun, Settings)
-
-		const Nodes = ServerGun:FindFirstChild("Nodes")
-		if Nodes then
-			Nodes:Destroy()
-		end
-
-		for _, Descendant in ServerGun:GetDescendants() do
-			if Descendant.Name == "SightMark" then
-				Descendant:Destroy()
-			end
-		end
-
-for _, Descendant in ServerGun:GetDescendants() do
-			if not Descendant:IsA("BasePart") or Descendant.Name == "Handle" then
-				continue
-			end
-			Ultil.WeldComplex(ServerHandle, Descendant, Descendant.Name)
-		end
-
-		local HandleMotor = Instance.new("Motor6D")
-		HandleMotor.Name = "Handle"
-		HandleMotor.Parent = ServerHandle
-		HandleMotor.Part0 = RightArm :: BasePart
-		HandleMotor.Part1 = ServerHandle
-		HandleMotor.C1 = Anim.SV_GunPos:Inverse()
-
-		for _, Descendant in ServerGun:GetDescendants() do
-			if not Descendant:IsA("BasePart") then
-				continue
-			end
-			Descendant.Anchored = false
-			Descendant.CanCollide = false
-		end
-
-		ActiveRigs[Player] = { tool = Weapon, character = Character, model = ServerGun, animBase = AnimBase }
-		SetWeaponRigEntity(Player, Character, Weapon, ServerGun, AnimBase)
-		return
-	end
-
-end
-
---// Public API — Stance
-
-function SetStanceState(Player: Player, Character: Model, Stance: number, Lean: number)
-	local Entity = State.WeaponRigEntities[Player]
-	if not Entity then
-		Entity = ECS.createEntity({
-			Name = `{Player.Name}:StanceState`,
-			Character = Character,
-		})
-		State.WeaponRigEntities[Player] = Entity
-	end
-
-	ECS.set(Entity, "StanceState", {
-		player = Player,
-		character = Character,
-		stance = Stance,
-		lean = Lean,
-		updatedAt = os.clock(),
-	})
-
-end
-
---// Public API — Grenades
-
-function SpawnGrenade(
-	Player: Player,
-	GrenadeTool: Tool,
-	WeaponSettings: any,
-	SpawnCFrame: CFrame,
-	ImpulseDirection: Vector3,
-	ImpulsePower: number
-)
-	const Character = Player.Character
-	if not Character then
-		return
-	end
-
-const Template = GrenadeModels:FindFirstChild(WeaponSettings.gunName)
-	if not Template then
-		warn(`[ACS] Couldn't find {WeaponSettings.gunName} in grenade model folder`)
-		return
-	end
-
-	-- Sanitise client-controlled numeric inputs (NaN / huge / negative).
-	if typeof(ImpulsePower) ~= "number" or ImpulsePower ~= ImpulsePower
-		or math.abs(ImpulsePower) == math.huge or ImpulsePower < 0 then
-		warn(`[FPS.Weapons] {Player.Name} sent invalid grenade impulse power`)
-		return
-	end
-
-	if typeof(ImpulseDirection) ~= "Vector3" or ImpulseDirection.Magnitude == 0 then
-		warn(`[FPS.Weapons] {Player.Name} sent invalid grenade impulse direction`)
-		return
-	end
-
-	const GrenadeModel = Template:Clone()
-	if not GrenadeModel.PrimaryPart then
-		return
-	end
-
-	const GrenadePrimaryPart = GrenadeModel.PrimaryPart :: any
-
-	for _, CharacterPart in Character:GetChildren() do
-		if not CharacterPart:IsA("BasePart") then
-			continue
-		end
-		const NoCollisionConstraint = Instance.new("NoCollisionConstraint")
-		NoCollisionConstraint.Parent = GrenadeModel
-		NoCollisionConstraint.Part0 = GrenadePrimaryPart
-		NoCollisionConstraint.Part1 = CharacterPart
-	end
-
-	const CreatorTag = Instance.new("ObjectValue")
-	CreatorTag.Name = "creator"
-	CreatorTag.Value = Player
-	CreatorTag.Parent = GrenadePrimaryPart
-
-	const ServerFolder = ACS_Workspace:FindFirstChild("Server")
-	GrenadeModel.Parent = if ServerFolder then ServerFolder else workspace
-
-	GrenadePrimaryPart.CFrame = SpawnCFrame
-	GrenadePrimaryPart:ApplyImpulse(ImpulseDirection.Unit * ImpulsePower * GrenadePrimaryPart:GetMass())
-	GrenadePrimaryPart:SetNetworkOwner(nil)
-
-	const Damage = GrenadePrimaryPart:FindFirstChild("Damage")
-	if Damage and Damage:IsA("BoolValue") then
-		Damage.Value = false
-	end
-
-	if GrenadeTool.Parent then
-		GrenadeTool:Destroy()
-	end
-end
-
 return {
 	Equip = Equip,
 	ClearEquippedRig = ClearEquippedRig,
 	SetStanceState = SetStanceState,
-	SpawnGrenade = SpawnGrenade,
+	GetCombatState = GetCombatState,
 }
 

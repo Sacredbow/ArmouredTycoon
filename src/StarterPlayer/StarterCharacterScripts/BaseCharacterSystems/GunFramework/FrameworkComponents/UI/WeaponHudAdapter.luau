@@ -154,7 +154,9 @@ function WeaponHudAdapter.update(
 	safeMode: boolean,
 	suppressor: boolean,
 	bipodAttached: boolean,
-	sensitivity: number
+	sensitivity: number,
+	shootType: number?,
+	jammed: boolean?
 )
 	-- Keep visual update logic in one place. Main only publishes state and calls
 	-- this adapter after ammo/safety/attachment changes.
@@ -177,9 +179,9 @@ function WeaponHudAdapter.update(
 	local currentAmmo = math.max(ammo or 0, 0)
 	local maxAmmo = math.max(weaponData.Ammo or 0, 0)
 	hud.B.Visible = true
-	hud.FText.Text = FIREMODE_NAMES[weaponData.ShootType or 1] or "Semi"
+	hud.FText.Text = FIREMODE_NAMES[shootType or weaponData.ShootType or 1] or "Semi"
 	setText(hud, { "AText", "AmmoText", "CurrentAmmo", "AmmoCount" }, tostring(currentAmmo))
-	tweenAmmoBar(hud, currentAmmo, maxAmmo, weaponData.Jammed)
+	tweenAmmoBar(hud, currentAmmo, maxAmmo, jammed or weaponData.Jammed)
 
 	if weaponData.EnableZeroing then
 		hud.ZeText.Visible = true

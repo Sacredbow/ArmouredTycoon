@@ -2,19 +2,18 @@
 -- ACS equipment requests. Authored settings and transforms are loaded on the server.
 
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const Packets = require(ReplicatedStorage.Network.Packets)
+const WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
 
 const Weapons = require(script.Parent.Parent.Core.Weapons)
 const NetworkGuard = require(script.Parent.Parent.Parent.Services.Networking.NetworkGuard)
 
-const Engine = ReplicatedStorage:WaitForChild("ACS_Engine")
-const Events = Engine:WaitForChild("Events") :: any
 const EQUIP_POLICY = { Rate = 12, Burst = 20 }
 
 function Bind()
-	Events.Equip.OnServerEvent:Connect(function(player: Player, weapon: Tool?, mode: number)
-		if not NetworkGuard.Allow(player, "ACSEquip", EQUIP_POLICY, weapon) then
-			return
-		end
+	NetworkGuard.Listen(Packets.packets.EquipIntent, "ACSCombat.EquipIntent", EQUIP_POLICY, function(data, player)
+		local weapon = data.weapon
+		local mode = data.mode
 		if typeof(mode) ~= "number" or mode ~= math.floor(mode) or (mode ~= 1 and mode ~= 2) then
 			return
 		end
@@ -30,9 +29,8 @@ function Bind()
 		if mode ~= 1 or not character or weapon.Parent ~= character then
 			return
 		end
-
-		local settingsModule = weapon:FindFirstChild("ACS_Settings")
-		local animationsModule = weapon:FindFirstChild("ACS_Animations")
+		local settingsModule = WeaponDefinitionResolver.getSettings(weapon)
+		local animationsModule = WeaponDefinitionResolver.getAnimations(weapon)
 		if not settingsModule or not settingsModule:IsA("ModuleScript")
 			or not animationsModule or not animationsModule:IsA("ModuleScript") then
 			return

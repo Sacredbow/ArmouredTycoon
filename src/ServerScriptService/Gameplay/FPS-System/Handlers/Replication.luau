@@ -8,27 +8,26 @@
 
 const Players = game:GetService("Players")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const Observers = require(ReplicatedStorage.Packages.Observers)
 
 const Security = require(script.Parent.Parent.Core.Security)
 const ShotAuthority = require(script.Parent.Parent.Core.ShotAuthority)
+const Weapons = require(script.Parent.Parent.Core.Weapons)
 const NetworkGuard = require(script.Parent.Parent.Parent.Parent.Services.Networking.NetworkGuard)
-
-const Engine = ReplicatedStorage:WaitForChild("ACS_Engine")
-const Events = Engine:WaitForChild("Events") :: any
+const Packets = require(ReplicatedStorage.Network.Packets)
 
 const THROTTLE_RATE = 30
 const THROTTLE_WINDOW = 1 / THROTTLE_RATE
 const MAX_EFFECT_RANGE = 7000
-const MAX_ORIGIN_OFFSET = 32
+const MAX_ORIGIN_OFFSET = 12
 
 const REPLICATION_POLICIES = {
 	HitEffect = { Rate = 30, Burst = 45 },
 	GunStance = { Rate = 20, Burst = 30 },
-	ServerBullet = { Rate = 30, Burst = 45 },
-	HeadRot = { Rate = 30, Burst = 45 },
-	SVLaser = { Rate = 30, Burst = 45 },
+	ProjectileIntent = { Rate = 30, Burst = 45 },
+	SVLaser = { Rate = 15, Burst = 20 },
 	SVFlash = { Rate = 20, Burst = 30 },
-	Atirar = { Rate = 30, Burst = 45 },
+	WeaponFireIntent = { Rate = 30, Burst = 45 },
 	Whizz = { Rate = 10, Burst = 20 },
 	Suppression = { Rate = 10, Burst = 20 },
 }
@@ -73,21 +72,14 @@ local function getAliveRoot(player: Player): BasePart?
 	return getRoot(player)
 end
 
-local function fireNearby(event: any, sourcePlayer: Player, center: Vector3?, ...)
-	local sourceRoot = getRoot(sourcePlayer)
-	local centerPosition = center or (sourceRoot and sourceRoot.Position)
-	if not centerPosition then
-		return
-	end
-
+local function sendNearby(packet: any, center: Vector3, payload: any)
 	for _, recipient in Players:GetPlayers() do
 		local recipientRoot = getRoot(recipient)
-		if recipientRoot and (recipientRoot.Position - centerPosition).Magnitude <= MAX_EFFECT_RANGE then
-			event:FireClient(recipient, ...)
+		if recipientRoot and (recipientRoot.Position - center).Magnitude <= MAX_EFFECT_RANGE then
+			packet.sendTo(payload, recipient)
 		end
 	end
 end
-
 local function getEquippedTool(player: Player, requested: Tool?): Tool?
 	local character = player.Character
 	if not character then
@@ -112,49 +104,6 @@ local function getServerSettings(player: Player, requested: Tool?): (Tool?, any?
 	return weapon, Security.SecureSettings(player, weapon)
 end
 
-local function secureTracerModifiers(modifiers: any): { [string]: number }?
-	if type(modifiers) ~= "table" then
-		return nil
-	end
-	local muzzleVelocity = modifiers.MuzzleVelocity
-	local walkMult = modifiers.WalkMult
-	if not finiteNumber(muzzleVelocity) then
-		muzzleVelocity = 1
-	else
-		muzzleVelocity = math.clamp(muzzleVelocity, 0.2, 2)
-	end
-	if not finiteNumber(walkMult) then
-		walkMult = 1
-	else
-		walkMult = math.clamp(walkMult, 0.2, 2)
-	end
-	return {
-		MuzzleVelocity = muzzleVelocity,
-		WalkMult = walkMult,
-	}
-end
-local function getServerAnimations(weapon: Tool): any?
-	local module = weapon:FindFirstChild("ACS_Animations")
-	if not module or not module:IsA("ModuleScript") then
-		return nil
-	end
-	local success, animations = pcall(require, module)
-	if not success or type(animations) ~= "table" then
-		return nil
-	end
-	local required = {
-		"SV_RightArmPos", "SV_LeftArmPos", "RightAim", "LeftAim",
-		"RightHighReady", "LeftHighReady", "RightLowReady", "LeftLowReady",
-		"RightPatrol", "LeftPatrol",
-	}
-	for _, key in required do
-		if not finiteCFrame(animations[key]) then
-			return nil
-		end
-	end
-	return animations
-end
-
 local function CanBroadcast(player: Player, category: string): boolean
 	local now = os.clock()
 	local playerThrottle = LastSentAt[player]
@@ -170,201 +119,169 @@ local function CanBroadcast(player: Player, category: string): boolean
 	return true
 end
 
-Players.PlayerRemoving:Connect(function(player)
-	LastSentAt[player] = nil
+Observers.observePlayer(function(player: Player)
+	return function()
+		LastSentAt[player] = nil
+	end
 end)
 
 function Bind()
-	Events.HitEffect.OnServerEvent:Connect(function(
-		player: Player,
-		position: Vector3,
-		hitPart: Instance,
-		normal: Vector3,
-		material: Enum.Material,
-		_clientSettings: any
-	)
+	NetworkGuard.Listen(Packets.packets.HitEffectIntent, "ACSReplication.HitEffectIntent", REPLICATION_POLICIES.HitEffect, function(data, player)
 		local root = getAliveRoot(player)
-		if not NetworkGuard.Allow(player, 'ACSReplication.HitEffect', REPLICATION_POLICIES.HitEffect, nil) then
+		local weapon, settings = getServerSettings(player, nil)
+		local material = if typeof(data.material) == "string" then Enum.Material[data.material] else nil
+		if not root or not settings or not material or not finiteVector(data.position) or (data.position - root.Position).Magnitude > MAX_EFFECT_RANGE then
 			return
 		end
-		local _, settings = getServerSettings(player, nil)
-		if not root or not settings or not finiteVector(position) or (position - root.Position).Magnitude > MAX_EFFECT_RANGE then
-			return
-		end
-		if not hitPart or not hitPart:IsDescendantOf(workspace) or not finiteVector(normal) or normal.Magnitude < 0.1 or normal.Magnitude > 1.1 then
-			return
-		end
-		if typeof(material) ~= "EnumItem" or material.EnumType ~= Enum.Material then
+		if not data.hitPart or not data.hitPart:IsDescendantOf(workspace) or not finiteVector(data.normal) or data.normal.Magnitude < 0.1 or data.normal.Magnitude > 1.1 then
 			return
 		end
 		if not CanBroadcast(player, "HitEffect") then
 			return
 		end
-		fireNearby(Events.HitEffect, player, position, player, position, hitPart, normal, material, settings)
+		sendNearby(Packets.packets.HitEffectPresentation, data.position, {
+			shooterUserId = player.UserId,
+			weapon = weapon,
+			position = data.position,
+			hitPart = data.hitPart,
+			normal = data.normal,
+			material = data.material,
+		})
 	end)
 
-	Events.GunStance.OnServerEvent:Connect(function(player: Player, stance: number, _clientData: any)
-		if not NetworkGuard.Allow(player, 'ACSReplication.GunStance', REPLICATION_POLICIES.GunStance, nil) then
+	NetworkGuard.Listen(Packets.packets.GunStanceIntent, "ACSReplication.GunStanceIntent", REPLICATION_POLICIES.GunStance, function(data, player)
+		if data.stance ~= -2 and data.stance ~= -1 and data.stance ~= 0 and data.stance ~= 1 and data.stance ~= 2 then
 			return
 		end
-		if stance ~= -2 and stance ~= -1 and stance ~= 0 and stance ~= 1 and stance ~= 2 then
-			return
-		end
+		local root = getAliveRoot(player)
 		local weapon = getEquippedTool(player, nil)
-		local animations = weapon and getServerAnimations(weapon)
-		if not getAliveRoot(player) or not weapon or not animations then
+		if not root or not weapon then
 			return
 		end
 		if not CanBroadcast(player, "GunStance") then
 			return
 		end
-		fireNearby(Events.GunStance, player, nil, player, stance, animations)
+		sendNearby(Packets.packets.GunStancePresentation, root.Position, {
+			shooterUserId = player.UserId,
+			stance = data.stance,
+		})
 	end)
 
-	Events.ServerBullet.OnServerEvent:Connect(function(
-		player: Player,
-		origin: Vector3,
-		direction: Vector3,
-		_requestedWeaponData: any,
-		modifierTable: any
-	)
+	NetworkGuard.Listen(Packets.packets.ProjectileIntent, "ACSReplication.ProjectileIntent", REPLICATION_POLICIES.ProjectileIntent, function(data, player)
 		local root = getAliveRoot(player)
-		if not NetworkGuard.Allow(player, 'ACSReplication.ServerBullet', REPLICATION_POLICIES.ServerBullet, nil) then
-			return
-		end
 		local weapon, settings = getServerSettings(player, nil)
-		local modifiers = secureTracerModifiers(modifierTable)
-		if not root or not weapon or not settings or not modifiers or not finiteVector(origin) or not finiteVector(direction) then
+		local muzzleVelocity = data.muzzleVelocity
+		if not root or not weapon or not settings or not finiteVector(data.origin) or not finiteVector(data.direction) or not finiteNumber(muzzleVelocity) then
 			return
 		end
-		if (origin - root.Position).Magnitude > MAX_ORIGIN_OFFSET or direction.Magnitude < 0.001 or direction.Magnitude > 2 then
+		if (data.origin - root.Position).Magnitude > MAX_ORIGIN_OFFSET or data.direction.Magnitude < 0.001 or data.direction.Magnitude > 2 then
 			return
 		end
-		if not CanBroadcast(player, "ServerBullet") then
+		if not CanBroadcast(player, "ProjectileIntent") then
 			return
 		end
-		local tracerData = {
-			Tracer = settings.Tracer == true,
-			BulletFlare = settings.BulletFlare == true,
-			TracerColor = settings.TracerColor,
-			MuzzleVelocity = settings.MuzzleVelocity,
-		}
-		local tracerModifiers = {
-			MuzzleVelocity = modifiers.MuzzleVelocity,
-		}
-		fireNearby(Events.ServerBullet, player, origin, player, origin, direction.Unit, tracerData, tracerModifiers)
+
+		local safeVelocity = math.clamp(muzzleVelocity, 0.2, 2)
+		sendNearby(Packets.packets.ProjectilePresentation, data.origin, {
+			shooterUserId = player.UserId,
+			origin = data.origin,
+			direction = data.direction.Unit,
+			tracer = settings.Tracer == true,
+			bulletFlare = settings.BulletFlare == true,
+			tracerColor = if finiteColor(settings.TracerColor) then settings.TracerColor else Color3.new(1, 1, 1),
+			muzzleVelocity = safeVelocity,
+		})
 	end)
 
-	Events.HeadRot.OnServerEvent:Connect(function(player: Player, cframe: CFrame, aimPitch: number?, aiming: boolean?)
-		if not NetworkGuard.Allow(player, 'ACSReplication.HeadRot', REPLICATION_POLICIES.HeadRot, nil) then
-			return
-		end
-		if not getAliveRoot(player) or not finiteCFrame(cframe) or (aimPitch ~= nil and not finiteNumber(aimPitch)) or (aiming ~= nil and typeof(aiming) ~= "boolean") then
-			return
-		end
-		if not CanBroadcast(player, "HeadRot") then
-			return
-		end
-		fireNearby(Events.HeadRot, player, nil, player, cframe, if aimPitch then math.clamp(aimPitch, -1.1, 1.1) else nil, aiming)
-	end)
-
-	Events.SVLaser.OnServerEvent:Connect(function(
-		player: Player,
-		position: Vector3?,
-		mode: number,
-		color: Color3?,
-		irMode: boolean?,
-		requestedWeapon: Tool
-	)
-		local weapon = getEquippedTool(player, requestedWeapon)
-		if not NetworkGuard.Allow(player, 'ACSReplication.SVLaser', REPLICATION_POLICIES.SVLaser, nil) then
-			return
-		end
+	NetworkGuard.Listen(Packets.packets.LaserIntent, "ACSReplication.LaserIntent", REPLICATION_POLICIES.SVLaser, function(data, player)
 		local root = getAliveRoot(player)
-		if not root or not weapon or (mode ~= 1 and mode ~= 2) then
+		local weapon = getEquippedTool(player, data.weapon)
+		if not root or not weapon or (data.mode ~= 1 and data.mode ~= 2) then
 			return
 		end
-		if mode == 1 and (not position or not color or not finiteVector(position) or not finiteColor(color) or (position - root.Position).Magnitude > MAX_EFFECT_RANGE) then
+		if data.mode == 1 and (not data.position or not data.color or not finiteVector(data.position) or not finiteColor(data.color) or (data.position - root.Position).Magnitude > MAX_EFFECT_RANGE) then
 			return
 		end
-		if irMode ~= nil and typeof(irMode) ~= "boolean" then
+		if typeof(data.infrared) ~= "boolean" then
 			return
 		end
 		if not CanBroadcast(player, "SVLaser") then
 			return
 		end
-		fireNearby(Events.SVLaser, player, position, player, position, mode, color, irMode, weapon)
+		sendNearby(Packets.packets.LaserPresentation, data.position or root.Position, {
+			shooterUserId = player.UserId,
+			weapon = weapon,
+			position = data.position,
+			mode = data.mode,
+			color = data.color,
+			infrared = data.infrared,
+		})
 	end)
 
-	Events.SVFlash.OnServerEvent:Connect(function(player: Player, requestedWeapon: Tool, mode: boolean)
-		if not NetworkGuard.Allow(player, 'ACSReplication.SVFlash', REPLICATION_POLICIES.SVFlash, nil) then
-			return
-		end
-		local weapon = getEquippedTool(player, requestedWeapon)
-		if not getAliveRoot(player) or not weapon or typeof(mode) ~= "boolean" then
+	NetworkGuard.Listen(Packets.packets.FlashIntent, "ACSReplication.FlashIntent", REPLICATION_POLICIES.SVFlash, function(data, player)
+		local root = getAliveRoot(player)
+		local weapon = getEquippedTool(player, data.weapon)
+		if not root or not weapon or typeof(data.enabled) ~= "boolean" then
 			return
 		end
 		if not CanBroadcast(player, "SVFlash") then
 			return
 		end
-		fireNearby(Events.SVFlash, player, nil, player, weapon, mode)
+		sendNearby(Packets.packets.FlashPresentation, root.Position, {
+			shooterUserId = player.UserId,
+			weapon = weapon,
+			enabled = data.enabled,
+		})
 	end)
 
-	Events.Atirar.OnServerEvent:Connect(function(player: Player, weapon: Tool, suppressor: boolean, flashHider: boolean)
-		if not NetworkGuard.Allow(player, 'ACSReplication.Atirar', REPLICATION_POLICIES.Atirar, nil) then
+	NetworkGuard.Listen(Packets.packets.WeaponFireIntent, "ACSReplication.WeaponFireIntent", REPLICATION_POLICIES.WeaponFireIntent, function(data, player)
+		local root = getAliveRoot(player)
+		local weapon = getEquippedTool(player, data.weapon)
+		local combatState = Weapons.GetCombatState(player, weapon)
+		if not root or not weapon or not combatState or not ShotAuthority.RecordShot(player, weapon) then
 			return
 		end
-		if typeof(suppressor) ~= "boolean" or typeof(flashHider) ~= "boolean" or not ShotAuthority.RecordShot(player, weapon) then
+		if not CanBroadcast(player, "WeaponFireIntent") then
 			return
 		end
-		if not CanBroadcast(player, "Atirar") then
-			return
-		end
-		fireNearby(Events.Atirar, player, nil, player, weapon, suppressor, flashHider)
+		sendNearby(Packets.packets.WeaponFirePresentation, root.Position, {
+			shooterUserId = player.UserId,
+			weapon = weapon,
+			suppressor = combatState.suppressor == true,
+			flashHider = combatState.flashHider == true,
+		})
 	end)
-
-	Events.Whizz.OnServerEvent:Connect(function(player: Player, victim: Player)
-		if not NetworkGuard.Allow(player, 'ACSReplication.Whizz', REPLICATION_POLICIES.Whizz, nil) then
-			return
-		end
+	NetworkGuard.Listen(Packets.packets.WhizzIntent, "ACSReplication.WhizzIntent", REPLICATION_POLICIES.Whizz, function(data, player)
+		local victim = data.victim
 		local sourceRoot = getAliveRoot(player)
-		local victimRoot = victim and victim:IsA("Player") and getAliveRoot(victim)
+		local victimRoot = if victim and victim:IsA("Player") then getAliveRoot(victim) else nil
 		if not sourceRoot or not victimRoot or victim == player or (sourceRoot.Position - victimRoot.Position).Magnitude > MAX_EFFECT_RANGE then
 			return
 		end
 		if not CanBroadcast(player, "Whizz") then
 			return
 		end
-		Events.Whizz:FireClient(victim)
+		Packets.packets.WhizzPresentation.sendTo({
+			shooterUserId = player.UserId,
+		}, victim)
 	end)
 
-	Events.Suppression.OnServerEvent:Connect(function(player: Player, victim: Player, mode: number, intensity: number?, time: number?)
-		if not NetworkGuard.Allow(player, 'ACSReplication.Suppression', REPLICATION_POLICIES.Suppression, nil) then
-			return
-		end
+	NetworkGuard.Listen(Packets.packets.SuppressionIntent, "ACSReplication.SuppressionIntent", REPLICATION_POLICIES.Suppression, function(data, player)
+		local victim = data.victim
 		local sourceRoot = getAliveRoot(player)
-		local victimRoot = victim and victim:IsA("Player") and getAliveRoot(victim)
-		if
-			not sourceRoot
-			or not victim
-			or not victim:IsA("Player")
-			or not victimRoot
-			or victim == player
-			or (sourceRoot.Position - victimRoot.Position).Magnitude > MAX_EFFECT_RANGE
-			or mode ~= 1
-			or (intensity ~= nil and not finiteNumber(intensity))
-			or (time ~= nil and not finiteNumber(time))
-		then
+		local victimRoot = if victim and victim:IsA("Player") then getAliveRoot(victim) else nil
+		if not sourceRoot or not victimRoot or victim == player or (sourceRoot.Position - victimRoot.Position).Magnitude > MAX_EFFECT_RANGE or data.mode ~= 1 or (data.intensity ~= nil and not finiteNumber(data.intensity)) or (data.time ~= nil and not finiteNumber(data.time)) then
 			return
 		end
-
 		if not CanBroadcast(player, "Suppression") then
 			return
 		end
 
-		local safeIntensity = math.clamp(intensity or 1, 0, 1)
-		local safeTime = math.clamp(time or 1, 0.05, 5)
-		Events.Suppression:FireClient(victim, mode, safeIntensity, safeTime)
+		Packets.packets.SuppressionPresentation.sendTo({
+			mode = data.mode,
+			intensity = math.clamp(data.intensity or 1, 0, 1),
+			duration = math.clamp(data.time or 1, 0.05, 5),
+		}, victim)
 	end)
 end
 

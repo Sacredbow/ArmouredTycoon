@@ -13,9 +13,9 @@
 --// Services
 
 const Players = game:GetService("Players") 
-const ServerScriptService = game:GetService("ServerScriptService")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local LoggingEvent = require(ServerScriptService.Signals.LogSignal)
+local LoggingEvent = require(ReplicatedStorage.Packages.signal).get("ServerLogging")
 
 --// Public API
 

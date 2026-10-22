@@ -11,13 +11,13 @@
 --// Services
 
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const Packets = require(ReplicatedStorage.Network.Packets)
+const WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
 const SoundService = game:GetService("SoundService")
 const ServerStorage = game:GetService("ServerStorage")
 
 --// Constants
 
-const Engine = ReplicatedStorage:WaitForChild("ACS_Engine")
-const Events = Engine:WaitForChild("Events")
 const SFX = SoundService.SFX
 const RefillSound = SFX.Common.Interactions.RefillSound
 
@@ -50,7 +50,7 @@ function ReloadConfig.onPromptTriggered(Player: Player)
 		if not Child:IsA("Tool") then
 			return
 		end
-		local SettingsModule = Child:FindFirstChild("ACS_Settings")
+		local SettingsModule = WeaponDefinitionResolver.getSettings(Child)
 		local ClientState = Child:FindFirstChild("ACS_Client")
 		local StoredValue = ClientState and ClientState:FindFirstChild("Stored")
 		local TotalMagsValue = ClientState and ClientState:FindFirstChild("TotalMags")
@@ -61,7 +61,7 @@ function ReloadConfig.onPromptTriggered(Player: Player)
 
 			if GunSettings.Type == "Gun" and CompatibleAmmo then
 				StoredValue.Value = TotalMagsValue.Value
-				Events.Refil:FireClient(Player, Child, Infinite, Stored)
+				Packets.packets.RefillPresentation.sendTo({ tool = Child, infinite = Infinite, amount = if Stored:IsA("NumberValue") then Stored.Value else 0 }, Player)
 				RefillSound:Play()
 			end
 		end

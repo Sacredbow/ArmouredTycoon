@@ -17,6 +17,9 @@
 
 const TweenService = game:GetService("TweenService")
 const UserInputService = game:GetService("UserInputService")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+const Packets = PacketBootstrap.Get()
 
 --// Micro-Optimisations
 
@@ -38,8 +41,6 @@ export type RenderContext = {
 	featureFlags: any,
 	runtime: any,
 	gameRules: any,
-	events: any,
-
 	-- Raycast ignore list (shared with CastController)
 	ignoreModel: { Instance },
 
@@ -86,6 +87,11 @@ export type RenderController = typeof(setmetatable({} :: {
 	_cachedWeapon: Instance?,
 	_sightMarks: { BasePart },
 	_laserPoints: { BasePart },
+	_aimPart: BasePart?,
+	_nvAim: Instance?,
+	_cachedPointer: Part?,
+	_pointerBeam: Beam?,
+	_reticleBorders: { [BasePart]: GuiObject? },
 	_lastFovTarget: number?,
 	_fovTween: Tween?,
 }, RenderController))
@@ -97,9 +103,28 @@ function RenderController.new(camera: Camera, ctx: RenderContext): RenderControl
 		_cachedWeapon = nil,
 		_sightMarks = {},
 		_laserPoints = {},
+		_aimPart = nil,
+		_nvAim = nil,
+		_cachedPointer = nil,
+		_pointerBeam = nil,
+		_reticleBorders = {},
 		_lastFovTarget = nil,
 		_fovTween = nil,
 	}, RenderController)
+end
+
+function RenderController:setCamera(camera: Camera)
+	if self._camera == camera then
+		return
+	end
+
+	if self._fovTween then
+		self._fovTween:Cancel()
+		self._fovTween = nil
+	end
+
+	self._camera = camera
+	self._lastFovTarget = nil
 end
 
 function RenderController:_refreshWeaponCaches(weapon: Instance)
@@ -110,10 +135,24 @@ function RenderController:_refreshWeaponCaches(weapon: Instance)
 	self._cachedWeapon = weapon
 	table.clear(self._sightMarks)
 	table.clear(self._laserPoints)
+	table.clear(self._reticleBorders)
+	self._aimPart = nil
+	self._nvAim = nil
+	local aimPart = weapon:FindFirstChild("AimPart")
+	if aimPart and aimPart:IsA("BasePart") then
+		self._aimPart = aimPart
+		local nvAim = aimPart:FindFirstChild("NVAim")
+		if nvAim and (nvAim:IsA("BasePart") or nvAim:IsA("Attachment")) then
+			self._nvAim = nvAim
+		end
+	end
 	for _, descendant in weapon:GetDescendants() do
 		if descendant:IsA("BasePart") then
 			if descendant.Name == "SightMark" then
 				table.insert(self._sightMarks, descendant)
+				local surfaceGui = descendant:FindFirstChild("SurfaceGui")
+				local border = surfaceGui and surfaceGui:FindFirstChild("Border")
+				self._reticleBorders[descendant] = if border and border:IsA("GuiObject") then border else nil
 			elseif descendant.Name == "LaserPoint" then
 				table.insert(self._laserPoints, descendant)
 			end
@@ -132,6 +171,21 @@ function RenderController:_setFovTarget(target: number)
 	end
 	self._fovTween = TweenService:Create(self._camera, self._ctx.aimTween, { FieldOfView = target })
 	self._fovTween:Play()
+end
+
+function RenderController:destroy()
+	if self._fovTween then
+		self._fovTween:Cancel()
+		self._fovTween = nil
+	end
+	self._cachedWeapon = nil
+	self._cachedPointer = nil
+	self._pointerBeam = nil
+	self._aimPart = nil
+	self._nvAim = nil
+	table.clear(self._sightMarks)
+	table.clear(self._laserPoints)
+	table.clear(self._reticleBorders)
 end
 
 --// Recoil accessors (Main pushes authored recoil CFrames through here)
@@ -159,6 +213,9 @@ function RenderController:step(deltaTime: number)
 	local ctx = self._ctx
 	local equip = ctx.equipController
 	local camera = self._camera
+	local smoothingDelta = math.clamp(deltaTime, 1 / 240, 0.1)
+	local smoothingAlpha = 1 - math.exp(-smoothingDelta * 13.4)
+	local bobAlpha = 1 - math.exp(-smoothingDelta * 6.32)
 
 	ctx.state.halfStep = not ctx.state.halfStep
 
@@ -199,19 +256,19 @@ function RenderController:step(deltaTime: number)
 				equip:setCanBipod(true)
 				if equip:getCanBipod() and equip:getBipodActive() and not ctx.state.runKeyDown and (ctx.state.gunStance == 0 or ctx.state.gunStance == 2) then
 					if not ctx.state.aiming then
-						ctx.bipodCF = ctx.bipodCF:Lerp(CFrame_new(0, ((underBarrel.Main.Position - bipodPos).Magnitude - 1) * (-1.5), 0), 0.2)
+						ctx.bipodCF = ctx.bipodCF:Lerp(CFrame_new(0, ((underBarrel.Main.Position - bipodPos).Magnitude - 1) * (-1.5), 0), smoothingAlpha)
 					else
-						ctx.bipodCF = ctx.bipodCF:Lerp(CFrame_new(), 0.2)
+						ctx.bipodCF = ctx.bipodCF:Lerp(CFrame_new(), smoothingAlpha)
 					end
 				else
 					equip:setBipodActive(false)
 					equip:setCanBipod(false)
-					ctx.bipodCF = ctx.bipodCF:Lerp(CFrame_new(), 0.2)
+					ctx.bipodCF = ctx.bipodCF:Lerp(CFrame_new(), smoothingAlpha)
 				end
 			else
 				equip:setBipodActive(false)
 				equip:setCanBipod(false)
-				ctx.bipodCF = ctx.bipodCF:Lerp(CFrame_new(), 0.2)
+				ctx.bipodCF = ctx.bipodCF:Lerp(CFrame_new(), smoothingAlpha)
 			end
 		end
 	end
@@ -227,41 +284,44 @@ function RenderController:step(deltaTime: number)
 			math_rad(1 * (charspeed / 10) * math_sin(tick() * 16)),
 			math_rad(1 * (charspeed / 10) * math_cos(tick() * 8)),
 			math_rad(0)
-		), 0.1)
+		), bobAlpha)
 	else
 		ctx.gunbobcf = ctx.gunbobcf:Lerp(CFrame_new(
 			0.005 * math_sin(tick() * 1.5),
 			0.005 * math_cos(tick() * 2.5),
 			0
-		), 0.1)
+		), bobAlpha)
 	end
 
 	-- ADS aim
 	local curAimpart = equip:getCurAimpart()
 	if curAimpart and ctx.state.aiming and ctx.state.animDebounce and not equip:getCheckingMag() then
-		if not ctx.state.nvg or (weaponInHand:FindFirstChild("AimPart") and not weaponInHand.AimPart:FindFirstChild("NVAim")) then
+		local aimPart = self._aimPart
+		local nvAim = self._nvAim
+		if not ctx.state.nvg or not aimPart or not nvAim then
 			if equip:getAimPartMode() == 1 then
 				if not ctx.isThirdPersonCamera() then
 					self:_setFovTarget(equip:getModTable().ZoomValue)
 				end
-				ctx.maincf = ctx.maincf:Lerp(ctx.maincf * CFrame_new(0, 0, -0.5) * ctx.recoilcf * sway:inverse() * curAimpart.CFrame:toObjectSpace(camera.CFrame), 0.2)
+				ctx.maincf = ctx.maincf:Lerp(ctx.maincf * CFrame_new(0, 0, -0.5) * ctx.recoilcf * sway:inverse() * curAimpart.CFrame:toObjectSpace(camera.CFrame), smoothingAlpha)
 			else
 				if not ctx.isThirdPersonCamera() then
 					self:_setFovTarget(equip:getModTable().Zoom2Value)
 				end
-				ctx.maincf = ctx.maincf:Lerp(ctx.maincf * CFrame_new(0, 0, -0.5) * ctx.recoilcf * sway:inverse() * curAimpart.CFrame:toObjectSpace(camera.CFrame), 0.2)
+				ctx.maincf = ctx.maincf:Lerp(ctx.maincf * CFrame_new(0, 0, -0.5) * ctx.recoilcf * sway:inverse() * curAimpart.CFrame:toObjectSpace(camera.CFrame), smoothingAlpha)
 			end
 		else
 			if not ctx.isThirdPersonCamera() then
 				self:_setFovTarget(70)
 			end
-			ctx.maincf = ctx.maincf:Lerp(ctx.maincf * CFrame_new(0, 0, -0.5) * ctx.recoilcf * sway:inverse() * (weaponInHand.AimPart.CFrame * weaponInHand.AimPart.NVAim.CFrame):toObjectSpace(camera.CFrame), 0.2)
+			local nvAimCFrame = if nvAim:IsA("BasePart") or nvAim:IsA("Attachment") then nvAim.CFrame else aimPart.CFrame
+			ctx.maincf = ctx.maincf:Lerp(ctx.maincf * CFrame_new(0, 0, -0.5) * ctx.recoilcf * sway:inverse() * (aimPart.CFrame * nvAimCFrame):toObjectSpace(camera.CFrame), smoothingAlpha)
 		end
 	else
 		if not ctx.isThirdPersonCamera() then
 			self:_setFovTarget(70)
 		end
-		ctx.maincf = ctx.maincf:Lerp((animData and animData.MainCFrame or CFrame_new()) * ctx.recoilcf * sway:inverse(), 0.2)
+		ctx.maincf = ctx.maincf:Lerp((animData and animData.MainCFrame or CFrame_new()) * ctx.recoilcf * sway:inverse(), smoothingAlpha)
 	end
 
 	equip:setMainCF(ctx.maincf)
@@ -280,13 +340,10 @@ function RenderController:step(deltaTime: number)
 	-- Scope reticle parallax
 	for _, part in self._sightMarks do
 		if part.Parent then
-			local distScale = part.CFrame:pointToObjectSpace(camera.CFrame.Position) / part.Size
-			local reticle = part:FindFirstChild("SurfaceGui")
-			if reticle and reticle:IsA("SurfaceGui") then
-				local border = reticle:FindFirstChild("Border")
-				if border then
-					border.Position = UDim2.new(0.5 + distScale.X, 0, 0.5 - distScale.Y, 0)
-				end
+			local distScale = part.CFrame:PointToObjectSpace(camera.CFrame.Position) / part.Size
+			local border = self._reticleBorders[part]
+			if border then
+				border.Position = UDim2.new(0.5 + distScale.X, 0, 0.5 - distScale.Y, 0)
 			end
 		end
 	end
@@ -296,7 +353,7 @@ function RenderController:step(deltaTime: number)
 		math_rad(ctx.recoilSpring.p.X),
 		math_rad(ctx.recoilSpring.p.Y),
 		math_rad(ctx.recoilSpring.p.z)
-	), 0.2)
+	), smoothingAlpha)
 
 	-- Crosshair update
 	ctx.updateCrosshair()
@@ -318,20 +375,25 @@ function RenderController:step(deltaTime: number)
 	-- Laser pointer
 	if equip:getLaserActive() and equip:getPointer() ~= nil then
 		local pointer = equip:getPointer()
+		if self._cachedPointer ~= pointer then
+			self._cachedPointer = pointer
+			local beam = pointer and pointer:FindFirstChild("Beam")
+			self._pointerBeam = if beam and beam:IsA("Beam") then beam else nil
+		end
 		if ctx.state.nvg then
 			pointer.Transparency = 0
-			if pointer:FindFirstChild("Beam") then
-				pointer.Beam.Enabled = true
+			if self._pointerBeam then
+				self._pointerBeam.Enabled = true
 			end
 		else
 			if not ctx.gameRules.RealisticLaser then
-				if pointer:FindFirstChild("Beam") then
-					pointer.Beam.Enabled = true
-				end
+				if self._pointerBeam then
+				self._pointerBeam.Enabled = true
+			end
 			else
-				if pointer:FindFirstChild("Beam") then
-					pointer.Beam.Enabled = false
-				end
+				if self._pointerBeam then
+				self._pointerBeam.Enabled = false
+			end
 			end
 			if equip:getIRMode() then
 				pointer.Transparency = 1
@@ -347,7 +409,7 @@ function RenderController:step(deltaTime: number)
 				local normal = laserResult and laserResult.Normal or key.CFrame.LookVector
 				pointer.CFrame = CFrame.new(pos, pos + normal)
 				if ctx.state.halfStep and ctx.gameRules.ReplicatedLaser then
-					ctx.events.SVLaser:FireServer(pos, 1, pointer.Color, equip:getIRMode(), equip:getWeaponTool())
+					Packets.packets.LaserIntent.send({ position = pos, mode = 1, color = pointer.Color, infrared = equip:getIRMode(), weapon = equip:getWeaponTool() })
 				end
 				break
 			end

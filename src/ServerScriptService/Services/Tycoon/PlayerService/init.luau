@@ -1,188 +1,244 @@
 --!strict
 --[[
-	PlayerService is a lifecycle boundary. Per-player flags and ownership are
-	plain ECS components; this service only handles Roblox connections and
-	commands that mutate those components.
+	PlayerService owns Roblox player lifecycle only. Player flags and tycoon
+	ownership are stored in ECS components; Observers owns connection cleanup.
 ]]
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerScriptService = game:GetService("ServerScriptService")
 
-local ECS = require(ReplicatedStorage.ECS)
-local FriendService = require(script.FriendService)
-local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const ServerScriptService = game:GetService("ServerScriptService")
 
-local PlayerService = {}
+const ECS = require(ReplicatedStorage.ECS)
+const Observers = require(ReplicatedStorage.Packages.Observers)
+const FriendService = require(script.FriendService)
+const PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
 
-local TELEPORT_GRACE_DURATION = 2
-local STATES = {
+const PlayerService = {}
+
+const TeleportGraceDuration = 2
+const PlayerStateKeys = {
 	X2 = "X2",
 	Electrified = "Electrified",
-	FriendBoost = "FriendBoost",
 	RocketActivated = "RocketActivated",
 }
 
-local function getEntity(self, player: Player): number?
-	return self.PlayerEntities[player]
+local function GetPlayerEntity(self, Player: Player): number?
+	return self.PlayerEntities[Player]
 end
 
-local function getState(self, player: Player): any?
-	local entity = getEntity(self, player)
-	return entity and ECS.get(entity, "PlayerState")
+local function GetPlayerState(self, Player: Player): any?
+	const Entity = GetPlayerEntity(self, Player)
+	return Entity and ECS.get(Entity, "PlayerState")
 end
 
-local function setFlag(self, player: Player, flag: string, value: boolean)
-	local state = getState(self, player)
-	if not state then return end
-	state.flags[flag] = value
-	ECS.set(self.PlayerEntities[player], "PlayerState", state)
+local function SetPlayerFlag(self, Player: Player, Flag: string, Value: boolean)
+	const State = GetPlayerState(self, Player)
+	if not State then
+		return
+	end
+
+	State.flags[Flag] = Value
+	ECS.set(self.PlayerEntities[Player], "PlayerState", State)
 end
 
-local function hasFlag(self, player: Player, flag: string): boolean
-	local state = getState(self, player)
-	return state ~= nil and state.flags[flag] == true
+local function HasPlayerFlag(self, Player: Player, Flag: string): boolean
+	const State = GetPlayerState(self, Player)
+	return State ~= nil and State.flags[Flag] == true
 end
 
 function PlayerService.create()
-	local self = {}
-	self.PlayerEntities = {} :: {[Player]: number}
-	self.PlayerTycoons = {} :: {[Player]: number}
-	self.CharacterConnections = {} :: {[Player]: RBXScriptConnection}
-	self.PlayerSpawns = workspace:WaitForChild("PlayerSpawns")
-	self.FriendService = FriendService.create(self)
-	self.FriendService:Init()
-	return self
+	const Self = {}
+	Self.PlayerEntities = {} :: { [Player]: number }
+	Self.PlayerSpawns = workspace:WaitForChild("PlayerSpawns")
+	FriendService.Init()
+	Self.PlayerObserverStop = nil
+	Self.CharacterObserverStop = nil
+	return Self
 end
 
-function PlayerService:_OnPlayerAdded(player: Player)
-	if self.PlayerEntities[player] then return end
-	self.PlayerEntities[player] = ECS.createEntity({
-		Name = player.Name .. ":Player",
-		PlayerRef = player,
-		PlayerState = {flags = {}},
-	})
-	PlayerRuntimeState.Get(player)
-	self.CharacterConnections[player] = player.CharacterAdded:Connect(function(character)
-		self:_OnCharacterAdded(player, character)
-	end)
-
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.Health = math.huge
-		ECS.createEntity({
-			Name = player.Name .. ":SpawnProtection",
-			Model = character,
-			ScheduledTask = {
-				delay = 10,
-				elapsed = 0,
-				kind = "SpawnProtection",
-				player = player,
-				character = character,
-				humanoid = humanoid,
-			},
-		})
+function PlayerService:_ApplySpawnProtection(Player: Player, Character: Model)
+	local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+	if not Humanoid then
+		Humanoid = Character:WaitForChild("Humanoid", 8)
 	end
-end
+	if not Humanoid or not Humanoid:IsA("Humanoid") or Player.Character ~= Character then
+		return
+	end
 
-function PlayerService:_OnCharacterAdded(player: Player, character: Model)
-	if self:OwnsTycoon(player) then return end
-	self:_TeleportToSpawn(player, character)
-	self:_ApplySpawnHighlight(character)
-end
-
-function PlayerService:AllowServerTeleport(player: Player, duration: number?)
-	PlayerRuntimeState.SetAntiCheatTeleportGraceUntil(player, os.clock() + (duration or TELEPORT_GRACE_DURATION))
-end
-
-function PlayerService:_TeleportToSpawn(player: Player, character: Model)
-	local spawns = self.PlayerSpawns:GetChildren()
-	if #spawns == 0 then return end
-	self:AllowServerTeleport(player)
-	character:PivotTo(spawns[math.random(1, #spawns)].CFrame)
-end
-
-function PlayerService:_ApplySpawnHighlight(character: Model)
-	local highlight = Instance.new("Highlight")
-	highlight.OutlineColor = Color3.new(1, 1, 1)
-	highlight.FillColor = Color3.new(1, 1, 1)
-	highlight.FillTransparency = 0.7
-	highlight.Parent = character
+	Humanoid.Health = math.huge
 	ECS.createEntity({
-		Name = character.Name .. ":SpawnHighlightFade",
+		Name = Player.Name .. ":SpawnProtection",
+		Model = Character,
 		ScheduledTask = {
-			delay = 2,
+			delay = 10,
 			elapsed = 0,
-			kind = "SpawnHighlightFade",
-			highlight = highlight,
+			kind = "SpawnProtection",
+			player = Player,
+			character = Character,
+			humanoid = Humanoid,
 		},
 	})
 end
 
-function PlayerService:_OnPlayerRemoving(player: Player)
-	self:CleanupPlayer(player)
-end
-
-function PlayerService:CleanupPlayer(player: Player)
-	local entity = self.PlayerEntities[player]
-	if entity then
-		ECS.deleteEntity(entity)
-		self.PlayerEntities[player] = nil
+function PlayerService:_OnPlayerAdded(Player: Player)
+	if self.PlayerEntities[Player] then
+		return
 	end
-	self.PlayerTycoons[player] = nil
-	local connection = self.CharacterConnections[player]
-	if connection then
-		connection:Disconnect()
-		self.CharacterConnections[player] = nil
+
+	self.PlayerEntities[Player] = ECS.createEntity({
+		Name = Player.Name .. ":Player",
+		PlayerRef = Player,
+		PlayerState = { flags = {} },
+		FriendBoost = { count = 0, friendUserIds = {} },
+	})
+	PlayerRuntimeState.Get(Player)
+end
+
+function PlayerService:_OnCharacterAdded(Player: Player, Character: Model)
+	self:_ApplySpawnProtection(Player, Character)
+	if self:OwnsTycoon(Player) then
+		return
 	end
-	PlayerRuntimeState.SetCanRebirth(player, false)
-	PlayerRuntimeState.Clear(player)
+	self:_TeleportToSpawn(Player, Character)
+	self:_ApplySpawnHighlight(Character)
 end
 
-function PlayerService:RegisterPlayerTycoon(player: Player, tycoon: number)
-	self.PlayerTycoons[player] = tycoon
-	PlayerRuntimeState.SetCanRebirth(player, false)
-	if self.TycoonService then self.TycoonService:RegisterOwner(player, tycoon) end
+function PlayerService:AllowServerTeleport(Player: Player, Duration: number?)
+	PlayerRuntimeState.SetTeleportGraceExpiry(Player, os.clock() + (Duration or TeleportGraceDuration))
 end
 
-function PlayerService:ReleaseTycoon(entity: number)
-	for player, ownedEntity in self.PlayerTycoons do
-		if ownedEntity == entity then
-			self.PlayerTycoons[player] = nil
-			PlayerRuntimeState.SetCanRebirth(player, false)
-		end
+function PlayerService:_TeleportToSpawn(Player: Player, Character: Model)
+	const Spawns = self.PlayerSpawns:GetChildren()
+	if #Spawns == 0 then
+		return
+	end
+
+	self:AllowServerTeleport(Player)
+	Character:PivotTo(Spawns[math.random(1, #Spawns)].CFrame)
+end
+
+function PlayerService:_ApplySpawnHighlight(Character: Model)
+	const Highlight = Instance.new("Highlight")
+	Highlight.OutlineColor = Color3.new(1, 1, 1)
+	Highlight.FillColor = Color3.new(1, 1, 1)
+	Highlight.FillTransparency = 0.7
+	Highlight.Parent = Character
+	ECS.createEntity({
+		Name = Character.Name .. ":SpawnHighlightFade",
+		ScheduledTask = {
+			delay = 2,
+			elapsed = 0,
+			kind = "SpawnHighlightFade",
+			highlight = Highlight,
+		},
+	})
+end
+
+function PlayerService:_OnPlayerRemoving(Player: Player)
+	self:CleanupPlayer(Player)
+end
+
+function PlayerService:CleanupPlayer(Player: Player)
+	const Entity = self.PlayerEntities[Player]
+	if Entity then
+		ECS.deleteEntity(Entity)
+		self.PlayerEntities[Player] = nil
+	end
+
+	PlayerRuntimeState.SetCanRebirth(Player, false)
+	PlayerRuntimeState.Clear(Player)
+end
+
+function PlayerService:RegisterPlayerTycoon(Player: Player, Tycoon: number)
+	PlayerRuntimeState.SetCanRebirth(Player, false)
+	if self.TycoonService then
+		self.TycoonService:RegisterOwner(Player, Tycoon)
+	end
+end
+
+function PlayerService:ReleaseTycoon(TycoonEntity: number)
+	const State = ECS.get(TycoonEntity, "TycoonState")
+	const Owner = State and State.owner
+	if Owner then
+		PlayerRuntimeState.SetCanRebirth(Owner, false)
 	end
 end
 
 function PlayerService:Init()
-	Players.PlayerAdded:Connect(function(player) self:_OnPlayerAdded(player) end)
-	Players.PlayerRemoving:Connect(function(player) self:_OnPlayerRemoving(player) end)
-	for _, player in Players:GetPlayers() do
-		task.defer(function() self:_OnPlayerAdded(player) end)
+	if self.PlayerObserverStop then
+		return
 	end
+
+	self.PlayerObserverStop = Observers.observePlayer(function(Player: Player)
+		self:_OnPlayerAdded(Player)
+		return function()
+			self:_OnPlayerRemoving(Player)
+		end
+	end)
+
+	self.CharacterObserverStop = Observers.observeCharacter(function(Player: Player, Character: Model)
+		self:_OnCharacterAdded(Player, Character)
+	end)
 end
 
-function PlayerService:HasX2(player: Player): boolean return hasFlag(self, player, STATES.X2) end
-function PlayerService:SetX2(player: Player, value: boolean) setFlag(self, player, STATES.X2, value) end
-function PlayerService:IsElectrified(player: Player): boolean return hasFlag(self, player, STATES.Electrified) end
-function PlayerService:SetElectrified(player: Player, value: boolean) setFlag(self, player, STATES.Electrified, value) end
-function PlayerService:HasFriendBoost(player: Player): boolean return hasFlag(self, player, STATES.FriendBoost) end
-function PlayerService:SetFriendBoost(player: Player, value: boolean) setFlag(self, player, STATES.FriendBoost, value) end
-
-function PlayerService:GetFriendBoostMultiplier(player: Player): number
-	return if self.FriendService then self.FriendService:GetBoostMultiplier(player) else 1
+function PlayerService:HasX2(Player: Player): boolean
+	return HasPlayerFlag(self, Player, PlayerStateKeys.X2)
 end
 
-function PlayerService:HasActivated(player: Player): boolean return hasFlag(self, player, STATES.RocketActivated) end
-function PlayerService:ActivateRocket(player: Player, value: boolean) setFlag(self, player, STATES.RocketActivated, value) end
-
-function PlayerService:GetTycoon(player: Player): number?
-	if self.TycoonService then return self.TycoonService:GetTycoonForPlayer(player) end
-	return self.PlayerTycoons[player]
+function PlayerService:SetX2(Player: Player, Value: boolean)
+	SetPlayerFlag(self, Player, PlayerStateKeys.X2, Value)
 end
 
-function PlayerService:OwnsTycoon(player: Player): boolean
-	return self:GetTycoon(player) ~= nil
+function PlayerService:IsElectrified(Player: Player): boolean
+	return HasPlayerFlag(self, Player, PlayerStateKeys.Electrified)
+end
+
+function PlayerService:SetElectrified(Player: Player, Value: boolean)
+	SetPlayerFlag(self, Player, PlayerStateKeys.Electrified, Value)
+end
+
+function PlayerService:HasFriendBoost(Player: Player): boolean
+	const Entity = GetPlayerEntity(self, Player)
+	const State = Entity and ECS.get(Entity, "FriendBoost")
+	return State ~= nil and State.count > 0
+end
+
+function PlayerService:SetFriendBoost(Player: Player, Value: boolean)
+	const Entity = GetPlayerEntity(self, Player)
+	if not Entity then
+		return
+	end
+
+	const State = ECS.get(Entity, "FriendBoost") or { count = 0, friendUserIds = {} }
+	if not Value then
+		State.count = 0
+		table.clear(State.friendUserIds)
+	elseif State.count <= 0 then
+		State.count = 1
+	end
+	ECS.set(Entity, "FriendBoost", State)
+end
+
+function PlayerService:GetFriendBoostMultiplier(Player: Player): number
+	return FriendService.GetBoostMultiplier(Player)
+end
+
+function PlayerService:HasActivated(Player: Player): boolean
+	return HasPlayerFlag(self, Player, PlayerStateKeys.RocketActivated)
+end
+
+function PlayerService:ActivateRocket(Player: Player, Value: boolean)
+	SetPlayerFlag(self, Player, PlayerStateKeys.RocketActivated, Value)
+end
+
+function PlayerService:GetTycoon(Player: Player): number?
+	if self.TycoonService then
+		return self.TycoonService:GetTycoonForPlayer(Player)
+	end
+	return nil
+end
+
+function PlayerService:OwnsTycoon(Player: Player): boolean
+	return self:GetTycoon(Player) ~= nil
 end
 
 return PlayerService

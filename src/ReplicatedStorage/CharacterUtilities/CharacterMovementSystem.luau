@@ -34,6 +34,7 @@ type CharacterResources = {
 	MovementWeight: number,
 	TargetMovementWeight: number,
 	TargetState: MovementState,
+	BaseWalkSpeed: number,
 }
 
 local Resources: { [number]: CharacterResources } = {}
@@ -99,7 +100,16 @@ local function setTargetState(data: MovementData, resources: CharacterResources,
 	end
 
 	local definition = loadDefinition(state)
-	resources.Humanoid.WalkSpeed = definition.WalkSpeed
+	resources.BaseWalkSpeed = definition.WalkSpeed
+end
+
+local function applyWalkSpeed(resources: CharacterResources)
+	local override = resources.Humanoid:GetAttribute("CombatWalkSpeed")
+	if typeof(override) == "number" and override == override and override ~= math.huge and override ~= -math.huge and override >= 0 then
+		resources.Humanoid.WalkSpeed = override
+	else
+		resources.Humanoid.WalkSpeed = resources.BaseWalkSpeed
+	end
 end
 
 local function desiredState(data: MovementData, resources: CharacterResources): MovementState
@@ -210,6 +220,7 @@ local function initialize(entity: number, character: Model, data: MovementData):
 		MovementWeight = 0,
 		TargetMovementWeight = 0,
 		TargetState = "Idle",
+		BaseWalkSpeed = Config.Speeds.Idle,
 	}
 
 	for _, state: MovementState in { "Idle", "Walk", "Run", "Fall", "Climb" } do
@@ -317,6 +328,7 @@ function System.Run(context)
 			end
 			data.NextMovementState = nil
 		end
+		applyWalkSpeed(resources)
 		updateTracks(resources, deltaTime)
 	end
 end

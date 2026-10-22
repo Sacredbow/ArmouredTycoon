@@ -8,9 +8,14 @@ The root Wally manifest lists direct dependencies. `wally install` regenerates t
 
 ## Build and checks
 
-```powershell
-rojo build default.project.json -o ArmouredTycoon.rbxlx
-selene src/ServerScriptService/Services/Networking/NetworkGuard.luau src/ServerScriptService/Services/Commerce/CommerceService.luau src/StarterPlayer/StarterPlayerScripts/InventoryClient/Controller.luau
-```
+Install the pinned tools with rokit install, then run the repository verification script:
 
+    rokit install
+    .\tools\verify.ps1
+
+The script builds the place with the pinned Rojo version and checks patch whitespace. Rojo is the syntax gate because the pinned Selene release does not parse Luau `const` declarations. The same checks run in .github/workflows/ci.yml.
+
+For a build only:
+
+    rojo build default.project.json -o ArmouredTycoon.rbxlx
 Open the built place in Roblox Studio for multiplayer and purchase flow testing. The local CLI build verifies the Rojo tree, but does not run Roblox services or DataStores.

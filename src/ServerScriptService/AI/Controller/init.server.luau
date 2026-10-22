@@ -49,6 +49,18 @@ end
 
 InitializeNPCControllers(NPCs, NPCController)
 
+NPCs.ChildRemoved:Connect(function(Instance: Instance)
+	if not Instance:IsA("Model") then
+		return
+	end
+
+	local Controller = NPCController[Instance.Name]
+	if Controller and Controller.NPC == Instance and not Controller.Respawning then
+		Controller:Destroy()
+		NPCController[Instance.Name] = nil
+	end
+end)
+
 NPCs.ChildAdded:Connect(function(Instance: Instance)
 	if not Instance:IsA("Model") or not Instance:FindFirstChildOfClass("Humanoid") then
 		return

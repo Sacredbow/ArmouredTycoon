@@ -321,6 +321,8 @@ local function Cleanup()
 	table.clear(ClaimedDoorKeys)
 end
 
+script.Destroying:Connect(Cleanup)
+
 TutorialDisconnect = Packets.packets.Tutorial.listen(function(Data: TutorialData)
 	if Destroyed then
 		return

@@ -6,11 +6,12 @@ local StarterGui = game:GetService("StarterGui")
 
 local React = require(ReplicatedStorage.Packages.react)
 local ReactRoblox = require(ReplicatedStorage.Packages.ReactRoblox)
+local InventoryFeature = require(ReplicatedStorage.CharacterUtilities.Inventory.FeatureConfig)
 
 local App = require(script.Parent.App)
 
 local DEBUG_REACT_UI = game:GetService("RunService"):IsStudio()
-local CUSTOM_INVENTORY_ENABLED = false
+local CUSTOM_INVENTORY_ENABLED = InventoryFeature.Enabled
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")

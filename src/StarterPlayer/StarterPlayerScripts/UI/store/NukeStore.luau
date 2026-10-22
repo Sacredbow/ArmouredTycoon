@@ -42,7 +42,7 @@ NukeStore.__index = NukeStore
 function NukeStore.new(): NukeStore
 	local self = setmetatable({}, NukeStore) :: NukeStore
 	self.NukeCinematic = nil
-	self.Changed = Signal.new()
+	self.Changed = Signal.get("NukeStoreChanged")
 	self.Destroyed = false
 	self.Started = false
 
@@ -57,6 +57,12 @@ function NukeStore:Start(Packets: any)
 	self.NukeConnection = Packets.packets.NukeCinematic.listen(function(payload)
 		self:HandleNukeCinematic(payload)
 	end)
+	local scorePacket = Packets.packets.NukeScore
+	if scorePacket then
+		self.ScoreConnection = scorePacket.listen(function(payload)
+			self:HandleNukeScore(payload)
+		end)
+	end
 	self.Started = true
 end
 
@@ -138,10 +144,31 @@ function NukeStore:HandleNukeCinematic(Payload: any)
 	self.Changed:Fire()
 end
 
+function NukeStore:HandleNukeScore(Payload: any)
+	if type(Payload) ~= "table" or type(Payload.sessionId) ~= "string" then
+		return
+	end
+
+	local current = self.NukeCinematic
+	if not current or current.sessionId ~= Payload.sessionId then
+		return
+	end
+
+	local launcherScore = tonumber(Payload.launcherScore)
+	local defenderScore = tonumber(Payload.defenderScore)
+	if launcherScore == nil or defenderScore == nil then
+		return
+	end
+
+	current.launcherScore = math.clamp(math.floor(launcherScore), 0, 100)
+	current.defenderScore = math.clamp(math.floor(defenderScore), 0, 100)
+	self.Changed:Fire()
+end
+
 --// Snapshots
 
 function NukeStore:GetNukeSnapshot(): NukeCinematic?
-	return self.NukeCinematic
+	return if self.NukeCinematic then table.clone(self.NukeCinematic) else nil
 end
 
 --// Lifecycle
@@ -158,6 +185,10 @@ function NukeStore:Destroy()
 		self.NukeConnection()
 		self.NukeConnection = nil
 	end
+	if self.ScoreConnection then
+		self.ScoreConnection()
+		self.ScoreConnection = nil
+	end
 
 	local Changed = self.Changed :: any
 	if Changed.Destroy then
@@ -171,9 +202,11 @@ export type NukeStore = typeof(setmetatable({} :: {
 	Destroyed: boolean,
 	Started: boolean,
 	NukeConnection: any?,
+	ScoreConnection: any?,
 
 	Start: (self: NukeStore, Packets: any) -> (),
 	HandleNukeCinematic: (self: NukeStore, Payload: any) -> (),
+	HandleNukeScore: (self: NukeStore, Payload: any) -> (),
 	GetNukeSnapshot: (self: NukeStore) -> NukeCinematic?,
 	Destroy: (self: NukeStore) -> (),
 }, NukeStore))

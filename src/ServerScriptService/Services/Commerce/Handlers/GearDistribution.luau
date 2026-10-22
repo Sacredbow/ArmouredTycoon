@@ -1,190 +1,180 @@
 --!strict
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerStorage = game:GetService("ServerStorage")
-local ServerScriptService = game:GetService("ServerScriptService")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const ServerStorage = game:GetService("ServerStorage")
+const ServerScriptService = game:GetService("ServerScriptService")
 
-local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+const PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
 
-local GearDistribution = {}
+const GearDistribution = {}
 
-type PlayerServiceLike = {
-	SetX2: (player: Player, value: boolean) -> (),
-}
+local function HasTool(Player: Player, ToolName: string): boolean
+	const Backpack = Player:FindFirstChild("Backpack")
+	const Character = Player.Character
+	const StarterGear = Player:FindFirstChild("StarterGear")
 
-local function hasTool(player: Player, toolName: string): boolean
-	local backpack = player:FindFirstChild("Backpack")
-	local character = player.Character
-	local starterGear = player:FindFirstChild("StarterGear")
-
-	if backpack and backpack:FindFirstChild(toolName) then
+	if Backpack and Backpack:FindFirstChild(ToolName) then
 		return true
 	end
 
-	if character and character:FindFirstChild(toolName) then
+	if Character and Character:FindFirstChild(ToolName) then
 		return true
 	end
 
-	if starterGear and starterGear:FindFirstChild(toolName) then
+	if StarterGear and StarterGear:FindFirstChild(ToolName) then
 		return true
 	end
 
 	return false
 end
 
-function GearDistribution.GiveShield(player: Player): boolean
-	local character = player.Character
-	if not character then
+function GearDistribution.GiveShield(Player: Player): boolean
+	const Character = Player.Character
+	if not Character then
 		return false
 	end
 
-	if character:FindFirstChild("Shield") then
+	if Character:FindFirstChild("Shield") then
+		PlayerRuntimeState.SetArmourEquipped(Player, true)
 		return true
 	end
 
-	local leftArm = character:FindFirstChild("Left Arm")
-	if not leftArm or not leftArm:IsA("BasePart") then
+	const LeftArm = Character:FindFirstChild("Left Arm")
+	if not LeftArm or not LeftArm:IsA("BasePart") then
 		return false
 	end
 
-	local shieldTemplate = ReplicatedStorage:FindFirstChild("Assets")
-		and (ReplicatedStorage.Assets :: Folder):FindFirstChild("CharacterItems")
-		and ReplicatedStorage.Assets.CharacterItems:FindFirstChild("Shield")
-	if not shieldTemplate or not shieldTemplate:IsA("Model") or not shieldTemplate.PrimaryPart then
+	const Assets = ReplicatedStorage:FindFirstChild("Assets")
+	const CharacterItems = Assets and Assets:IsA("Folder") and Assets:FindFirstChild("CharacterItems")
+	const ShieldTemplate = CharacterItems and CharacterItems:IsA("Folder") and CharacterItems:FindFirstChild("Shield")
+	if not ShieldTemplate or not ShieldTemplate:IsA("Model") or not ShieldTemplate.PrimaryPart then
 		return false
 	end
 
-	local shield = shieldTemplate:Clone()
-	local primaryPart = shield.PrimaryPart
-	if not primaryPart then
-		shield:Destroy()
+	const Shield = ShieldTemplate:Clone()
+	const PrimaryPart = Shield.PrimaryPart
+	if not PrimaryPart then
+		Shield:Destroy()
 		return false
 	end
-	local weld = Instance.new("Weld")
-	weld.Part0 = leftArm
-	weld.Part1 = primaryPart
-	weld.C0 = CFrame.new(-0.1, 0, 0) * CFrame.Angles(math.rad(90), 0, math.rad(-90))
-	weld.Parent = primaryPart
-	shield.Parent = character
+
+	const Weld = Instance.new("Weld")
+	Weld.Part0 = LeftArm
+	Weld.Part1 = PrimaryPart
+	Weld.C0 = CFrame.new(-0.1, 0, 0) * CFrame.Angles(math.rad(90), 0, math.rad(-90))
+	Weld.Parent = PrimaryPart
+	Shield.Parent = Character
+	PlayerRuntimeState.SetArmourEquipped(Player, true)
 	return true
 end
-function GearDistribution.GiveHK416(player: Player)
-	if hasTool(player, "HK416") then
+
+function GearDistribution.GiveHK416(Player: Player)
+	if HasTool(Player, "HK416") then
 		return
 	end
 
-	local guns = ServerStorage:FindFirstChild("Guns")
-	if not guns then
+	const Guns = ServerStorage:FindFirstChild("Guns")
+	if not Guns or not Guns:IsA("Folder") then
 		return
 	end
 
-	local hk = guns:FindFirstChild("HK416")
-	if hk and hk:IsA("Tool") then
-		local backpack = player:FindFirstChild("Backpack")
-		if backpack then
-			hk:Clone().Parent = backpack
+	const HK416 = Guns:FindFirstChild("HK416")
+	if HK416 and HK416:IsA("Tool") then
+		const Backpack = Player:FindFirstChild("Backpack")
+		if Backpack then
+			HK416:Clone().Parent = Backpack
 		end
 	end
 end
 
-function GearDistribution.GiveClothes(player: Player)
-	local character = player.Character
-	if not character then
+function GearDistribution.GiveClothes(Player: Player)
+	const Character = Player.Character
+	if not Character then
 		return
 	end
 
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then
+	const Humanoid = Character:FindFirstChildOfClass("Humanoid")
+	if not Humanoid then
 		return
 	end
 
-	local torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
-	if not torso or not torso:IsA("BasePart") then
+	const Torso = Character:FindFirstChild("Torso") or Character:FindFirstChild("UpperTorso")
+	if not Torso or not Torso:IsA("BasePart") then
 		return
 	end
 
-	local Assets = ReplicatedStorage:FindFirstChild("Assets")
-	if not Assets then
+	const Assets = ReplicatedStorage:FindFirstChild("Assets")
+	if not Assets or not Assets:IsA("Folder") then
 		return
 	end
 
-	local characterItems = (Assets :: Folder):FindFirstChild("CharacterItems")
-	if not characterItems then
+	const CharacterItems = Assets:FindFirstChild("CharacterItems")
+	if not CharacterItems or not CharacterItems:IsA("Folder") then
 		return
 	end
 
-	local armourFolder = (characterItems :: Folder):FindFirstChild("Armour")
-	local swatVest = armourFolder and armourFolder:FindFirstChild("SWAT_Vest")
-	if swatVest and swatVest:IsA("Model") and swatVest.PrimaryPart then
-		local vest = swatVest:Clone()
-		vest.Parent = character
-		vest:PivotTo(torso.CFrame * CFrame.new(0, 0.2, 0) * CFrame.Angles(math.rad(-5), 0, 0))
+	const ArmourFolder = CharacterItems:FindFirstChild("Armour")
+	const SwatVest = ArmourFolder and ArmourFolder:IsA("Folder") and ArmourFolder:FindFirstChild("SWAT_Vest")
+	if SwatVest and SwatVest:IsA("Model") and SwatVest.PrimaryPart then
+		const Vest = SwatVest:Clone()
+		Vest.Parent = Character
+		Vest:PivotTo(Torso.CFrame * CFrame.new(0, 0.2, 0) * CFrame.Angles(math.rad(-5), 0, 0))
 
-		local weld = Instance.new("WeldConstraint")
-		weld.Part0 = torso
-		weld.Part1 = vest.PrimaryPart :: BasePart
-		weld.Parent = vest.PrimaryPart
+		const Weld = Instance.new("WeldConstraint")
+		Weld.Part0 = Torso
+		Weld.Part1 = Vest.PrimaryPart :: BasePart
+		Weld.Parent = Vest.PrimaryPart
 	end
 
-	humanoid.MaxHealth = 300
-	humanoid.Health = 300
-	PlayerRuntimeState.SetArmourEquipped(player, true)
+	Humanoid.MaxHealth = 300
+	Humanoid.Health = 300
+	PlayerRuntimeState.SetArmourEquipped(Player, true)
 
-	local description = humanoid:GetAppliedDescription()
-	description.Shirt = 6433605120
-	description.Pants = 8883038978
-	humanoid:ApplyDescriptionAsync(description)
+	const Description = Humanoid:GetAppliedDescription()
+	Description.Shirt = 6433605120
+	Description.Pants = 8883038978
+	Humanoid:ApplyDescriptionAsync(Description)
 end
 
-function GearDistribution.GiveRainbowCarpet(player: Player)
-	if hasTool(player, "RainbowCarpet") then
+function GearDistribution.GiveRainbowCarpet(Player: Player)
+	if HasTool(Player, "RainbowCarpet") then
 		return
 	end
 
-	local item = ServerStorage:FindFirstChild("GamepassItems")
-		and (ServerStorage.GamepassItems :: Folder):FindFirstChild("RainbowCarpet")
-	if not item or not item:IsA("Tool") then
+	const GamepassItems = ServerStorage:FindFirstChild("GamepassItems")
+	const Item = GamepassItems and GamepassItems:IsA("Folder") and GamepassItems:FindFirstChild("RainbowCarpet")
+	if not Item or not Item:IsA("Tool") then
 		return
 	end
 
-	local starterGear = player:FindFirstChild("StarterGear")
-	local backpack = player:FindFirstChild("Backpack")
-	if starterGear then
-		item:Clone().Parent = starterGear
+	const StarterGear = Player:FindFirstChild("StarterGear")
+	const Backpack = Player:FindFirstChild("Backpack")
+	if StarterGear then
+		Item:Clone().Parent = StarterGear
 	end
-	if backpack then
-		item:Clone().Parent = backpack
-	end
-end
-
-function GearDistribution.GiveRayGun(player: Player)
-	if hasTool(player, "Raygun") then
-		return
-	end
-
-	local item = ServerStorage:FindFirstChild("GamepassItems")
-		and (ServerStorage.GamepassItems :: Folder):FindFirstChild("Raygun")
-	if not item or not item:IsA("Tool") then
-		return
-	end
-
-	local starterGear = player:FindFirstChild("StarterGear")
-	local backpack = player:FindFirstChild("Backpack")
-	if starterGear then
-		item:Clone().Parent = starterGear
-	end
-	if backpack then
-		item:Clone().Parent = backpack
+	if Backpack then
+		Item:Clone().Parent = Backpack
 	end
 end
 
-function GearDistribution.ApplyGamepassReward(player: Player, gamepassId: number, playerService: PlayerServiceLike)
-	if gamepassId == 1568782544 then
-		GearDistribution.GiveRainbowCarpet(player)
-	elseif gamepassId == 1793083522 then
-		GearDistribution.GiveRayGun(player)
-	elseif gamepassId == 1568972351 then
-		playerService:SetX2(player, true)
+function GearDistribution.GiveRayGun(Player: Player)
+	if HasTool(Player, "Raygun") then
+		return
+	end
+
+	const GamepassItems = ServerStorage:FindFirstChild("GamepassItems")
+	const Item = GamepassItems and GamepassItems:IsA("Folder") and GamepassItems:FindFirstChild("Raygun")
+	if not Item or not Item:IsA("Tool") then
+		return
+	end
+
+	const StarterGear = Player:FindFirstChild("StarterGear")
+	const Backpack = Player:FindFirstChild("Backpack")
+	if StarterGear then
+		Item:Clone().Parent = StarterGear
+	end
+	if Backpack then
+		Item:Clone().Parent = Backpack
 	end
 end
 

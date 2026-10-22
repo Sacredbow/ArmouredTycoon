@@ -1,10 +1,12 @@
 local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local BuildCatalog = require(ReplicatedStorage.BuildService.BuildCatalog)
 local GridMath = require(ReplicatedStorage.BuildService.GridMath)
+local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
 
 local BuildServiceClient = {}
 BuildServiceClient.__index = BuildServiceClient
@@ -13,7 +15,7 @@ function BuildServiceClient.new()
 	local self = setmetatable({}, BuildServiceClient)
 	self.Player = Players.LocalPlayer
 	self.Mouse = self.Player:GetMouse()
-	self.Remote = nil
+	self.Query = nil
 	self.Active = false
 	self.SelectedBuild = "Wood"
 	self.SelectedTier = BuildCatalog.DefaultTier
@@ -28,10 +30,10 @@ function BuildServiceClient.new()
 end
 
 function BuildServiceClient:Start()
-	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-	self.Remote = remotes and remotes:FindFirstChild("BuildAction")
-	if not self.Remote or not self.Remote:IsA("RemoteFunction") then
-		warn("[BuildServiceClient] BuildAction remote is unavailable.")
+	local Packets = PacketBootstrap.Get()
+	self.Query = Packets.queries and Packets.queries.BuildAction
+	if not self.Query then
+		warn("[BuildServiceClient] BuildAction query is unavailable.")
 		return
 	end
 
@@ -39,6 +41,39 @@ function BuildServiceClient:Start()
 	table.insert(self.Connections, self.Player.CharacterAdded:Connect(function(character)
 		self:_bindCharacter(character)
 	end))
+end
+
+function BuildServiceClient:_invoke(action: string, payload: any?)
+	if not self.Query then
+		return false, "Build transport unavailable."
+	end
+
+	local encodedPayload = nil
+	if payload ~= nil then
+		local encoded, result = pcall(HttpService.JSONEncode, HttpService, payload)
+		if not encoded then
+			return false, "Invalid build payload."
+		end
+		encodedPayload = result
+	end
+
+	local ok, response = pcall(function()
+		return self.Query.invoke({ action = action, payload = encodedPayload })
+	end)
+	if not ok or type(response) ~= "table" then
+		return false, "Build request failed."
+	end
+	if response.success ~= true then
+		return false, tostring(response.message or "Build request rejected.")
+	end
+
+	if type(response.payload) == "string" then
+		local decoded, result = pcall(HttpService.JSONDecode, HttpService, response.payload)
+		if decoded then
+			response.payload = result
+		end
+	end
+	return true, response
 end
 
 function BuildServiceClient:_bindCharacter(character)
@@ -80,13 +115,32 @@ function BuildServiceClient:Enter()
 		return
 	end
 
-	local ok, result = self.Remote:InvokeServer("GetState")
+	local ok, result = self:_invoke("GetState")
 	if not ok then
 		warn(`[BuildServiceClient] {result}`)
 		return
 	end
 
-	self.GridState = result
+	local state = result.state
+	if type(state) ~= "table" then
+		warn("[BuildServiceClient] Build state was missing.")
+		return
+	end
+	local decoded, occupied = pcall(HttpService.JSONDecode, HttpService, state.occupied)
+	if not decoded or type(occupied) ~= "table" then
+		warn("[BuildServiceClient] Build occupancy was invalid.")
+		return
+	end
+	self.GridState = {
+		Metadata = {
+			CellSize = state.cellSize,
+			Width = state.width,
+			Height = state.height,
+			Origin = state.origin,
+			CompoundSize = state.compoundSize,
+		},
+		Occupied = occupied,
+	}
 	self.Active = true
 	self:_createGrid()
 	self:_createPreview()
@@ -265,7 +319,7 @@ function BuildServiceClient:_placePreview()
 		return
 	end
 
-	local ok, result = self.Remote:InvokeServer("Place", {
+	local ok, result = self:_invoke("Place", {
 		BuildId = self.SelectedBuild,
 		Tier = self.SelectedTier,
 		GridX = gridX,
@@ -274,7 +328,7 @@ function BuildServiceClient:_placePreview()
 	})
 
 	if ok and type(result) == "table" then
-		self.GridState.Occupied = result.Occupied or self.GridState.Occupied
+		self.GridState.Occupied = result.payload and result.payload.Occupied or self.GridState.Occupied
 	elseif not ok then
 		warn(`[BuildServiceClient] {result}`)
 	end
@@ -291,12 +345,12 @@ function BuildServiceClient:_removeHovered()
 		return
 	end
 
-	local ok, result = self.Remote:InvokeServer("Remove", {
+	local ok, result = self:_invoke("Remove", {
 		Guid = guid,
 	})
 
 	if ok and type(result) == "table" then
-		self.GridState.Occupied = result.Occupied or self.GridState.Occupied
+		self.GridState.Occupied = result.payload and result.payload.Occupied or self.GridState.Occupied
 	elseif not ok then
 		warn(`[BuildServiceClient] {result}`)
 	end

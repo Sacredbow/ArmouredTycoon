@@ -12,13 +12,15 @@
 
 const RunService = game:GetService("RunService")
 const Players = game:GetService("Players")
-const CollectionService = game:GetService("CollectionService")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 --// Modules
 
 const Runtime = require(script.Parent.Runtime)
+const HitResolver = require(script.Parent.Parent.Combat.HitResolver)
 const HitMod = require(ReplicatedStorage["ACS_Engine"].Modules:WaitForChild("Hitmarker"))
+const PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+const Packets = PacketBootstrap.Get()
 
 --// Constants
 
@@ -33,6 +35,14 @@ const IGNORE_NAMES = {
 	Armor = true, EShield = true,
 }
 
+local function addIgnored(instances: { Instance }, instance: Instance)
+	for _, existing in instances do
+		if existing == instance then
+			return
+		end
+	end
+	table.insert(instances, instance)
+end
 local CastController = {}
 CastController.__index = CastController
 
@@ -42,7 +52,6 @@ export type CastController = typeof(setmetatable({} :: {
 	_character: Model,
 	_effectsFolder: Folder,
 	_ignoreModel: { Instance },
-	_events: any,
 	_destroyLater: (Instance, number) -> (),
 	_tracers: number,
 	_weaponTool: Tool?,
@@ -61,7 +70,7 @@ function CastController.new(
 	camera: Camera,
 	character: Model,
 	effectsFolder: Folder,
-	events: any,
+	ignoreModel: { Instance },
 	gameRules: any,
 	destroyLaterFn: (Instance, number) -> ()
 ): CastController
@@ -70,8 +79,7 @@ function CastController.new(
 		_camera = camera,
 		_character = character,
 		_effectsFolder = effectsFolder,
-		_ignoreModel = { camera, character, effectsFolder },
-		_events = events,
+		_ignoreModel = ignoreModel,
 		_gameRules = gameRules,
 		_destroyLater = destroyLaterFn,
 		_tracers = 0,
@@ -84,6 +92,11 @@ function CastController.new(
 	_bullets = {},
 	_destroyed = false,
 	}, CastController)
+end
+
+function CastController:setCamera(camera: Camera)
+	self._camera = camera
+	self._ignoreModel[1] = camera
 end
 
 function CastController:setWeaponState(weaponTool: Tool?, weaponData: any, modTable: any, weaponInHand: Model?)
@@ -114,22 +127,11 @@ function CastController:checkForShield(hitPart: Instance): Model?
 end
 
 function CastController:checkForHumanoid(hitPart: Instance): (boolean, Humanoid?)
-	if hitPart:IsA("Humanoid") then
-		return true, hitPart
-	end
-
-	local parent = hitPart.Parent
-	if parent and parent:IsA("Model") then
-		local humanoid = parent:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			return true, humanoid
-		end
-	end
-
-	return false, nil
+	local result = HitResolver.findHumanoid(hitPart)
+	return result.found, result.humanoid
 end
 
-function CastController:submitDamage(targetHumanoid: Humanoid, limb: number)
+function CastController:submitDamage(targetHumanoid: Humanoid, limb: number, hitPart: Instance)
 	if self._destroyed then
 		return
 	end
@@ -139,7 +141,7 @@ function CastController:submitDamage(targetHumanoid: Humanoid, limb: number)
 		return
 	end
 
-	self._events.Damage:InvokeServer(weaponTool, targetHumanoid, limb, self._modTable)
+	Packets.packets.DamageIntent.send({ weapon = weaponTool, targetHumanoid = targetHumanoid, hitPart = hitPart, hitType = limb })
 end
 function CastController:tracerCalc(): boolean
 	if not self._weaponData.Tracer and not self._weaponData.BulletFlare then
@@ -162,7 +164,7 @@ end
 function CastController:createBullet(
 	bSpread: number,
 	charspeed: number,
-	aimming: boolean,
+	aiming: boolean,
 	firstPerson: boolean
 )
 	if self._destroyed then
@@ -197,7 +199,7 @@ function CastController:createBullet(
 	local walkMul = self._weaponData.WalkMult * (self._modTable and self._modTable.WalkMult or 1)
 	local spreadAngle
 
-	if aimming and self._weaponData.Bullets <= 1 then
+	if aiming and self._weaponData.Bullets <= 1 then
 		spreadAngle = CFrame.Angles(
 			math.rad(Runtime.randomRange(-bSpread - (charspeed / 1) * walkMul, bSpread + (charspeed / 1) * walkMul) / (10 * self._weaponData.AimSpreadReduction)),
 			math.rad(Runtime.randomRange(-bSpread - (charspeed / 1) * walkMul, bSpread + (charspeed / 1) * walkMul) / (10 * self._weaponData.AimSpreadReduction)),
@@ -216,7 +218,11 @@ function CastController:createBullet(
 	local tracerVisible = self:tracerCalc()
 	if tracerVisible then
 		if self._gameRules.ReplicatedBullets then
-			self._events.ServerBullet:FireServer(origin, direction, nil, { MuzzleVelocity = self._modTable and self._modTable.MuzzleVelocity })
+			Packets.packets.ProjectileIntent.send({
+				origin = origin,
+				direction = direction,
+				muzzleVelocity = self._modTable and self._modTable.MuzzleVelocity or 1,
+			})
 		end
 
 		local ProjectileVisuals = require(game:GetService("ReplicatedStorage").Modules.ProjectileVisuals)
@@ -292,8 +298,8 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 				if (plyr.Character.Head.Position - bpos).Magnitude > WHIZZ_DISTANCE then
 					continue
 				end
-				self._events.Whizz:FireServer(plyr)
-				self._events.Suppression:FireServer(plyr, 1, nil, nil)
+				Packets.packets.WhizzIntent.send({ victim = plyr })
+				Packets.packets.SuppressionIntent.send({ victim = plyr, mode = 1 })
 				debounce = true
 				break
 			end
@@ -315,7 +321,7 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 			bullet:Destroy()
 			debounce = true
 			cleanup()
-			self._events.ShieldHit:FireServer(shieldModel)
+			Packets.packets.ShieldHitIntent.send({ shield = shieldModel })
 			return
 		end
 
@@ -327,7 +333,7 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 				end
 				for _, accessory in plyr.Character:GetChildren() do
 					if accessory:IsA("Accessory") then
-						table.insert(ignoreModel, accessory)
+						addIgnored(ignoreModel, accessory)
 					end
 				end
 			end
@@ -337,12 +343,12 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 
 		-- Skip armour shell / cosmetic parts
 		if hitInstance and IGNORE_NAMES[hitInstance.Name] then
-			table.insert(ignoreModel, hitInstance)
+			addIgnored(ignoreModel, hitInstance)
 			raycastParams.FilterDescendantsInstances = ignoreModel
 			return
 		end
 		if hitParent and IGNORE_NAMES[hitParent.Name] then
-			table.insert(ignoreModel, hitParent)
+			addIgnored(ignoreModel, hitParent)
 			raycastParams.FilterDescendantsInstances = ignoreModel
 			return
 		end
@@ -360,7 +366,7 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 			and hitInstance.Name ~= "RightUpperLeg" and hitInstance.Name ~= "RightLowerLeg" and hitInstance.Name ~= "RightFoot"
 			and hitInstance.Name ~= "LeftUpperLeg" and hitInstance.Name ~= "LeftLowerLeg" and hitInstance.Name ~= "LeftFoot"
 		then
-			table.insert(ignoreModel, hitInstance)
+			addIgnored(ignoreModel, hitInstance)
 			raycastParams.FilterDescendantsInstances = ignoreModel
 			return
 		end
@@ -378,27 +384,16 @@ function CastController:castRay(bullet: Instance, origin: Vector3)
 		if not success then
 			warn("[ACS] Ranged hit effect failed: " .. tostring(errorMessage))
 		end
-		self._events.HitEffect:FireServer(raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
+		Packets.packets.HitEffectIntent.send({ position = raycastResult.Position, hitPart = raycastResult.Instance, normal = raycastResult.Normal, material = raycastResult.Material.Name })
 
 		local hitPart = raycastResult.Instance
 
 		local foundHuman, targetHumanoid = self:checkForHumanoid(raycastResult.Instance)
 
 		if foundHuman and targetHumanoid and targetHumanoid.Health > 0 and self._weaponData then
-
-			if hitPart.Name == "Head" or hitPart.Parent.Name == "Top" or hitPart.Parent.Name == "Headset"
-				or hitPart.Parent.Name == "Olho" or hitPart.Parent.Name == "Face" or hitPart.Parent.Name == "Numero" then
-				self:submitDamage(targetHumanoid, 1)
-			elseif hitPart.Name == "Torso" or hitPart.Name == "UpperTorso" or hitPart.Name == "LowerTorso"
-				or hitPart.Parent.Name == "Chest" or hitPart.Parent.Name == "Waist"
-				or hitPart.Name == "Right Arm" or hitPart.Name == "Left Arm"
-				or hitPart.Name == "RightUpperArm" or hitPart.Name == "RightLowerArm" or hitPart.Name == "RightHand"
-				or hitPart.Name == "LeftUpperArm" or hitPart.Name == "LeftLowerArm" or hitPart.Name == "LeftHand" then
-				self:submitDamage(targetHumanoid, 2)
-			elseif hitPart.Name == "Right Leg" or hitPart.Name == "Left Leg"
-				or hitPart.Name == "RightUpperLeg" or hitPart.Name == "RightLowerLeg" or hitPart.Name == "RightFoot"
-				or hitPart.Name == "LeftUpperLeg" or hitPart.Name == "LeftLowerLeg" or hitPart.Name == "LeftFoot" then
-				self:submitDamage(targetHumanoid, 3)
+			local limbType = HitResolver.getLimbType(hitPart)
+			if limbType then
+				self:submitDamage(targetHumanoid, limbType, hitPart)
 			end
 		end
 	end)
@@ -458,7 +453,7 @@ function CastController:meleeCast()
 					if character then
 						for _, accessory in character:GetChildren() do
 							if accessory:IsA("Accessory") then
-								table.insert(ignoreModel, accessory)
+								addIgnored(ignoreModel, accessory)
 							end
 						end
 					end
@@ -469,7 +464,7 @@ function CastController:meleeCast()
 
 			-- Skip armour shell / cosmetic parts.
 			if IGNORE_NAMES[hit.Name] or (parent and IGNORE_NAMES[parent.Name]) then
-				table.insert(ignoreModel, if IGNORE_NAMES[hit.Name] then hit else parent)
+				addIgnored(ignoreModel, if IGNORE_NAMES[hit.Name] then hit else parent)
 				raycastParams.FilterDescendantsInstances = ignoreModel
 				continue
 			end
@@ -486,7 +481,7 @@ function CastController:meleeCast()
 				and hit.Name ~= "RightUpperLeg" and hit.Name ~= "RightLowerLeg" and hit.Name ~= "RightFoot"
 				and hit.Name ~= "LeftUpperLeg" and hit.Name ~= "LeftLowerLeg" and hit.Name ~= "LeftFoot"
 			then
-				table.insert(ignoreModel, hit)
+				addIgnored(ignoreModel, hit)
 				raycastParams.FilterDescendantsInstances = ignoreModel
 				continue
 			end
@@ -509,14 +504,14 @@ function CastController:meleeCast()
 	if not success then
 		warn("[ACS] Melee hit effect failed: " .. tostring(errorMessage))
 	end
-	self._events.HitEffect:FireServer(raycastResult.Position, raycastResult.Instance, raycastResult.Normal, raycastResult.Material, self._weaponData)
+	Packets.packets.HitEffectIntent.send({ position = raycastResult.Position, hitPart = raycastResult.Instance, normal = raycastResult.Normal, material = raycastResult.Material.Name })
 
 	local hitPart = raycastResult.Instance
 
 	-- If the melee hit a shield, damage the shield instead of the player.
 	local shieldModel = self:checkForShield(hitPart)
 	if shieldModel and self._weaponData then
-		self._events.ShieldHit:FireServer(shieldModel)
+		Packets.packets.ShieldHitIntent.send({ shield = shieldModel })
 		return
 	end
 
@@ -526,17 +521,8 @@ function CastController:meleeCast()
 	end
 
 
-	if hitPart.Name == "Head" or hitPart.Parent.Name == "Top" or hitPart.Parent.Name == "Headset"
-		or hitPart.Parent.Name == "Olho" or hitPart.Parent.Name == "Face" or hitPart.Parent.Name == "Numero" then
-		self:submitDamage(targetHumanoid, 1)
-	elseif hitPart.Name == "Torso" or hitPart.Name == "UpperTorso" or hitPart.Name == "LowerTorso"
-		or hitPart.Parent.Name == "Chest" or hitPart.Parent.Name == "Waist"
-		or hitPart.Name == "RightUpperArm" or hitPart.Name == "RightLowerArm" or hitPart.Name == "RightHand"
-		or hitPart.Name == "LeftUpperArm" or hitPart.Name == "LeftLowerArm" or hitPart.Name == "LeftHand" then
-		self:submitDamage(targetHumanoid, 2)
-	else
-		self:submitDamage(targetHumanoid, 3)
-	end
+	local limbType = HitResolver.getLimbType(hitPart) or 3
+	self:submitDamage(targetHumanoid, limbType, hitPart)
 end
 
 return CastController

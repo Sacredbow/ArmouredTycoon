@@ -21,6 +21,7 @@ const ServerScriptService = game:GetService("ServerScriptService")
 --// Modules
 
 const ECS = require(ReplicatedStorage.ECS)
+const Observers = require(ReplicatedStorage.Packages.Observers)
 const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 const DamageRuntimeState = require(ServerScriptService.Services.Combat.DamageRuntimeState)
 
@@ -98,31 +99,12 @@ local function OnPlayerAdded(player: Player)
 		return
 	end
 
-	local existingConnection = State.CharacterConnections[player]
-	if existingConnection then
-		existingConnection:Disconnect()
-	end
-
 	ShotAuthority.Reset(player)
-	State.CharacterConnections[player] = player.CharacterAdded:Connect(function(character)
-		Weapons.ClearEquippedRig(player)
-		ShotAuthority.Reset(player)
-		OnCharacterAdded(character)
-	end)
-
-	if player.Character then
-		OnCharacterAdded(player.Character)
-	end
 end
 
 local function OnPlayerRemoving(player: Player)
 	Weapons.ClearEquippedRig(player)
 	ShotAuthority.Reset(player)
-	local connection = State.CharacterConnections[player]
-	if connection then
-		connection:Disconnect()
-		State.CharacterConnections[player] = nil
-	end
 
 	local weaponRigEntity = State.WeaponRigEntities[player]
 	if weaponRigEntity then
@@ -148,16 +130,27 @@ function Init()
 	-- Apply global walk speed from game rules (matches legacy behaviour)
 	game.StarterPlayer.CharacterWalkSpeed = State.GameRules.NormalWalkSpeed
 
-	Players.PlayerAdded:Connect(OnPlayerAdded)
-	Players.PlayerRemoving:Connect(OnPlayerRemoving)
-
-	for _, player in Players:GetPlayers() do
+	Observers.observePlayer(function(player: Player)
 		OnPlayerAdded(player)
-	end
+
+		return function()
+			OnPlayerRemoving(player)
+		end
+	end)
+
+	Observers.observeCharacter(function(player: Player, character: Model)
+		if IsBlacklisted(player) then
+			return
+		end
+
+		Weapons.ClearEquippedRig(player)
+		ShotAuthority.Reset(player)
+		OnCharacterAdded(character)
+	end)
 
 	-- Handler Wiring
 	local acsEvents = Engine:WaitForChild("Events")
-	for _, name in { "AcessId", "RefillMag" } do
+	for _, name in { "AcessId", "RefillMag", "ServerBullet", "Atirar", "Whizz", "Suppression", "HitEffect", "SVLaser", "SVFlash", "GunStance", "HeadRot", "Equip", "ShieldHit", "Damage", "Grenade", "Stance", "Surrender", "Refil" } do
 		local obsoleteRemote = acsEvents:FindFirstChild(name)
 		if obsoleteRemote then
 			obsoleteRemote:Destroy()

@@ -1,6 +1,9 @@
 --!strict
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Observers = require(ReplicatedStorage.Packages.Observers)
+
 
 export type Policy = {
 	Rate: number,
@@ -116,8 +119,11 @@ function NetworkGuard.GetMetrics(): { [string]: Metrics }
 	return snapshot
 end
 
-Players.PlayerRemoving:Connect(function(player)
-	BucketsByPlayer[player] = nil
+
+Observers.observePlayer(function(_player: Player)
+	return function()
+		BucketsByPlayer[_player] = nil
+	end
 end)
 
 return NetworkGuard

@@ -1,11 +1,12 @@
 --!strict
 
 local ServerStorage = game:GetService("ServerStorage")
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Observers = require(ReplicatedStorage.Packages.Observers)
+local Packets = require(ReplicatedStorage.Network.Packets)
 
 local Administrator = ServerStorage:WaitForChild("AdminRegistry")
-local ClientReplicator = ReplicatedStorage.Remotes.Interface:WaitForChild("ClientReplicator")
+
 local Janitor = require(ReplicatedStorage.Packages.janitor)
 
 -- UserId authorization is immutable and does not change when a username does.
@@ -17,7 +18,7 @@ local Janitors: { [Player]: any } = {}
 
 local function attachAdminUi(player: Player)
 	if not Admins[player.UserId] then
-		return
+		return function() end
 	end
 
 	local oldJanitor = Janitors[player]
@@ -38,24 +39,22 @@ local function attachAdminUi(player: Player)
 		if mainModule and playerGui.Parent then
 			mainModule:Clone().Parent = playerGui
 		end
-		ClientReplicator:FireClient(player)
+		Packets.packets.AdminUiReady.sendTo(nil, player)
 	end
 
 	janitor:Add(player.CharacterAdded:Connect(onCharacterAdded), "Disconnect", "CharacterAdded")
 	if player.Character then
 		onCharacterAdded()
 	end
-end
 
-for _, player in Players:GetPlayers() do
-	attachAdminUi(player)
-end
-
-Players.PlayerAdded:Connect(attachAdminUi)
-Players.PlayerRemoving:Connect(function(player)
-	local janitor = Janitors[player]
-	if janitor then
-		janitor:Destroy()
-		Janitors[player] = nil
+	return function()
+		local currentJanitor = Janitors[player]
+		if currentJanitor then
+			currentJanitor:Destroy()
+			Janitors[player] = nil
+		end
 	end
+end
+Observers.observePlayer(function(player: Player)
+	return attachAdminUi(player)
 end)

@@ -20,16 +20,18 @@ return function(context: any)
 	local dt = context.dt
 
 	for Entity, NPCUpdate in World:query(Components.NPCUpdate) do
-		const Controller = NPCRegistry.Get(NPCUpdate.npcEntity or Entity)
-		if not Controller or not Controller.NPC or not Controller.NPC.Parent then
-			NPCRegistry.Unregister(Entity)
+		const NPCEntity = NPCUpdate.npcEntity or Entity
+		const Controller = NPCRegistry.Get(NPCEntity)
+		if not Controller or Controller.Destroyed or not Controller.NPC or not Controller.NPC.Parent then
+			NPCRegistry.Unregister(NPCEntity)
 			World:delete(Entity)
 			continue
 		end
 
 		NPCUpdate.elapsed = (NPCUpdate.elapsed or 0) + dt
-		if NPCUpdate.elapsed >= NPCUpdate.interval then
-			NPCUpdate.elapsed -= NPCUpdate.interval
+		const Interval = math.max(tonumber(NPCUpdate.interval) or 0.1, 0.05)
+		if NPCUpdate.elapsed >= Interval then
+			NPCUpdate.elapsed -= Interval
 			const StateMachine = Controller.StateMachine
 			if StateMachine then
 				StateMachine:Update()

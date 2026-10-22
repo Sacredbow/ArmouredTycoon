@@ -12,6 +12,7 @@ local NotificationStack = require(script.Parent.features.Notifications.Notificat
 local StoreProvider = require(script.Parent.store.StoreProvider)
 local WeaponCrosshair = require(script.Parent.features.HUD.components.WeaponCrosshair)
 local InventoryView = require(script.Parent.features.Inventory.InventoryView)
+local InventoryFeature = require(ReplicatedStorage.CharacterUtilities.Inventory.FeatureConfig)
 
 
 local e = React.createElement
@@ -26,7 +27,7 @@ local function App()
 		NukeCinematic = e(NukeCinematicView),
 		WeaponCrosshair = e(WeaponCrosshair),
 		Notifications = e(NotificationStack),
-		Inventory = e(InventoryView),
+		Inventory = if InventoryFeature.Enabled then e(InventoryView) else nil,
 	})
 end
 

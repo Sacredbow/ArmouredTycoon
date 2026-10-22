@@ -18,12 +18,15 @@ const ContextActionService = game:GetService("ContextActionService")
 const Runtime = require(script.Parent.Runtime)
 const FeatureFlags = require(script.Parent.FeatureFlags)
 const WeaponToolClassifier = require(script.Parent.WeaponToolClassifier)
+const WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
 const AttachmentController = require(script.Parent.Parent.Combat.AttachmentController)
 const AttachmentModifiers = require(script.Parent.Parent.Combat.AttachmentModifiers)
 const WeaponAnimator = require(script.Parent.Parent.WeaponAnimation.WeaponAnimator)
 const AnimationController = require(script.Parent.AnimationController)
 const WeaponUIState = require(script.Parent.Parent.UI.WeaponUIState)
 const WeaponHudAdapter = require(script.Parent.Parent.UI.WeaponHudAdapter)
+const PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+const Packets = PacketBootstrap.Get()
 
 --// Engine Folders
 
@@ -32,17 +35,16 @@ const GunModels = Engine:WaitForChild("GunModels") :: any
 const ArmModel = Engine:WaitForChild("ArmModel") :: any
 const AttModels = Engine:WaitForChild("AttModels") :: any
 const AttModules = Engine:WaitForChild("AttModules") :: any
-const Events = Engine:WaitForChild("Events") :: any
 const Mods = Engine:WaitForChild("Modules") :: any
 
-local Ultil: any
+local Utilities: any
 local ok, utilModule = pcall(function()
 	return require(Mods:WaitForChild("Utilities"))
 end)
 if ok then
-	Ultil = utilModule
+	Utilities = utilModule
 else
-	Ultil = {
+	Utilities = {
 		Weld = function(part0: BasePart, part1: BasePart)
 			local motor = Instance.new("Motor6D")
 			motor.Name = part1.Name
@@ -70,6 +72,18 @@ end
 
 const AIM_TWEEN_INFO = TweenInfo.new(0.2, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
 
+local function cloneSettings(value: any): any
+	if type(value) ~= "table" then
+		return value
+	end
+
+	local copy = {}
+	for key, child in value do
+		copy[key] = cloneSettings(child)
+	end
+	return copy
+end
+
 local EquipController = {}
 EquipController.__index = EquipController
 
@@ -78,7 +92,6 @@ export type EquipController = typeof(setmetatable({} :: {
 	_camera: Camera,
 	_character: Model,
 	_humanoid: Humanoid,
-	_events: any,
 	_gunModels: any,
 	_armModel: any,
 	_attModels: any,
@@ -97,6 +110,8 @@ export type EquipController = typeof(setmetatable({} :: {
 	_animData: any,
 	_ammo: number,
 	_storedAmmo: number,
+	_jammed: boolean,
+	_shootType: number,
 	_bSpread: number,
 	_recoilPower: number,
 	_lastSpreadUpdate: number,
@@ -134,7 +149,6 @@ function EquipController.new(
 	camera: Camera,
 	character: Model,
 	humanoid: Humanoid,
-	events: any,
 	gunModels: any,
 	armModel: any,
 	attModels: any,
@@ -149,7 +163,6 @@ function EquipController.new(
 		_camera = camera,
 		_character = character,
 		_humanoid = humanoid,
-		_events = events,
 		_gunModels = gunModels,
 		_armModel = armModel,
 		_attModels = attModels,
@@ -168,6 +181,8 @@ function EquipController.new(
 		_animData = nil,
 		_ammo = 0,
 		_storedAmmo = 0,
+		_jammed = false,
+		_shootType = 1,
 		_bSpread = 0,
 		_recoilPower = 0,
 		_lastSpreadUpdate = 0,
@@ -203,6 +218,13 @@ end
 
 --// Getters (for Main to read state)
 
+function EquipController:setCamera(camera: Camera)
+	self._camera = camera
+	if self._viewModel then
+		self._viewModel.Parent = camera
+	end
+end
+
 function EquipController:isEquipped(): boolean return self._toolEquip end
 function EquipController:getWeaponTool(): Tool? return self._weaponTool end
 function EquipController:getWeaponData(): any return self._weaponData end
@@ -211,6 +233,8 @@ function EquipController:getViewModel(): Model? return self._viewModel end
 function EquipController:getWeaponInHand(): Model? return self._weaponInHand end
 function EquipController:getAmmo(): number return self._ammo end
 function EquipController:getStoredAmmo(): number return self._storedAmmo end
+function EquipController:getJammed(): boolean return self._jammed end
+function EquipController:getShootType(): number return self._shootType end
 function EquipController:getBSpread(): number return self._bSpread end
 function EquipController:getRecoilPower(): number return self._recoilPower end
 function EquipController:getLastSpreadUpdate(): number return self._lastSpreadUpdate end
@@ -246,6 +270,8 @@ function EquipController:getModTable(): any return self._modTable end
 
 function EquipController:setAmmo(value: number) self._ammo = value end
 function EquipController:setStoredAmmo(value: number) self._storedAmmo = value end
+function EquipController:setJammed(value: boolean) self._jammed = value end
+function EquipController:setShootType(value: number) self._shootType = value end
 function EquipController:setBSpread(value: number) self._bSpread = value end
 function EquipController:setRecoilPower(value: number) self._recoilPower = value end
 function EquipController:setLastSpreadUpdate(value: number) self._lastSpreadUpdate = value end
@@ -280,7 +306,7 @@ function EquipController:resetMods()
 end
 
 function EquipController:loadAttachment(weapon: any)
-	local attachments = AttachmentController.load(weapon, self._weaponData, self._modTable, self._attModels, self._attModules, Ultil)
+	local attachments = AttachmentController.load(weapon, self._weaponData, self._modTable, self._attModels, self._attModules, Utilities)
 
 	self._underBarrelAtt = attachments.underBarrel
 	self._suppressor = attachments.suppressor
@@ -289,28 +315,34 @@ function EquipController:loadAttachment(weapon: any)
 	self._bipodAtt = attachments.bipod
 end
 
-function EquipController:setup(tool: Tool)
+
+function EquipController:setup(tool: Tool): boolean
+	if self._toolEquip then
+		return false
+	end
 	if not self._character or not tool then
-		return
+		return false
 	end
 
 	local humanoid = self._character:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then
-		return
+		return false
 	end
 
-	local gunModelCheck = self._gunModels:FindFirstChild(tool.Name)
+	const weaponId = WeaponDefinitionResolver.getId(tool) or tool.Name
+	const gunModelCheck = self._gunModels:FindFirstChild(weaponId)
 	if not gunModelCheck or not gunModelCheck:IsA("Model") then
-		warn("Tool Or Gun Model Doesn't Exist")
-		return
+		warn(("[ACS] Gun model does not exist for weapon %s"):format(weaponId))
+		return false
 	end
 
-	local settingsModule = tool:FindFirstChild("ACS_Settings")
-	local animationsModule = tool:FindFirstChild("ACS_Animations")
+	const settingsModule = WeaponDefinitionResolver.getSettings(tool)
+	const animationsModule = WeaponDefinitionResolver.getAnimations(tool)
+
 	if not settingsModule or not settingsModule:IsA("ModuleScript")
 		or not animationsModule or not animationsModule:IsA("ModuleScript") then
-		warn(`[ACS] {tool.Name} is missing authored settings or animations`)
-		return
+		warn(("[ACS] %s is missing authored settings or animations"):format(tool.Name))
+		return false
 	end
 
 	local settingsOk, loadedSettings = pcall(require, settingsModule)
@@ -319,174 +351,223 @@ function EquipController:setup(tool: Tool)
 		or not animationsOk or type(loadedAnimations) ~= "table"
 		or typeof(loadedAnimations.MainCFrame) ~= "CFrame"
 		or typeof(loadedAnimations.GunCFrame) ~= "CFrame" then
-		warn(`[ACS] {tool.Name} has invalid authored settings or animations`)
-		return
+		warn(("[ACS] %s has invalid authored settings or animations"):format(tool.Name))
+		return false
 	end
 
-	self._weaponTool = tool
-	self._weaponData = table.clone(loadedSettings)
-	self._animData = loadedAnimations
+	local weaponData = cloneSettings(loadedSettings)
+	local modTable = AttachmentModifiers.createDefault()
+	local weaponAnimator = WeaponAnimator.new(loadedAnimations)
+	local weaponInHand: Model? = nil
+	local viewModel: Model? = nil
+	local animationController: AnimationController.AnimationController? = nil
+	local underBarrelAtt: Model? = nil
+	local suppressor = false
+	local flashHider = false
+	local irEnable = weaponData.InfraRed == true
+	local bipodAtt = false
+	local bSpread = 0
+	local recoilPower = 0
+	local ammo = 0
+	local storedAmmo = 0
+	local curAimpart: BasePart? = nil
 
-	self._weaponAnimator = WeaponAnimator.new(self._animData)
-	self._weaponInHand = gunModelCheck:Clone()
-	self._weaponInHand.PrimaryPart = self._weaponInHand:WaitForChild("Handle")
+	local success, errorMessage = xpcall(function()
+		weaponInHand = gunModelCheck:Clone()
+		local handle = weaponInHand and weaponInHand:FindFirstChild("Handle")
+		if not handle or not handle:IsA("BasePart") then
+			error("weapon model is missing a BasePart Handle")
+		end
+		weaponInHand.PrimaryPart = handle
 
+		viewModel = self._armModel:WaitForChild("Arms"):Clone()
+		viewModel.Name = "Viewmodel"
 
-	-- Clone viewmodel arms
-	self._viewModel = self._armModel:WaitForChild("Arms"):Clone()
-	self._viewModel.Name = "Viewmodel"
-	self._viewModelEnabledStates = {}
-	self._viewModelTransparencyStates = {}
+		local bodyColors = self._character:FindFirstChild("Body Colors")
+		if bodyColors then
+			bodyColors:Clone().Parent = viewModel
+		end
+		local shirt = self._character:FindFirstChild("Shirt")
+		if shirt then
+			shirt:Clone().Parent = viewModel
+		end
 
-	if self._character:FindFirstChild("Body Colors") then
-		local colors = self._character:FindFirstChild("Body Colors"):Clone()
-		colors.Parent = self._viewModel
-	end
-	if self._character:FindFirstChild("Shirt") then
-		local shirt = self._character:FindFirstChild("Shirt"):Clone()
-		shirt.Parent = self._viewModel
-	end
+		local animPart = Instance.new("Part")
+		animPart.Name = "AnimPart"
+		animPart.Size = Vector3.new(0.1, 0.1, 0.1)
+		animPart.Anchored = true
+		animPart.CanCollide = false
+		animPart.Transparency = 1
+		animPart.Parent = viewModel
+		viewModel.PrimaryPart = animPart
 
-	-- AnimPart — invisible root that follows camera
-	local animPart = Instance.new("Part")
-	animPart.Parent = self._viewModel
-	animPart.Size = Vector3.new(0.1, 0.1, 0.1)
-	animPart.Anchored = true
-	animPart.CanCollide = false
-	animPart.Transparency = 1
-	self._viewModel.PrimaryPart = animPart
+		local laWeld = Instance.new("Motor6D")
+		laWeld.Name = "LeftArm"
+		laWeld.Part0 = animPart
+		laWeld.Parent = animPart
 
-	-- Arm welds
-	local laWeld = Instance.new("Motor6D")
-	laWeld.Parent = animPart
-	laWeld.Name = "LeftArm"
-	laWeld.Part0 = animPart
+		local raWeld = Instance.new("Motor6D")
+		raWeld.Name = "RightArm"
+		raWeld.Part0 = animPart
+		raWeld.Parent = animPart
 
-	local raWeld = Instance.new("Motor6D")
-	raWeld.Parent = animPart
-	raWeld.Name = "RightArm"
-	raWeld.Part0 = animPart
+		local gunWeld = Instance.new("Motor6D")
+		gunWeld.Name = "Handle"
+		gunWeld.Part0 = animPart
+		gunWeld.Parent = animPart
 
-	local gunWeld = Instance.new("Motor6D")
-	gunWeld.Parent = animPart
-	gunWeld.Name = "Handle"
+		local leftArm = viewModel:WaitForChild("Left Arm")
+		local rightArm = viewModel:WaitForChild("Right Arm")
+		if not leftArm:IsA("BasePart") or not rightArm:IsA("BasePart") then
+			error("viewmodel arms are missing expected BaseParts")
+		end
 
-	self._viewModel.Parent = self._camera
-	self._mainCF = self._animData.MainCFrame
-	self._gunCF = self._animData.GunCFrame
-	self._gunBobCF = CFrame.new()
+		laWeld.Part1 = leftArm
+		laWeld.C0 = CFrame.new()
+		laWeld.C1 = CFrame.new(1, -1, -5)
+		raWeld.Part1 = rightArm
+		raWeld.C0 = CFrame.new()
+		raWeld.C1 = CFrame.new(-1, -1, -5)
+		gunWeld.Part0 = rightArm
+		leftArm.Anchored = false
+		rightArm.Anchored = false
+		local initialAmmo = if typeof(weaponData.AmmoInGun) == "number" then weaponData.AmmoInGun else 0
+		local initialStoredAmmo = if typeof(weaponData.StoredAmmo) == "number" then weaponData.StoredAmmo else 0
+		modTable.ZoomValue = if typeof(weaponData.Zoom) == "number" then weaponData.Zoom else modTable.ZoomValue
+		modTable.Zoom2Value = if typeof(weaponData.Zoom2) == "number" then weaponData.Zoom2 else modTable.Zoom2Value
 
-	-- Create animation controller
-	self._animationController = AnimationController.new(self._animData, raWeld, laWeld, gunWeld, self._weaponInHand, self._viewModel)
+		local attachments = AttachmentController.load(
+			weaponInHand,
+			weaponData,
+			modTable,
+			self._attModels,
+			self._attModules,
+			Utilities
+		)
+		underBarrelAtt = attachments.underBarrel
+		suppressor = attachments.suppressor
+		flashHider = attachments.flashHider
+		irEnable = irEnable or attachments.infrared
+		bipodAtt = attachments.bipod
 
-	-- Wire up arms
-	local la = self._viewModel:WaitForChild("Left Arm")
-	laWeld.Part1 = la
-	laWeld.C0 = CFrame.new()
-	laWeld.C1 = CFrame.new(1, -1, -5) * CFrame.Angles(math.rad(0), math.rad(0), math.rad(0)):inverse()
-
-	local ra = self._viewModel:WaitForChild("Right Arm")
-	raWeld.Part1 = ra
-	raWeld.C0 = CFrame.new()
-	raWeld.C1 = CFrame.new(-1, -1, -5) * CFrame.Angles(math.rad(0), math.rad(0), math.rad(0)):inverse()
-
-	gunWeld.Part0 = ra
-
-	la.Anchored = false
-	ra.Anchored = false
-
-	-- Update camera state
-	self._cameraController:setViewModel(self._viewModel)
-
-	-- Attachment modifiers
-	self._modTable.ZoomValue = self._weaponData.Zoom
-	self._modTable.Zoom2Value = self._weaponData.Zoom2
-	self._irEnable = self._weaponData.InfraRed
-	self:loadAttachment(self._weaponInHand)
-
-	-- Spread / recoil
-	self._bSpread = math.min(self._weaponData.MinSpread * self._modTable.MinSpread, self._weaponData.MaxSpread * self._modTable.MaxSpread)
-	self._recoilPower = math.min(self._weaponData.MinRecoilPower * self._modTable.MinRecoilPower, self._weaponData.MaxRecoilPower * self._modTable.MaxRecoilPower)
-
-	self._ammo = self._weaponData.AmmoInGun
-	self._storedAmmo = self._weaponData.StoredAmmo
-	self._curAimpart = self._weaponInHand:FindFirstChild("AimPart")
-
-	WeaponHudAdapter.setVisible(nil, self._weaponData.EnableHUD == true)
-	self:updateGui()
-
-	-- Weld weapon parts
-	local handle = self._weaponInHand:WaitForChild("Handle") :: BasePart
-	for _, key in self._weaponInHand:GetChildren() do
-		if key:IsA("BasePart") and key.Name ~= "Handle" then
-			if key.Name ~= "Bolt" and key.Name ~= "Lid" and key.Name ~= "Slide" then
-				Ultil.Weld(handle, key)
-			end
-			if key.Name == "Bolt" or key.Name == "Slide" then
-				Ultil.WeldComplex(handle, key, key.Name)
-			end
-			if key.Name == "Lid" then
-				local hinge = self._weaponInHand:FindFirstChild("LidHinge")
-				if hinge and hinge:IsA("BasePart") then
-					Ultil.Weld(key, hinge)
-				else
-					Ultil.Weld(key, handle)
+		for _, key in weaponInHand:GetChildren() do
+			if key:IsA("BasePart") and key.Name ~= "Handle" then
+				if key.Name ~= "Bolt" and key.Name ~= "Lid" and key.Name ~= "Slide" then
+					Utilities.Weld(handle, key)
+				elseif key.Name == "Bolt" or key.Name == "Slide" then
+					Utilities.WeldComplex(handle, key, key.Name)
+				elseif key.Name == "Lid" then
+					local hinge = weaponInHand:FindFirstChild("LidHinge")
+					if hinge and hinge:IsA("BasePart") then
+						Utilities.Weld(key, hinge)
+					else
+						Utilities.Weld(key, handle)
+					end
 				end
 			end
 		end
-	end
 
-	for _, child in self._weaponInHand:GetChildren() do
-		if child:IsA("BasePart") then
-			child.Anchored = false
-			child.CanCollide = false
-		end
-	end
-
-	if self._weaponInHand:FindFirstChild("Nodes") then
-		for _, node in self._weaponInHand.Nodes:GetChildren() do
-			if node:IsA("BasePart") then
-				Ultil.Weld(handle, node)
-				node.Anchored = false
-				node.CanCollide = false
+		for _, child in weaponInHand:GetChildren() do
+			if child:IsA("BasePart") then
+				child.Anchored = false
+				child.CanCollide = false
 			end
 		end
-	end
 
-	gunWeld.Part1 = handle
-	gunWeld.C1 = self._gunCF
-
-	self._weaponInHand.Parent = self._viewModel
-
-	if self._ammo <= 0 and self._weaponData.Type == "Gun" then
-		local slide = handle:FindFirstChild("Slide")
-		if slide and slide:IsA("Motor6D") and self._weaponData.SlideEx then
-			slide.C0 = self._weaponData.SlideEx:inverse()
+		local nodes = weaponInHand:FindFirstChild("Nodes")
+		if nodes then
+			for _, node in nodes:GetChildren() do
+				if node:IsA("BasePart") then
+					Utilities.Weld(handle, node)
+					node.Anchored = false
+					node.CanCollide = false
+				end
+			end
 		end
+
+		gunWeld.Part1 = handle
+		gunWeld.C1 = loadedAnimations.GunCFrame
+		weaponInHand.Parent = viewModel
+
+		local slide = handle:FindFirstChild("Slide")
+		if initialAmmo <= 0 and weaponData.Type == "Gun"
+			and slide and slide:IsA("Motor6D") and typeof(weaponData.SlideEx) == "CFrame" then
+			slide.C0 = weaponData.SlideEx:Inverse()
+		end
+
+		animationController = AnimationController.new(
+			loadedAnimations,
+			raWeld,
+			laWeld,
+			gunWeld,
+			weaponInHand,
+			viewModel
+		)
+		bSpread = math.min(weaponData.MinSpread * modTable.MinSpread, weaponData.MaxSpread * modTable.MaxSpread)
+		recoilPower = math.min(weaponData.MinRecoilPower * modTable.MinRecoilPower, weaponData.MaxRecoilPower * modTable.MaxRecoilPower)
+		ammo = initialAmmo
+		storedAmmo = initialStoredAmmo
+		local aimPart = weaponInHand:FindFirstChild("AimPart")
+		curAimpart = if aimPart and aimPart:IsA("BasePart") then aimPart else nil
+	end, debug.traceback)
+
+	if not success then
+		if viewModel then
+			viewModel:Destroy()
+		elseif weaponInHand then
+			weaponInHand:Destroy()
+		end
+		warn(("[ACS] Equip failed for %s: %s"):format(tool.Name, tostring(errorMessage)))
+		return false
 	end
 
-	-- Update cast controller state
-	self._castController:setWeaponState(self._weaponTool, self._weaponData, self._modTable, self._weaponInHand)
+	self._modTable = modTable
+	self._weaponTool = tool
+	self._weaponData = weaponData
+	self._animData = loadedAnimations
+	self._weaponAnimator = weaponAnimator
+	self._weaponInHand = weaponInHand
+	self._viewModel = viewModel
+	self._animationController = animationController
+	self._underBarrelAtt = underBarrelAtt
+	self._suppressor = suppressor
+	self._flashHider = flashHider
+	self._irEnable = irEnable
+	self._bipodAtt = bipodAtt
+	self._bSpread = bSpread
+	self._recoilPower = recoilPower
+	self._ammo = ammo
+	self._storedAmmo = storedAmmo
+	self._jammed = weaponData.Jammed == true
+	self._shootType = if typeof(weaponData.ShootType) == "number" then weaponData.ShootType else 1
+	self._curAimpart = curAimpart
+	self._mainCF = loadedAnimations.MainCFrame
+	self._gunCF = loadedAnimations.GunCFrame
+	self._gunBobCF = CFrame.new()
+	self._viewModelEnabledStates = {}
+	self._viewModelTransparencyStates = {}
+
+	viewModel.Parent = self._camera
+	self._cameraController:setViewModel(viewModel)
+	self._castController:setWeaponState(tool, weaponData, modTable, weaponInHand)
 	WeaponUIState.setAiming(self._player, false)
+	WeaponHudAdapter.setVisible(nil, weaponData.EnableHUD == true)
+	self:updateGui()
 	self._cameraController:applyCameraMode()
 	self._toolEquip = true
-	self._events.Equip:FireServer(tool, 1)
+	Packets.packets.EquipIntent.send({ weapon = tool, mode = 1 })
+	return true
 end
 
 function EquipController:unequip()
 	self._toolEquip = false
 	WeaponUIState.setAiming(self._player, false)
-	self._events.Equip:FireServer(self._weaponTool, 2)
+	if self._weaponTool then
+		Packets.packets.EquipIntent.send({ weapon = self._weaponTool, mode = 2 })
+	end
 
 	self._animationController = nil
 	self._weaponAnimator = nil
-
-	-- Store ammo back to data
-	if self._weaponData then
-		self._weaponData.AmmoInGun = self._ammo
-		self._weaponData.StoredAmmo = self._storedAmmo
-	end
-
 	if self._viewModel then
 		self._viewModel:Destroy()
 	end
@@ -495,6 +576,8 @@ function EquipController:unequip()
 	self._weaponInHand = nil
 	self._weaponTool = nil
 	self._weaponData = nil
+	self._jammed = false
+	self._shootType = 1
 	self._animData = nil
 	self._underBarrelAtt = nil
 	self._laserActive = false
@@ -524,12 +607,8 @@ end
 
 function EquipController:updateGui()
 	if self._weaponData then
-		self._weaponData.AmmoInGun = self._ammo
-		self._weaponData.StoredAmmo = self._storedAmmo
-
-		WeaponUIState.publishHud(self._player, self._weaponData, self._ammo, self._storedAmmo, false)
-		self._crosshairController:update(self._weaponData, self._toolEquip, false, self._weaponTool and self._weaponTool.Name or "")
-		WeaponHudAdapter.update(nil, self._weaponData, self._ammo, self._storedAmmo, false, self._suppressor, self._bipodAtt, self._sens)
+		WeaponUIState.publishHud(self._player, self._weaponData, self._ammo, self._storedAmmo, false, self._shootType, self._jammed)
+		WeaponHudAdapter.update(nil, self._weaponData, self._ammo, self._storedAmmo, false, self._suppressor, self._bipodAtt, self._sens, self._shootType, self._jammed)
 	end
 end
 

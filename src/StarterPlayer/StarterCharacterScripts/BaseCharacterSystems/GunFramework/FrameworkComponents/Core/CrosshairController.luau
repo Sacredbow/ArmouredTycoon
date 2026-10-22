@@ -107,8 +107,16 @@ function CrosshairController:update(weaponData: any, toolEquip: boolean, aiming:
 		then `active:{if self:_isShotgun(weaponData, weaponName) then "shotgun" else "rifle"}:{if isThird then "third" else "first"}`
 		else "hidden"
 
-	if self._lastState ~= state then
-		self._lastState = state
+	local changed = self._lastState ~= state
+	self._lastState = state
+
+	if not changed then
+		if active and isThird and not self._gui then
+			self:ensure()
+		elseif (not active or not isThird) and self._gui then
+			self:destroy()
+		end
+		return
 	end
 
 	local shotgun = self:_isShotgun(weaponData, weaponName)

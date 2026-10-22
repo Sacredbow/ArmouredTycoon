@@ -1,11 +1,11 @@
 --!strict
 -- Authoritative nuke session coordinator. Tycoon data stays in ECS; clients render the rocket.
-local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local ECS = require(ReplicatedStorage.ECS)
+local Observers = require(ReplicatedStorage.Packages.Observers)
 local Packets = require(ReplicatedStorage.Network.Packets)
 local Factory = require(ServerScriptService.ECS.TycoonFactory)
 local TycoonRuntime = require(ServerScriptService.ECS.TycoonRuntime)
@@ -63,6 +63,7 @@ function NukeService.new(tycoonService: any, playerService: any)
 	self.ModelConnections = setmetatable({}, {__mode = "k"})
 	self.ActiveSession = nil
 	self.Started = false
+	self.PlayerObserverStop = nil
 	return self
 end
 
@@ -163,11 +164,14 @@ function NukeService:_click(payload: any, player: Player)
 	if cps > MAX_INSTANT_CPS or scoreState.cpsAverage > MAX_SUSTAINED_CPS then return end
 	scoreState.score = math.clamp(scoreState.score + count, 0, 100)
 
-	local score = self:_base(session)
-	score.action = "Score"
-	score.launcherScore = session.launcherState.score
-	score.defenderScore = session.defenderState.score
-	self:_send(score)
+	const scorePacket = Packets.packets.NukeScore
+	if scorePacket then
+		scorePacket.sendToAll({
+			sessionId = session.id,
+			launcherScore = session.launcherState.score,
+			defenderScore = session.defenderState.score,
+		})
+	end
 end
 
 function NukeService:_start(entity: number, player: Player, prompt: ProximityPrompt)
@@ -313,14 +317,16 @@ function NukeService:Init()
 	}, function(payload, player)
 		self:_click(payload, player)
 	end)
-	for _, entity in self.TycoonService.Entities do
+	for _, entity in self.TycoonService:GetAllTycoons() do
 		local model = Factory.getModel(entity)
 		if model then self:_scan(model, entity) end
 	end
-	Players.PlayerRemoving:Connect(function(player)
-		local session = self.ActiveSession
-		if session and (session.launcher == player or session.defender == player) then
-			self:_finish(session, session.defender == player)
+	self.PlayerObserverStop = Observers.observePlayer(function(player: Player)
+		return function()
+			local session = self.ActiveSession
+			if session and (session.launcher == player or session.defender == player) then
+				self:_finish(session, session.defender == player)
+			end
 		end
 	end)
 end

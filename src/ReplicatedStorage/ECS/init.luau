@@ -34,6 +34,7 @@ const ComponentNames = {
 	"NeedsElectricity",
 	"PlayerRef",
 	"PlayerState",
+"FriendBoost",
 	"Transform",
 	"Velocity",
 	"Health",
@@ -54,6 +55,7 @@ const ComponentNames = {
 	"AntiCheatState",
 	"ScheduledTask",
 	"EnvironmentClock",
+	"DamageZone",
 }
 
 --// Module

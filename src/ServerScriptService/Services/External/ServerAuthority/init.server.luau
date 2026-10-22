@@ -1,17 +1,26 @@
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Observers = require(ReplicatedStorage.Packages.Observers)
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local ECS = require(ReplicatedStorage.ECS)
-local BanSignal = require(ServerScriptService.Signals.BanSignal)
+local Signal = require(ReplicatedStorage.Packages.signal)
+local BanSignal = Signal.get("ServerBanRequest")
 local BanManager = require(script.Methods.BanManager)
 
+local AntiCheatEntitiesByPlayer: { [Player]: number } = {}
+
 local function RegisterCharacter(player: Player, character: Model)
+	local previousEntity = AntiCheatEntitiesByPlayer[player]
+	if previousEntity then
+		ECS.deleteEntity(previousEntity)
+		AntiCheatEntitiesByPlayer[player] = nil
+	end
+
 	local humanoid = character:WaitForChild("Humanoid")
 	local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 	local now = os.clock()
 
-	ECS.createEntity({
+	AntiCheatEntitiesByPlayer[player] = ECS.createEntity({
 		Name = player.Name .. ":AntiCheatState",
 		Model = character,
 		AntiCheatState = {
@@ -34,11 +43,20 @@ local function RegisterCharacter(player: Player, character: Model)
 	})
 end
 
-Players.PlayerAdded:Connect(function(player)
-	player.CharacterAdded:Connect(function(character)
-		RegisterCharacter(player, character)
-	end)
+Observers.observePlayer(function(player: Player)
+	return function()
+		local entity = AntiCheatEntitiesByPlayer[player]
+		if entity then
+			ECS.deleteEntity(entity)
+			AntiCheatEntitiesByPlayer[player] = nil
+		end
+	end
 end)
+
+Observers.observeCharacter(function(player: Player, character: Model)
+	RegisterCharacter(player, character)
+end)
+
 local function HandleBanRequest(player: Player, reason: string)
 	if typeof(player) ~= "Instance" or not player:IsA("Player") then
 		warn("[ServerAuthority] BanRequest received invalid player")

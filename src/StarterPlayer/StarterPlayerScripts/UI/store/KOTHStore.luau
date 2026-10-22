@@ -21,7 +21,7 @@ KOTHStore.__index = KOTHStore
 function KOTHStore.new(): KOTHStore
 	local self = setmetatable({}, KOTHStore) :: KOTHStore
 	self.Announcement = nil
-	self.Changed = Signal.new()
+	self.Changed = Signal.get("KOTHStoreChanged")
 	self.NextAnnouncementId = 0
 	self.Started = false
 	self.Destroyed = false
@@ -70,7 +70,7 @@ function KOTHStore:DismissAnnouncement(id: number)
 end
 
 function KOTHStore:GetSnapshot(): KOTHAnnouncement?
-	return self.Announcement
+	return if self.Announcement then table.clone(self.Announcement) else nil
 end
 
 function KOTHStore:Destroy()

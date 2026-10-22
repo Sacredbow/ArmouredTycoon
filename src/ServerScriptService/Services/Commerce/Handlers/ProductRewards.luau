@@ -1,18 +1,15 @@
 --!strict
 
-local ServerScriptService = game:GetService("ServerScriptService")
-
-local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
-local GearDistribution = require(script.Parent.GearDistribution)
+const GearDistribution = require(script.Parent.GearDistribution)
 
 type ProfileManagerLike = {
-	AddCash: (player: Player, amount: number) -> (),
-	AddEmerald: (player: Player, amount: number) -> (),
+	AddCash: (Player: Player, Amount: number) -> (),
+	AddEmerald: (Player: Player, Amount: number) -> (),
 }
 
-type RewardHandler = (player: Player, profileManager: ProfileManagerLike) -> Enum.ProductPurchaseDecision
+type RewardHandler = (Player: Player, ProfileManager: ProfileManagerLike) -> Enum.ProductPurchaseDecision
 
-local PRODUCT_IDS = {
+const ProductIds = {
 	Cash_5000 = 3450461469,
 	Cash_25000 = 3450463123,
 	Cash_50000 = 3450470672,
@@ -27,51 +24,50 @@ local PRODUCT_IDS = {
 }
 
 return {
-	[PRODUCT_IDS.Cash_5000] = function(player: Player, profileManager: ProfileManagerLike)
-		profileManager.AddCash(player, 5000)
+	[ProductIds.Cash_5000] = function(Player: Player, ProfileManager: ProfileManagerLike)
+		ProfileManager.AddCash(Player, 5000)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end,
-	[PRODUCT_IDS.Cash_25000] = function(player: Player, profileManager: ProfileManagerLike)
-		profileManager.AddCash(player, 25000)
+	[ProductIds.Cash_25000] = function(Player: Player, ProfileManager: ProfileManagerLike)
+		ProfileManager.AddCash(Player, 25000)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end,
-	[PRODUCT_IDS.Cash_50000] = function(player: Player, profileManager: ProfileManagerLike)
-		profileManager.AddCash(player, 50000)
+	[ProductIds.Cash_50000] = function(Player: Player, ProfileManager: ProfileManagerLike)
+		ProfileManager.AddCash(Player, 50000)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end,
-	[PRODUCT_IDS.Cash_250000] = function(player: Player, profileManager: ProfileManagerLike)
-		profileManager.AddCash(player, 250000)
+	[ProductIds.Cash_250000] = function(Player: Player, ProfileManager: ProfileManagerLike)
+		ProfileManager.AddCash(Player, 250000)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end,
-	[PRODUCT_IDS.Cash_500000] = function(player: Player, profileManager: ProfileManagerLike)
-		profileManager.AddCash(player, 500000)
+	[ProductIds.Cash_500000] = function(Player: Player, ProfileManager: ProfileManagerLike)
+		ProfileManager.AddCash(Player, 500000)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end,
-	[PRODUCT_IDS.Emerald_300] = function(player: Player, profileManager: ProfileManagerLike)
-		profileManager.AddEmerald(player, 300)
+	[ProductIds.Emerald_300] = function(Player: Player, ProfileManager: ProfileManagerLike)
+		ProfileManager.AddEmerald(Player, 300)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end,
-	[PRODUCT_IDS.Emerald_750] = function(player: Player, profileManager: ProfileManagerLike)
-		profileManager.AddEmerald(player, 750)
+	[ProductIds.Emerald_750] = function(Player: Player, ProfileManager: ProfileManagerLike)
+		ProfileManager.AddEmerald(Player, 750)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end,
-	[PRODUCT_IDS.Emerald_1250] = function(player: Player, profileManager: ProfileManagerLike)
-		profileManager.AddEmerald(player, 1250)
+	[ProductIds.Emerald_1250] = function(Player: Player, ProfileManager: ProfileManagerLike)
+		ProfileManager.AddEmerald(Player, 1250)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end,
-	[PRODUCT_IDS.Emerald_3500] = function(player: Player, profileManager: ProfileManagerLike)
-		profileManager.AddEmerald(player, 3500)
+	[ProductIds.Emerald_3500] = function(Player: Player, ProfileManager: ProfileManagerLike)
+		ProfileManager.AddEmerald(Player, 3500)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end,
-	[PRODUCT_IDS.Emerald_10000] = function(player: Player, profileManager: ProfileManagerLike)
-		profileManager.AddEmerald(player, 10000)
+	[ProductIds.Emerald_10000] = function(Player: Player, ProfileManager: ProfileManagerLike)
+		ProfileManager.AddEmerald(Player, 10000)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end,
-	[PRODUCT_IDS.ShieldArmour] = function(player: Player)
-		if not GearDistribution.GiveShield(player) then
+	[ProductIds.ShieldArmour] = function(Player: Player, _ProfileManager: ProfileManagerLike)
+		if not GearDistribution.GiveShield(Player) then
 			return Enum.ProductPurchaseDecision.NotProcessedYet
 		end
-		PlayerRuntimeState.SetArmourEquipped(player, true)
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end,
 } :: { [number]: RewardHandler }

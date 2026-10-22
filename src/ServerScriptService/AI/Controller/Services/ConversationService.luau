@@ -1,35 +1,36 @@
 --!strict
 
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerScriptService = game:GetService("ServerScriptService")
+const Players = game:GetService("Players")
+const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const ServerScriptService = game:GetService("ServerScriptService")
 
-local ConversationOptions = require(script.Parent.ConversationOptions)
-local Packets = require(ReplicatedStorage.Network.Packets)
-local NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
-local Types = require(script.Parent.Parent.Core.Types)
-local WorldQuery = require(script.Parent.WorldQuery)
+const ConversationOptions = require(script.Parent.ConversationOptions)
+const Packets = require(ReplicatedStorage.Network.Packets)
+const Observers = require(ReplicatedStorage.Packages.Observers)
+const NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
+const Types = require(script.Parent.Parent.Core.Types)
+const WorldQuery = require(script.Parent.WorldQuery)
 
 type AIContext = Types.AIContext
 type StateMachineLike = Types.StateMachineLike
 type Option = ConversationOptions.Option
 
-local MAX_PLAYER_TURNS = 7
-local MAX_DISTANCE = 24
-local PLAYER_CONVERSATION_COOLDOWN = 5
-local IDLE_TALK_BLOCK_DURATION = 25
-local IDLE_MOVE_THRESHOLD = 1.4
+const MaxPlayerTurns = 7
+const MaxConversationDistance = 24
+const PlayerConversationCooldown = 5
+const IdleTalkBlockDuration = 25
+const IdleMoveThreshold = 1.4
 
-local ConversationService = {}
+const ConversationService = {}
 
-local activeByPlayer: { [Player]: any } = {}
-local activeByNpc: { [Model]: any } = {}
-local cooldownUntilByPlayer: { [Player]: number } = {}
-local movementByPlayer: { [Player]: { position: Vector3?, lastMovedAt: number } } = {}
-local remoteConnected = false
-local movementTrackerStarted = false
+const ActiveSessionsByPlayer: { [Player]: any } = {}
+const ActiveSessionsByNpc: { [Model]: any } = {}
+const ConversationCooldownByPlayer: { [Player]: number } = {}
+const PlayerMovementByPlayer: { [Player]: { position: Vector3?, lastMovedAt: number } } = {}
+local RemoteConnected = false
+local MovementTrackerStarted = false
 
-local function makeNpcYield(context: AIContext, targetRoot: BasePart)
+local function MakeNpcYield(context: AIContext, targetRoot: BasePart)
 	local contextAny: any = context
 	context.AvoidTarget = targetRoot
 	context.AvoidLookTarget = targetRoot
@@ -43,66 +44,68 @@ local function makeNpcYield(context: AIContext, targetRoot: BasePart)
 	contextAny.ConversationActive = false
 end
 
-local function getPlayerRoot(player: Player): BasePart?
+local function GetPlayerRoot(player: Player): BasePart?
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	return if root and root:IsA("BasePart") then root else nil
 end
 
-local function updatePlayerMovement(player: Player, now: number)
-	local root = getPlayerRoot(player)
+local function UpdatePlayerMovement(player: Player, now: number)
+	local root = GetPlayerRoot(player)
 	if not root then
-		movementByPlayer[player] = {
+		PlayerMovementByPlayer[player] = {
 			position = nil,
 			lastMovedAt = now,
 		}
 		return
 	end
 
-	local state = movementByPlayer[player]
+	local state = PlayerMovementByPlayer[player]
 	if not state then
-		movementByPlayer[player] = {
+		PlayerMovementByPlayer[player] = {
 			position = root.Position,
 			lastMovedAt = now,
 		}
 		return
 	end
 
-	if not state.position or (root.Position - state.position).Magnitude >= IDLE_MOVE_THRESHOLD then
+	if not state.position or (root.Position - state.position).Magnitude >= IdleMoveThreshold then
 		state.position = root.Position
 		state.lastMovedAt = now
 	end
 end
 
-local function startMovementTracker()
+local function StartMovementTracker()
 	if movementTrackerStarted then
 		return
 	end
 
 	movementTrackerStarted = true
-	Players.PlayerRemoving:Connect(function(player)
-		movementByPlayer[player] = nil
-		cooldownUntilByPlayer[player] = nil
+	Observers.observePlayer(function(player: Player)
+		return function()
+			PlayerMovementByPlayer[player] = nil
+			ConversationCooldownByPlayer[player] = nil
+		end
 	end)
 
 	task.spawn(function()
 		while true do
 			local now = os.clock()
 			for _, player in ipairs(Players:GetPlayers()) do
-				updatePlayerMovement(player, now)
+				UpdatePlayerMovement(player, now)
 			end
 			task.wait(1)
 		end
 	end)
 end
 
-local function playerHasBeenIdle(player: Player): boolean
-	updatePlayerMovement(player, os.clock())
-	local state = movementByPlayer[player]
-	return state ~= nil and os.clock() - state.lastMovedAt >= IDLE_TALK_BLOCK_DURATION
+local function PlayerHasBeenIdle(player: Player): boolean
+	UpdatePlayerMovement(player, os.clock())
+	local state = PlayerMovementByPlayer[player]
+	return state ~= nil and os.clock() - state.lastMovedAt >= IdleTalkBlockDuration
 end
 
-local function getPlayerDistance(player: Player, context: AIContext): number
+local function GetPlayerDistance(player: Player, context: AIContext): number
 	local character = player.Character
 	local playerRoot = character and character:FindFirstChild("HumanoidRootPart")
 	if not playerRoot or not playerRoot:IsA("BasePart") then
@@ -112,7 +115,7 @@ local function getPlayerDistance(player: Player, context: AIContext): number
 	return (playerRoot.Position - WorldQuery.GetCurrentPosition(context)).Magnitude
 end
 
-local function serializeOptions(options: { Option }): { any }
+local function SerializeOptions(options: { Option }): { any }
 	local result = {}
 	for index, option in ipairs(options) do
 		result[index] = {
@@ -125,13 +128,13 @@ local function serializeOptions(options: { Option }): { any }
 	return result
 end
 
-local function clearSession(session, reason: string?)
-	if activeByPlayer[session.player] == session then
-		activeByPlayer[session.player] = nil
-		cooldownUntilByPlayer[session.player] = os.clock() + PLAYER_CONVERSATION_COOLDOWN
+local function ClearSession(session, reason: string?)
+	if ActiveSessionsByPlayer[session.player] == session then
+		ActiveSessionsByPlayer[session.player] = nil
+		ConversationCooldownByPlayer[session.player] = os.clock() + PlayerConversationCooldown
 	end
-	if activeByNpc[session.context.NPC] == session then
-		activeByNpc[session.context.NPC] = nil
+	if ActiveSessionsByNpc[session.context.NPC] == session then
+		ActiveSessionsByNpc[session.context.NPC] = nil
 	end
 
 	if session.player.Parent == Players then
@@ -142,7 +145,7 @@ local function clearSession(session, reason: string?)
 	end
 end
 
-local function sendTurn(session)
+local function SendTurn(session)
 	local options = ConversationOptions.GetOptions(session.context.Disposition, session.turnCount)
 	session.options = options
 
@@ -152,12 +155,12 @@ local function sendTurn(session)
 		npcName = session.context.Name,
 		npcLine = session.lastNpcLine,
 		turnCount = session.turnCount,
-		maxTurns = MAX_PLAYER_TURNS,
-		options = serializeOptions(options),
+		maxTurns = MaxPlayerTurns,
+		options = SerializeOptions(options),
 	}, session.player)
 end
 
-local function leaveConversation(session, avoidMode: string?)
+local function LeaveConversation(session, avoidMode: string?)
 	local context: any = session.context
 	local playerRoot = session.player.Character and session.player.Character:FindFirstChild("HumanoidRootPart")
 	if playerRoot and playerRoot:IsA("BasePart") then
@@ -175,7 +178,7 @@ local function leaveConversation(session, avoidMode: string?)
 	end
 end
 
-local function findOption(session, optionId: string): Option?
+local function FindOption(session, optionId: string): Option?
 	for _, option in ipairs(session.options or {}) do
 		if option.id == optionId then
 			return option
@@ -185,18 +188,18 @@ local function findOption(session, optionId: string): Option?
 	return nil
 end
 
-local function handleChoice(player: Player, payload)
-	local session = activeByPlayer[player]
+local function HandleChoice(player: Player, payload)
+	local session = ActiveSessionsByPlayer[player]
 	if not session or payload.conversationId ~= session.id then
 		return
 	end
 
-	if getPlayerDistance(player, session.context) > MAX_DISTANCE then
-		clearSession(session, "TooFar")
+	if GetPlayerDistance(player, session.context) > MaxConversationDistance then
+		ClearSession(session, "TooFar")
 		return
 	end
 
-	local option = findOption(session, tostring(payload.optionId or ""))
+	local option = FindOption(session, tostring(payload.optionId or ""))
 	if not option then
 		return
 	end
@@ -210,26 +213,26 @@ local function handleChoice(player: Player, payload)
 		session.context.AbrasiveUntil = os.clock() + session.context.Config.AbrasiveRecoveryDuration
 	end
 
-	if response.endConversation or session.turnCount >= MAX_PLAYER_TURNS then
-		clearSession(session, "Done")
+	if response.endConversation or session.turnCount >= MaxPlayerTurns then
+		ClearSession(session, "Done")
 		if response.avoidMode then
-			leaveConversation(session, response.avoidMode)
+			LeaveConversation(session, response.avoidMode)
 		else
 			session.context.IgnoreObservationUntil = os.clock() + session.context.Config.ObservationIgnoreDuration
 		end
 		return
 	end
 
-	sendTurn(session)
+	SendTurn(session)
 end
 
-local function connectRemote()
+local function ConnectRemote()
 	if remoteConnected then
 		return
 	end
 
 	remoteConnected = true
-	startMovementTracker()
+	StartMovementTracker()
 	NetworkGuard.Listen(Packets.packets.NPCConversationChoice, "NPCConversationChoice", {
 	Rate = 8,
 	Burst = 12,
@@ -248,58 +251,60 @@ local function connectRemote()
 		end
 
 		if payload.action == "Choose" then
-			handleChoice(player, payload)
+			HandleChoice(player, payload)
 		elseif payload.action == "End" then
-			local session = activeByPlayer[player]
+			local session = ActiveSessionsByPlayer[player]
 			if session then
-				clearSession(session, "Done")
+				ClearSession(session, "Done")
 				session.context.IgnoreObservationUntil = os.clock() + session.context.Config.ObservationIgnoreDuration
 			end
 		end
 	end)
 
-	Players.PlayerRemoving:Connect(function(player)
-		local session = activeByPlayer[player]
-		if session then
-			clearSession(session, "Left")
+	Observers.observePlayer(function(player: Player)
+		return function()
+			local session = ActiveSessionsByPlayer[player]
+			if session then
+				ClearSession(session, "Left")
+			end
+			ConversationCooldownByPlayer[player] = nil
+			PlayerMovementByPlayer[player] = nil
 		end
-		cooldownUntilByPlayer[player] = nil
-		movementByPlayer[player] = nil
 	end)
 end
 
 function ConversationService.TryStart(context: AIContext, targetRoot: BasePart): boolean
-	connectRemote()
+	ConnectRemote()
 
 	local player = WorldQuery.GetPlayerFromRoot(targetRoot)
 	if not player then
 		return false
 	end
 
-	local existingPlayerSession = activeByPlayer[player]
+	local existingPlayerSession = ActiveSessionsByPlayer[player]
 	if existingPlayerSession then
 		if existingPlayerSession.context.NPC == context.NPC then
 			return true
 		end
 
-		makeNpcYield(context, targetRoot)
+		MakeNpcYield(context, targetRoot)
 		return false
 	end
 
-	local cooldownUntil = cooldownUntilByPlayer[player] or 0
+	local cooldownUntil = ConversationCooldownByPlayer[player] or 0
 	if os.clock() < cooldownUntil then
-		makeNpcYield(context, targetRoot)
+		MakeNpcYield(context, targetRoot)
 		return false
 	end
 
-	if playerHasBeenIdle(player) then
-		makeNpcYield(context, targetRoot)
+	if PlayerHasBeenIdle(player) then
+		MakeNpcYield(context, targetRoot)
 		return false
 	end
 
-	local existingNpcSession = activeByNpc[context.NPC]
+	local existingNpcSession = ActiveSessionsByNpc[context.NPC]
 	if existingNpcSession then
-		clearSession(existingNpcSession, "Replaced")
+		ClearSession(existingNpcSession, "Replaced")
 	end
 
 	local line = context.ObservationLine
@@ -316,14 +321,14 @@ function ConversationService.TryStart(context: AIContext, targetRoot: BasePart):
 		options = {},
 	}
 
-	activeByPlayer[player] = session
-	activeByNpc[context.NPC] = session
+	ActiveSessionsByPlayer[player] = session
+	ActiveSessionsByNpc[context.NPC] = session
 
-	sendTurn(session)
+	SendTurn(session)
 
 	task.delay(35, function()
-		if activeByPlayer[player] == session then
-			clearSession(session, "TimedOut")
+		if ActiveSessionsByPlayer[player] == session then
+			ClearSession(session, "TimedOut")
 			context.IgnoreObservationUntil = os.clock() + context.Config.ObservationIgnoreDuration
 		end
 	end)
@@ -332,16 +337,16 @@ function ConversationService.TryStart(context: AIContext, targetRoot: BasePart):
 end
 
 function ConversationService.EndForContext(context: AIContext)
-	local session = activeByNpc[context.NPC]
+	local session = ActiveSessionsByNpc[context.NPC]
 	if session then
-		clearSession(session, "NpcLeft")
+		ClearSession(session, "NpcLeft")
 	end
 end
 
 function ConversationService.IsActive(context: AIContext): boolean
-	return activeByNpc[context.NPC] ~= nil
+	return ActiveSessionsByNpc[context.NPC] ~= nil
 end
 
-startMovementTracker()
+StartMovementTracker()
 
 return ConversationService

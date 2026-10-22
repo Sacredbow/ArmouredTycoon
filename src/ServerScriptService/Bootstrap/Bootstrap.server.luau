@@ -11,7 +11,6 @@
 
 const ServerScriptService = game:GetService("ServerScriptService")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
-const Players = game:GetService("Players")
 
 --// Modules
 
@@ -133,12 +132,4 @@ local CodeSvc = LoadModule("CodeService", function()
 	local S = CodeService.new()
 	S:Init()
 	return S
-end)
-
---// Cleanup
-
-Players.PlayerRemoving:Connect(function(Player)
-	TycoonSvc:_OnPlayerRemoving(Player)
-	PlayerSvc:_OnPlayerRemoving(Player)
-	CodeSvc:_OnPlayerRemoving(Player)
 end)

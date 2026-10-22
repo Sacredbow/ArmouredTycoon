@@ -49,6 +49,8 @@ NPCData.__index = NPCData
 
 export type NPCController = AIContext & {
         StateMachine: StateMachineController,
+	Respawning: boolean,
+	Destroyed: boolean,
         _StartStateLoop: (self: NPCController) -> (),
         _ConnectDied: (self: NPCController) -> (),
         _ConnectHealthChanged: (self: NPCController) -> (),
@@ -57,6 +59,8 @@ export type NPCController = AIContext & {
 
 type NPCControllerMutable = AIContext & {
         StateMachine: StateMachineController?,
+	Respawning: boolean,
+	Destroyed: boolean,
         _StartStateLoop: (self: NPCController) -> (),
         _ConnectDied: (self: NPCController) -> (),
         _ConnectHealthChanged: (self: NPCController) -> (),
@@ -119,6 +123,8 @@ function NPCData.new(npc: Model): NPCController
                 Config = Config,
                 ECSEntity = nil,
                 StateMachine = nil,
+		Respawning = false,
+		Destroyed = false,
         }, NPCData)
 
 	self.Humanoid.WalkSpeed = Config.DefaultWalkSpeed
@@ -141,7 +147,7 @@ function NPCData.new(npc: Model): NPCController
 end
 
 function NPCData:_StartStateLoop()
-	if self.StateThreadRunning then
+	if self.Destroyed or self.StateThreadRunning then
 		return
         end
 
@@ -231,6 +237,10 @@ function NPCData:_ConnectHealthChanged()
 end
 
 function NPCData:CharacterPool()
+	if self.Destroyed then
+		return
+	end
+	self.Respawning = true
         if self.ECSEntity then
                 NPCRegistry.Unregister(self.ECSEntity)
                 ECS.deleteEntity(self.ECSEntity)
@@ -255,6 +265,7 @@ function NPCData:CharacterPool()
 	local template = ClonesFolder:FindFirstChild(self.Name)
 	if not template or not template:IsA("Model") then
 		warn(`[NPCData] No clone model found for {self.Name}`)
+		self.Respawning = false
 		return
 	end
 
@@ -302,7 +313,35 @@ function NPCData:CharacterPool()
 	end
 	self:_ConnectDied()
 	self:_ConnectHealthChanged()
+	self.Respawning = false
 	self:_StartStateLoop()
+end
+
+function NPCData:Destroy()
+	if self.Destroyed then
+		return
+	end
+
+	self.Destroyed = true
+	self.Respawning = true
+	if self.ECSEntity then
+		NPCRegistry.Unregister(self.ECSEntity)
+		ECS.deleteEntity(self.ECSEntity)
+		self.ECSEntity = nil
+	end
+	self.StateThreadRunning = false
+	if self.DiedConnection then
+		self.DiedConnection:Disconnect()
+		self.DiedConnection = nil
+	end
+	if self.HealthConnection then
+		self.HealthConnection:Disconnect()
+		self.HealthConnection = nil
+	end
+	if self.NPC.Parent then
+		self.NPC:Destroy()
+	end
+	self.Respawning = false
 end
 
 return NPCData

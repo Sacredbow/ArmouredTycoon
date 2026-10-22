@@ -3,7 +3,7 @@
 	@class StatsStore
 
 	@desc
-	Manages player leaderstats (Cash, Emerald, Kills, Rebirths, Level, Experience).
+	Manages player leaderstats (Cash, Emerald, Kills, Rebirths).
 	Binds to Roblox leaderstats instance and fires on change.
 
 	Owns:
@@ -25,8 +25,6 @@ export type Stats = {
 	Emerald: number,
 	Kills: number,
 	Rebirths: number,
-	Level: number,
-	Experience: number,
 }
 
 --// Constants
@@ -36,8 +34,6 @@ const DEFAULT_STATS: Stats = {
 	Emerald = 0,
 	Kills = 0,
 	Rebirths = 0,
-	Level = 1,
-	Experience = 0,
 }
 
 --// Internal Helpers
@@ -48,8 +44,6 @@ local function CopyStats(Stats: Stats): Stats
 		Emerald = Stats.Emerald,
 		Kills = Stats.Kills,
 		Rebirths = Stats.Rebirths,
-		Level = Stats.Level,
-		Experience = Stats.Experience,
 	}
 end
 
@@ -72,9 +66,8 @@ function StatsStore.new(): StatsStore
 	local self = setmetatable({}, StatsStore) :: StatsStore
 
 	self.Stats = CopyStats(DEFAULT_STATS)
-	self.Changed = Signal.new()
+	self.Changed = Signal.get("StatsStoreChanged")
 	self.Janitor = Janitor.new()
-	self.LeaderstatsJanitor = Janitor.new()
 	self.StatSyncConnected = false
 	self.Destroyed = false
 
@@ -85,9 +78,21 @@ function StatsStore:Start(Packets: any)
 	if not self.Started then
 		self.Started = true
 		self:HydrateFromLeaderstats()
-		self:BindLeaderstats()
+		local hydrationTask = task.spawn(function()
+			local Player = Players.LocalPlayer
+			if not Player then
+				return
+			end
 
-		self.Janitor:Add(self.LeaderstatsJanitor, "Destroy", "Leaderstats")
+			local Leaderstats = Player:WaitForChild("leaderstats", 10)
+			if self.Destroyed or not self.Started or not Leaderstats then
+				return
+			end
+
+			self:HydrateFromLeaderstats()
+			self.Changed:Fire()
+		end)
+		self.Janitor:Add(hydrationTask, true, "LeaderstatsHydration")
 	end
 
 	-- StatSync registration is independent of the started flag: GameStore
@@ -114,54 +119,6 @@ function StatsStore:HydrateFromLeaderstats()
 	end
 end
 
-function StatsStore:BindLeaderstats()
-	local Player = Players.LocalPlayer
-	if not Player then
-		return
-	end
-
-	local function ClearConnections()
-		self.LeaderstatsJanitor:Cleanup()
-	end
-
-	local function BindValue(Value: Instance)
-		if not DEFAULT_STATS[Value.Name] then
-			return
-		end
-		if not Value:IsA("IntValue") and not Value:IsA("NumberValue") then
-			return
-		end
-
-		self:SetStat(Value.Name, Value.Value)
-		self.LeaderstatsJanitor:Add(Value.Changed:Connect(function(NewValue)
-			if typeof(NewValue) == "number" then
-				self:SetStat(Value.Name, NewValue)
-			else
-				self:SetStat(Value.Name, Value.Value)
-			end
-		end), "Disconnect", Value.Name)
-	end
-
-	local function BindFolder(Leaderstats: Instance)
-		ClearConnections()
-		for _, Child in ipairs(Leaderstats:GetChildren()) do
-			BindValue(Child)
-		end
-		self.LeaderstatsJanitor:Add(Leaderstats.ChildAdded:Connect(BindValue), "Disconnect", "LeaderstatsChildAdded")
-	end
-
-	local Leaderstats = Player:FindFirstChild("leaderstats")
-	if Leaderstats then
-		BindFolder(Leaderstats)
-	end
-
-	self.Janitor:Add(Player.ChildAdded:Connect(function(Child)
-		if Child.Name == "leaderstats" then
-			BindFolder(Child)
-		end
-	end), "Disconnect", "PlayerChildAdded")
-end
-
 function StatsStore:GetSnapshot(): Stats
 	return CopyStats(self.Stats)
 end
@@ -180,14 +137,6 @@ function StatsStore:SetStat(StatName: string, Value: number)
 	self.Changed:Fire()
 end
 
-function StatsStore:SyncProfileLevel(Level: number, Experience: number)
-	if self.Stats.Level ~= Level then
-		self.Stats.Level = Level
-	end
-	if self.Stats.Experience ~= Experience then
-		self.Stats.Experience = Experience
-	end
-end
 
 function StatsStore:Destroy()
 	if self.Destroyed then
@@ -208,17 +157,14 @@ export type StatsStore = typeof(setmetatable({} :: {
 	Stats: Stats,
 	Changed: any,
 	Janitor: any,
-	LeaderstatsJanitor: any,
 	StatSyncConnected: boolean,
 	Destroyed: boolean,
 	Started: boolean,
 
 	Start: (self: StatsStore, Packets: any) -> (),
 	HydrateFromLeaderstats: (self: StatsStore) -> (),
-	BindLeaderstats: (self: StatsStore) -> (),
 	GetSnapshot: (self: StatsStore) -> Stats,
 	SetStat: (self: StatsStore, StatName: string, Value: number) -> (),
-	SyncProfileLevel: (self: StatsStore, Level: number, Experience: number) -> (),
 	Destroy: (self: StatsStore) -> (),
 }, StatsStore))
 

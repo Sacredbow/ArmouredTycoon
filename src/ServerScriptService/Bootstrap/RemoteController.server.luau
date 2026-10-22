@@ -4,12 +4,13 @@
 
 	@desc
 	Handles server-side settings data store operations: load, sanitize, cache, persist.
-	Exposes RemoteFunction endpoints for the client settings UI.
+	Exposes the typed ByteNet settings query for the client settings UI.
 ]]
 
 --// Services
 
 const DataStoreService = game:GetService("DataStoreService")
+const HttpService = game:GetService("HttpService")
 const Players = game:GetService("Players")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
 const ServerScriptService = game:GetService("ServerScriptService")
@@ -18,14 +19,12 @@ const ServerScriptService = game:GetService("ServerScriptService")
 
 const SettingsConfig = require(ReplicatedStorage.Modules.SettingsManager.SettingsConfig)
 const NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
+const Packets = require(ReplicatedStorage.Network.Packets)
+const Observers = require(ReplicatedStorage.Packages.Observers)
 
 --// Constants
 
 const SETTINGS_DATASTORE = DataStoreService:GetDataStore(SettingsConfig.datastore_key)
-const REMOTES_FOLDER = ReplicatedStorage:FindFirstChild("Remotes")
-const LOAD_POLICY = { Rate = 2, Burst = 4 }
-const SAVE_POLICY = { Rate = 1, Burst = 3 }
-assert(REMOTES_FOLDER, "ReplicatedStorage.Remotes is required")
 
 --// State
 
@@ -174,46 +173,47 @@ local function QueueSettingsSave(Player: Player, Supplied: any): boolean
 
 	return true
 end
-local function RequireRemoteFunction(Name: string): RemoteFunction
-	local Remote = REMOTES_FOLDER:FindFirstChild(Name)
-	assert(Remote, `Remotes.{Name} is required`)
-	assert(Remote:IsA("RemoteFunction"), `Remotes.{Name} must be a RemoteFunction`)
-	return Remote :: RemoteFunction
-end
-
---// Remote Endpoints
-
-RequireRemoteFunction("GetSettingsData").OnServerInvoke = function(Player: Player)
-	if not NetworkGuard.Allow(Player, "GetSettingsData", LOAD_POLICY, nil) then
-		return false, table.clone(SettingsConfig.default_settings), "Request rejected."
+NetworkGuard.Query(Packets.queries.SettingsAction, "SettingsAction", {
+	Rate = 2,
+	Burst = 4,
+	Validate = function(Request: any)
+		return type(Request) == "table"
+			and (Request.action == "Load" or Request.action == "Save")
+			and (Request.payload == nil or (type(Request.payload) == "string" and #Request.payload <= 12000))
+	end,
+}, function(Request: any, Player: Player)
+	if Request.action == "Load" then
+		local Success, Data, LoadError = LoadSettings(Player)
+		local Encoded: string? = nil
+		if Success then
+			local EncodeOk, Result = pcall(HttpService.JSONEncode, HttpService, Data)
+			if EncodeOk then
+				Encoded = Result
+			else
+				return { success = false, message = "Settings could not be encoded." }
+			end
+		end
+		return { success = Success, message = LoadError or "", payload = Encoded }
 	end
 
-	return LoadSettings(Player)
-end
-
-RequireRemoteFunction("ImportSettingsFunction").OnServerInvoke = function(Player: Player)
-	if not NetworkGuard.Allow(Player, "ImportSettingsFunction", LOAD_POLICY, nil) then
-		return false, table.clone(SettingsConfig.default_settings), "Request rejected."
+	if type(Request.payload) ~= "string" then
+		return { success = false, message = "Settings payload is missing." }
 	end
-
-	local Success, Data, LoadError = LoadSettings(Player)
-	return Success, Data, LoadError
-end
-
-RequireRemoteFunction("ExportSettingsFunction").OnServerInvoke = function(Player: Player, Supplied: any)
-	if not NetworkGuard.Allow(Player, "ExportSettingsFunction", SAVE_POLICY, Supplied) then
-		return false
+	local DecodeOk, Data = pcall(HttpService.JSONDecode, HttpService, Request.payload)
+	if not DecodeOk or type(Data) ~= "table" then
+		return { success = false, message = "Settings payload is invalid." }
 	end
-
-	return QueueSettingsSave(Player, Supplied)
-end
-
+	local SaveOk = QueueSettingsSave(Player, Data)
+	return { success = SaveOk, message = if SaveOk then "" else "Settings could not be queued." }
+end)
 --// Cleanup
 
-Players.PlayerRemoving:Connect(function(Player: Player)
-	PersistSettings(Player)
-	SettingsCache[Player] = nil
-	SaveSchedulers[Player] = nil
+Observers.observePlayer(function(Player: Player)
+	return function()
+		PersistSettings(Player)
+		SettingsCache[Player] = nil
+		SaveSchedulers[Player] = nil
+	end
 end)
 
 game:BindToClose(function()

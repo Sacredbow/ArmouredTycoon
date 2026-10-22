@@ -3,14 +3,9 @@
 registry = "test"
 
 [[package]]
-name = "aliboily/goal"
-version = "1.5.0"
-dependencies = []
-
-[[package]]
 name = "caleb/armouredtycoon"
 version = "0.1.0"
-dependencies = [["Observers", "sleitnick/observers@0.4.0"], ["Planck", "yetanotherclown/planck@0.2.0"], ["ReactRoblox", "jsdotlua/react-roblox@17.2.1"], ["Trove", "sleitnick/trove@1.8.0"], ["bytenet-max", "elitriare/bytenet-max@0.2.5"], ["goal", "aliboily/goal@1.5.0"], ["janitor", "howmanysmall/janitor@1.18.3"], ["jecs", "ukendio/jecs@0.1.0"], ["quickzone", "ldgerrits/quickzone@1.5.1"], ["react", "jsdotlua/react@17.2.1"], ["replecs", "pepeeltoro41/replecs@0.3.1"], ["replica", "ophidiedev/replica@0.2.0"], ["signal", "sleitnick/signal@2.0.3"], ["vide", "centau/vide@0.4.1"]]
+dependencies = [["Observers", "sleitnick/observers@0.4.0"], ["Planck", "yetanotherclown/planck@0.2.0"], ["ReactRoblox", "jsdotlua/react-roblox@17.2.1"], ["Trove", "sleitnick/trove@1.8.0"], ["bytenet-max", "elitriare/bytenet-max@0.2.5"], ["janitor", "howmanysmall/janitor@1.18.3"], ["jecs", "ukendio/jecs@0.1.0"], ["quickzone", "ldgerrits/quickzone@1.5.1"], ["react", "jsdotlua/react@17.2.1"], ["replecs", "pepeeltoro41/replecs@0.3.1"], ["vide", "centau/vide@0.4.1"]]
 
 [[package]]
 name = "centau/vide"
@@ -128,11 +123,6 @@ version = "1.5.1"
 dependencies = []
 
 [[package]]
-name = "ophidiedev/replica"
-version = "0.2.0"
-dependencies = []
-
-[[package]]
 name = "pepeeltoro41/replecs"
 version = "0.3.1"
 dependencies = [["jecs", "ukendio/jecs@0.10.4"]]
@@ -140,11 +130,6 @@ dependencies = [["jecs", "ukendio/jecs@0.10.4"]]
 [[package]]
 name = "sleitnick/observers"
 version = "0.4.0"
-dependencies = []
-
-[[package]]
-name = "sleitnick/signal"
-version = "2.0.3"
 dependencies = []
 
 [[package]]

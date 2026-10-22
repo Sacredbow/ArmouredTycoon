@@ -1,4 +1,4 @@
-﻿--!strict
+--!strict
 -- ECS armour pickup system for a tycoon entity.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -47,7 +47,8 @@ function ArmourSystem.setup(entity: number): (() -> ())?
 		local template = armourAssets:FindFirstChild(config.template)
 		if not part or not part:IsA("BasePart") or not template or not template:IsA("Model") then continue end
 		table.insert(connections, part.Touched:Connect(function(hit: Instance)
-			local player = Players:GetPlayerFromCharacter(hit.Parent)
+			local character = hit:FindFirstAncestorOfClass("Model")
+			local player = character and Players:GetPlayerFromCharacter(character)
 			local ownerData = ECS.world:get(entity, ECS.Components.Owner)
 			if not player or not ownerData or ownerData.player ~= player then return end
 			if part.Transparency ~= 0 or PlayerRuntimeState.HasArmourEquipped(player) then return end

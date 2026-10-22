@@ -1,7 +1,7 @@
 --!strict
 
-local INVENTORY_ENABLED = false
-if not INVENTORY_ENABLED then
+local InventoryFeature = require(game:GetService("ReplicatedStorage").CharacterUtilities.Inventory.FeatureConfig)
+if not InventoryFeature.Enabled then
 	return
 end
 

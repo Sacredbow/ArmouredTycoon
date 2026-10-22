@@ -6,11 +6,11 @@ until game:IsLoaded()
 local playersService = game:GetService("Players")
 local replicatedStorage = game:GetService("ReplicatedStorage")
 local tweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
 
--- Remotes
-local remotesFolder = replicatedStorage:WaitForChild("Remotes")
-local getDataRemote = remotesFolder:WaitForChild("GetSettingsData")
-local exportRemote = remotesFolder:WaitForChild("ExportSettingsFunction")
+-- Network
+local PacketBootstrap = require(replicatedStorage.Network.PacketBootstrap)
+local Packets = PacketBootstrap.Get()
 
 -- Modules
 local modulesFolder = replicatedStorage:WaitForChild("Modules")
@@ -115,11 +115,24 @@ end
 -- Settings loading
 ----------------------------------------------------------------
 
-local function loadSettings()
-	local ok, success, data = pcall(function()
-		return getDataRemote:InvokeServer()
+local function requestSettings(action: string, payload: string?): any?
+	local ok, result = pcall(function()
+		return Packets.queries.SettingsAction.invoke({ action = action, payload = payload })
 	end)
-	if ok and success and type(data) == "table" then
+	return if ok and type(result) == "table" then result else nil
+end
+
+local function loadSettings()
+	local result = requestSettings("Load", nil)
+	local data: any = nil
+	if result and result.success == true and type(result.payload) == "string" then
+		local decodeOk, decoded = pcall(HttpService.JSONDecode, HttpService, result.payload)
+		if decodeOk and type(decoded) == "table" then
+			data = decoded
+		end
+	end
+
+	if type(data) == "table" then
 		userSettings = table.clone(defaultSettings)
 		for key, value in pairs(data) do
 			if userSettings[key] ~= nil then
@@ -130,16 +143,10 @@ local function loadSettings()
 		userSettings = table.clone(defaultSettings)
 	end
 
-	-- Apply all settings to the game on load
 	for name, value in pairs(userSettings) do
 		SettingsUpdater.ApplySetting(userSettings, name, value)
 	end
 end
-
-----------------------------------------------------------------
--- Toggle setup
-----------------------------------------------------------------
-
 local function animateToggle(toggle, isOn)
 	local frame = toggle:FindFirstChild("Frame")
 	if not frame then return end
@@ -512,9 +519,10 @@ end
 
 local function saveSettings()
 	PlaySound("Roblox GUI - Call Accept")
-	pcall(function()
-		exportRemote:InvokeServer(userSettings)
-	end)
+	local ok, payload = pcall(HttpService.JSONEncode, HttpService, userSettings)
+	if ok then
+		requestSettings("Save", payload)
+	end
 end
 
 ----------------------------------------------------------------
@@ -578,10 +586,13 @@ end)
 
 -- Save settings when player leaves
 playersService.PlayerRemoving:Connect(function(player)
-	if player == localPlayer then
-		pcall(function()
-			exportRemote:InvokeServer(userSettings)
-		end)
+	if player ~= localPlayer then
+		return
+	end
+
+	local ok, payload = pcall(HttpService.JSONEncode, HttpService, userSettings)
+	if ok then
+		requestSettings("Save", payload)
 	end
 end)
 

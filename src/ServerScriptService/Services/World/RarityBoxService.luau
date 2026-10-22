@@ -20,6 +20,7 @@ const ECS = require(ReplicatedStorage.ECS)
 const RarityModule = require(ServerScriptService.Modules.RarityModule)
 const FollowService = require(ServerScriptService.Services.External.FollowService)
 const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
+const Janitor = require(ReplicatedStorage.Packages.janitor)
 
 --// Constants
 
@@ -104,6 +105,7 @@ function RarityBoxService:_SpawnBox()
 	local PrimaryPart = BoxClone.PrimaryPart
 
 	if not PrimaryPart then
+		BoxClone:Destroy()
 		return
 	end
 
@@ -126,19 +128,29 @@ function RarityBoxService:_SpawnBox()
 	})
 
 	local claimed = false
-	PrimaryPart.Touched:Connect(function(hit)
+	const boxJanitor = Janitor.new()
+	boxJanitor:LinkToInstance(BoxClone)
+	local touchConnection: RBXScriptConnection?
+	touchConnection = PrimaryPart.Touched:Connect(function(hit)
 		if claimed then
 			return
 		end
-		local plr = Players:GetPlayerFromCharacter(hit.Parent)
+
+		local character = hit:FindFirstAncestorOfClass("Model")
+		local plr = character and Players:GetPlayerFromCharacter(character)
 		if not plr then
 			return
 		end
 
 		claimed = true
-		BoxClone:Destroy()
-		self:_GiveReward(plr, BoxClone.Name)
+		local boxName = BoxClone.Name
+		boxJanitor:Cleanup()
+		if BoxClone.Parent then
+			BoxClone:Destroy()
+		end
+		self:_GiveReward(plr, boxName)
 	end)
+	boxJanitor:Add(touchConnection, "Disconnect", "Touch")
 end
 
 function RarityBoxService.SpawnActive()

@@ -37,9 +37,9 @@ function StanceController.applyStand(context: StanceContext, steady: boolean): b
 	local injured = context.characterModel:GetAttribute("Injured") == true
 
 	if steady then
-		context.humanoid.WalkSpeed = context.gameRules.SlowPaceWalkSpeed
+		context.characterModel:SetAttribute("CombatWalkSpeed", context.gameRules.SlowPaceWalkSpeed)
 	else
-		context.humanoid.WalkSpeed = choose(injured, context.gameRules.InjuredWalksSpeed, context.gameRules.NormalWalkSpeed)
+		context.characterModel:SetAttribute("CombatWalkSpeed", choose(injured, context.gameRules.InjuredWalksSpeed, context.gameRules.NormalWalkSpeed))
 	end
 
 	context.humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
@@ -48,7 +48,7 @@ end
 
 function StanceController.applyCrouch(context: StanceContext): boolean
 	local injured = context.characterModel:GetAttribute("Injured") == true
-	context.humanoid.WalkSpeed = choose(injured, context.gameRules.InjuredCrouchWalkSpeed, context.gameRules.CrouchWalkSpeed)
+	context.characterModel:SetAttribute("CombatWalkSpeed", choose(injured, context.gameRules.InjuredCrouchWalkSpeed, context.gameRules.CrouchWalkSpeed))
 	context.humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
 	return true
 end

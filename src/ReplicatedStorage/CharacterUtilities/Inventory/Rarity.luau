@@ -1,5 +1,8 @@
 --!strict
 
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
+
 local Rarity = {}
 
 export type ItemRarity = "Common" | "Uncommon" | "Rare" | "Epic" | "Legendary"
@@ -108,7 +111,7 @@ function Rarity.classifyTool(tool: Tool): ItemRarity
 		end
 	end
 
-	if tool:FindFirstChild("ACS_Settings") then
+	if WeaponDefinitionResolver.getSettings(tool) then
 		return "Rare"
 	end
 
@@ -121,7 +124,7 @@ function Rarity.classifyCategory(tool: Tool): string
 		return explicit
 	end
 
-	if tool:FindFirstChild("ACS_Settings") then
+	if WeaponDefinitionResolver.getSettings(tool) then
 		return "Weapon"
 	end
 
