@@ -14,13 +14,16 @@ local Spring = require(script.Parent.Parent.Spring)
 local IdleLayer = {}
 IdleLayer.__index = IdleLayer
 
-export type IdleLayer = typeof(setmetatable({} :: {
-	_clockOffset: number,
-	_fidgetSeed: number,
-	_fidgetClock: number,
-	_nextFidgetTime: number,
-	_fidget: any,
-}, IdleLayer))
+export type IdleLayer = typeof(setmetatable(
+	{} :: {
+		_clockOffset: number,
+		_fidgetSeed: number,
+		_fidgetClock: number,
+		_nextFidgetTime: number,
+		_fidget: any,
+	},
+	IdleLayer
+))
 
 function IdleLayer.new(): IdleLayer
 	-- Each layer gets a random seed so multiple clients/weapons do not idle in
@@ -56,11 +59,13 @@ function IdleLayer:Evaluate(weight: number): Pose.Pose
 	if now >= self._nextFidgetTime then
 		-- Small random impulse that settles through the spring instead of snapping.
 		self._nextFidgetTime = now + nextFidgetDelay()
-		self._fidget:Impulse(Vector3.new(
-			math.rad((math.random() - 0.5) * 0.7),
-			math.rad((math.random() - 0.5) * 0.9),
-			math.rad((math.random() - 0.5) * 0.55)
-		))
+		self._fidget:Impulse(
+			Vector3.new(
+				math.rad((math.random() - 0.5) * 0.7),
+				math.rad((math.random() - 0.5) * 0.9),
+				math.rad((math.random() - 0.5) * 0.55)
+			)
+		)
 	end
 
 	self._fidget:SetTarget(Vector3.zero)
@@ -75,32 +80,28 @@ function IdleLayer:Evaluate(weight: number): Pose.Pose
 	local driftY = math.noise(self._fidgetSeed, 0, t * 0.18) * 0.011 * weight
 	local driftRot = math.noise(0, self._fidgetSeed, t * 0.16) * 0.35 * weight
 
-	local main =
-		CFrame.new(driftX, breathing + driftY, 0)
+	local main = CFrame.new(driftX, breathing + driftY, 0)
 		* CFrame.Angles(
 			math.rad(shoulderRoll) + fidget.X * weight,
 			math.rad(driftRot) + fidget.Y * weight,
 			math.rad(driftRot * 0.35) + fidget.Z * weight
 		)
 
-	local gun =
-		CFrame.new(driftX * 0.45, breathing * 0.35, 0)
+	local gun = CFrame.new(driftX * 0.45, breathing * 0.35, 0)
 		* CFrame.Angles(
 			math.rad(shoulderRoll * 0.4) + fidget.X * 0.45 * weight,
 			math.rad(driftRot * 0.3) + fidget.Y * 0.35 * weight,
 			math.rad(-driftRot * 0.2) + fidget.Z * 0.3 * weight
 		)
 
-	local leftArm =
-		CFrame.new(-driftX * 0.35, breathing * 0.18, 0)
+	local leftArm = CFrame.new(-driftX * 0.35, breathing * 0.18, 0)
 		* CFrame.Angles(
 			math.rad(-shoulderRoll * 0.18) - fidget.X * 0.12 * weight,
 			fidget.Y * 0.08 * weight,
 			math.rad(driftRot * 0.12)
 		)
 
-	local rightArm =
-		CFrame.new(driftX * 0.22, breathing * 0.12, 0)
+	local rightArm = CFrame.new(driftX * 0.22, breathing * 0.12, 0)
 		* CFrame.Angles(
 			math.rad(shoulderRoll * 0.12) + fidget.X * 0.16 * weight,
 			fidget.Y * 0.12 * weight,

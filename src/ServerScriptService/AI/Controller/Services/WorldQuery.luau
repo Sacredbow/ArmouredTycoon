@@ -3,7 +3,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
+local WeaponDefinitionResolver = require(ReplicatedStorage.Shared.Game.Combat.Weapons.Resolver)
 
 local Types = require(script.Parent.Parent.Core.Types)
 
@@ -153,7 +153,8 @@ function WorldQuery.GetSeparationOffset(context: AIContext): Vector3
 		return Vector3.zero
 	end
 
-	return offset.Unit * math.min(offset.Magnitude * context.Config.SeparationStrength, context.Config.SeparationStrength)
+	return offset.Unit
+		* math.min(offset.Magnitude * context.Config.SeparationStrength, context.Config.SeparationStrength)
 end
 
 function WorldQuery.FindObservablePlayer(context: AIContext): BasePart?
@@ -204,7 +205,7 @@ function WorldQuery.IsPlayerArmed(root: BasePart?): boolean
 		return false
 	end
 
-	for _, child in ipairs(player.Character:GetChildren()) do
+	for _, child in player.Character:GetChildren() do
 		if child:IsA("Tool") and WeaponDefinitionResolver.getSettings(child) ~= nil then
 			return true
 		end

@@ -53,9 +53,9 @@ function AttachmentModifiers.reset(modifierTable: any)
 	-- callbacks may already hold references to this table during equip.
 	local defaultModifiers = AttachmentModifiers.createDefault()
 
-	for key, value in pairs(defaultModifiers) do
+	for key, value in defaultModifiers do
 		if typeof(value) == "table" then
-			for nestedKey, nestedValue in pairs(value) do
+			for nestedKey, nestedValue in value do
 				modifierTable[key][nestedKey] = nestedValue
 			end
 		else

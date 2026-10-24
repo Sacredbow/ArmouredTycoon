@@ -11,40 +11,19 @@
       "Packages": {
         "$path": "src/ReplicatedStorage/Packages"
       },
-      "ECS": {
-        "$path": "src/ReplicatedStorage/ECS"
-      },
-      "CharacterUtilities": {
-        "$path": "src/ReplicatedStorage/CharacterUtilities"
-      },
-      "Libraries": {
-        "$path": "src/ReplicatedStorage/Libraries"
-      },
-      "Modules": {
-        "$path": "src/ReplicatedStorage/Modules"
-      },
-      "Network": {
-        "$path": "src/ReplicatedStorage/Network"
-      },
-      "Progression": {
-        "$path": "src/ReplicatedStorage/Progression"
-      },
       "Shared": {
         "$path": "src/ReplicatedStorage/Shared"
-      },
-      "BuildService": {
-        "$path": "src/ReplicatedStorage/BuildService"
       }
     },
     "ServerScriptService": {
+      "Game": {
+        "$path": "src/ServerScriptService/Game"
+      },
       "AI": {
         "$path": "src/ServerScriptService/AI"
       },
       "Bootstrap": {
         "$path": "src/ServerScriptService/Bootstrap"
-      },
-      "Classes": {
-        "$path": "src/ServerScriptService/Classes"
       },
       "DataManager": {
         "$path": "src/ServerScriptService/DataManager"
@@ -74,32 +53,12 @@
       }
     },
     "StarterPlayer": {
-
-
-
-
-
-
-
-
-
-
       "StarterPlayerScripts": {
         "Loader": {
           "$path": "src/StarterPlayer/StarterPlayerScripts/Loader.client.luau"
         },
-        "InventoryClient": {
-          "$path": "src/StarterPlayer/StarterPlayerScripts/InventoryClient"
-        },
-       
-        "Systems": {
-          "$path": "src/StarterPlayer/StarterPlayerScripts/Systems"
-        },
-        "UI": {
-          "$path": "src/StarterPlayer/StarterPlayerScripts/UI"
-        },
-        "Settings": {
-          "$path": "src/StarterPlayer/StarterPlayerScripts/Settings"
+        "Client": {
+          "$path": "src/StarterPlayer/StarterPlayerScripts/Client"
         }
       },
       "StarterCharacterScripts": {

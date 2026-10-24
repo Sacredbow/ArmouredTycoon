@@ -2,7 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Observers = require(ReplicatedStorage.Packages.Observers)
 local ServerScriptService = game:GetService("ServerScriptService")
 
-local ECS = require(ReplicatedStorage.ECS)
+local ECS = require(ReplicatedStorage.Shared.Core.ECS)
 local Signal = require(ReplicatedStorage.Packages.signal)
 local BanSignal = Signal.get("ServerBanRequest")
 local BanManager = require(script.Methods.BanManager)
@@ -71,4 +71,3 @@ local function HandleBanRequest(player: Player, reason: string)
 end
 
 BanSignal:Connect(HandleBanRequest)
-

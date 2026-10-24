@@ -15,7 +15,12 @@ local function isEnabled<T>(value: T?): boolean
 	return value == true
 end
 
-function JamController.roll(weaponData: WeaponData?, currentJammed: boolean, state: AmmoState, randomRoll: (number) -> number): boolean
+function JamController.roll(
+	weaponData: WeaponData?,
+	currentJammed: boolean,
+	state: AmmoState,
+	randomRoll: (number) -> number
+): boolean
 	if not weaponData or not isEnabled(weaponData.CanBreak) or currentJammed or state.ammo - 1 <= 0 then
 		return false
 	end

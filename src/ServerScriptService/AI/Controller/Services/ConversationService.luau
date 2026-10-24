@@ -5,7 +5,7 @@ const ReplicatedStorage = game:GetService("ReplicatedStorage")
 const ServerScriptService = game:GetService("ServerScriptService")
 
 const ConversationOptions = require(script.Parent.ConversationOptions)
-const Packets = require(ReplicatedStorage.Network.Packets)
+const Packets = require(ReplicatedStorage.Shared.Platform.Network.Packets)
 const Observers = require(ReplicatedStorage.Packages.Observers)
 const NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
 const Types = require(script.Parent.Parent.Core.Types)
@@ -91,7 +91,7 @@ local function StartMovementTracker()
 	task.spawn(function()
 		while true do
 			local now = os.clock()
-			for _, player in ipairs(Players:GetPlayers()) do
+			for _, player in Players:GetPlayers() do
 				UpdatePlayerMovement(player, now)
 			end
 			task.wait(1)
@@ -117,7 +117,7 @@ end
 
 local function SerializeOptions(options: { Option }): { any }
 	local result = {}
-	for index, option in ipairs(options) do
+	for index, option in options do
 		result[index] = {
 			id = option.id,
 			text = option.text,
@@ -179,7 +179,7 @@ local function LeaveConversation(session, avoidMode: string?)
 end
 
 local function FindOption(session, optionId: string): Option?
-	for _, option in ipairs(session.options or {}) do
+	for _, option in session.options or {} do
 		if option.id == optionId then
 			return option
 		end

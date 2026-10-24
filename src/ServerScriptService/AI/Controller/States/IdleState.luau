@@ -6,7 +6,6 @@ local Types = require(script.Parent.Parent.Core.Types)
 type AIContext = Types.AIContext
 type StateMachineLike = Types.StateMachineLike
 
-
 local IdleState = {
 	Name = "Idle",
 }
@@ -14,7 +13,9 @@ local IdleState = {
 function IdleState.Enter(context: AIContext)
 	Movement.Stop(context)
 	context.Humanoid.WalkSpeed = 0
-	context.IdleUntil = os.clock() + math.random() * (context.Config.IdleMaxDuration - context.Config.IdleMinDuration) + context.Config.IdleMinDuration
+	context.IdleUntil = os.clock()
+		+ math.random() * (context.Config.IdleMaxDuration - context.Config.IdleMinDuration)
+		+ context.Config.IdleMinDuration
 end
 
 function IdleState.Update(context: AIContext, machine: StateMachineLike)

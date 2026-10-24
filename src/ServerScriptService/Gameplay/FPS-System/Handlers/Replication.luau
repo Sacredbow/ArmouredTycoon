@@ -14,7 +14,7 @@ const Security = require(script.Parent.Parent.Core.Security)
 const ShotAuthority = require(script.Parent.Parent.Core.ShotAuthority)
 const Weapons = require(script.Parent.Parent.Core.Weapons)
 const NetworkGuard = require(script.Parent.Parent.Parent.Parent.Services.Networking.NetworkGuard)
-const Packets = require(ReplicatedStorage.Network.Packets)
+const Packets = require(ReplicatedStorage.Shared.Platform.Network.Packets)
 
 const THROTTLE_RATE = 30
 const THROTTLE_WINDOW = 1 / THROTTLE_RATE

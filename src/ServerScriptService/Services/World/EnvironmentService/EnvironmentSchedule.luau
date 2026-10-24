@@ -2,43 +2,42 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local EnvironmentShared = require(ReplicatedStorage.Shared.World.EnvironmentShared)
+local EnvironmentDefinitions = require(ReplicatedStorage.Shared.Game.Environment.EnvironmentDefinitions)
 
 local EnvironmentSchedule = {}
-EnvironmentSchedule.__index = EnvironmentSchedule
 
-export type EnvironmentSchedule = typeof(setmetatable({} :: {
-	_index: number,
-	_current: EnvironmentShared.WeatherState?,
-	_startedAt: number,
-}, EnvironmentSchedule))
+export type ScheduleState = {
+	Index: number,
+	Current: EnvironmentDefinitions.WeatherState?,
+	StartedAt: number,
+}
 
-function EnvironmentSchedule.new(): EnvironmentSchedule
-	return setmetatable({
-		_index = 0,
-		_current = nil,
-		_startedAt = 0,
-	}, EnvironmentSchedule)
+function EnvironmentSchedule.Create(): ScheduleState
+	return {
+		Index = 0,
+		Current = nil,
+		StartedAt = 0,
+	}
 end
 
-function EnvironmentSchedule:Next(): EnvironmentShared.WeatherState
-	self._index += 1
-	self._current = EnvironmentShared.getScheduledWeather(self._index)
-	self._startedAt = os.clock()
-	return self._current
+function EnvironmentSchedule.Next(State: ScheduleState): EnvironmentDefinitions.WeatherState
+	State.Index += 1
+	State.Current = EnvironmentDefinitions.getScheduledWeather(State.Index)
+	State.StartedAt = os.clock()
+	return State.Current
 end
 
-function EnvironmentSchedule:GetCurrent(): EnvironmentShared.WeatherState
-	if not self._current then
-		return self:Next()
+function EnvironmentSchedule.GetCurrent(State: ScheduleState): EnvironmentDefinitions.WeatherState
+	if not State.Current then
+		return EnvironmentSchedule.Next(State)
 	end
 
-	return self._current
+	return State.Current
 end
 
-function EnvironmentSchedule:ShouldAdvance(now: number?): boolean
-	local current = self:GetCurrent()
-	return (now or os.clock()) - self._startedAt >= current.duration
+function EnvironmentSchedule.ShouldAdvance(State: ScheduleState, Now: number?): boolean
+	const Current = EnvironmentSchedule.GetCurrent(State)
+	return (Now or os.clock()) - State.StartedAt >= Current.duration
 end
 
 return EnvironmentSchedule

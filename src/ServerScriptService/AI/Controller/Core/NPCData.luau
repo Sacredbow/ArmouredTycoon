@@ -18,7 +18,7 @@ const ServerStorage = game:GetService("ServerStorage")
 
 --// Modules
 
-const ECS = require(ReplicatedStorage.ECS)
+const ECS = require(ReplicatedStorage.Shared.Core.ECS)
 const NPCRegistry = require(game:GetService("ServerScriptService").AI.NPCRegistry)
 const Config = require(script.Parent.Config)
 const AvoidFrontBlockState = require(script.Parent.Parent.States.AvoidFrontBlockState)
@@ -45,7 +45,7 @@ const NPCFolder = workspace:WaitForChild("NPCs")
 --// Module
 
 local NPCData = {}
-NPCData.__index = NPCData
+
 
 export type NPCController = AIContext & {
         StateMachine: StateMachineController,
@@ -79,11 +79,11 @@ local function getStartingDisposition(): Types.Disposition
 	return "Normal"
 end
 
-function NPCData.new(npc: Model): NPCController
+function NPCData.Create(npc: Model): NPCController
 	local humanoid = npc:WaitForChild("Humanoid") :: Humanoid
 	local primaryPart = WorldQuery.GetRootPart(npc)
 
-	local self : any = setmetatable({
+	local self : any = {
 		NPC = npc,
 		Humanoid = humanoid,
 		Name = npc.Name,
@@ -125,12 +125,18 @@ function NPCData.new(npc: Model): NPCController
                 StateMachine = nil,
 		Respawning = false,
 		Destroyed = false,
-        }, NPCData)
+        }
+
+	self._StartStateLoop = NPCData._StartStateLoop
+	self._ConnectDied = NPCData._ConnectDied
+	self._ConnectHealthChanged = NPCData._ConnectHealthChanged
+	self.CharacterPool = NPCData.CharacterPool
+	self.Destroy = NPCData.Destroy
 
 	self.Humanoid.WalkSpeed = Config.DefaultWalkSpeed
 	self.PrimaryPart:SetNetworkOwner(nil)
 
-	local stateMachine = StateMachine.new(self :: AIContext)
+	local stateMachine = StateMachine.Create(self :: AIContext)
 	self.StateMachine = stateMachine
 	stateMachine:RegisterState(PatrolState)
 	stateMachine:RegisterState(ObservePlayerState)
@@ -146,7 +152,7 @@ function NPCData.new(npc: Model): NPCController
 	return self  :: NPCController
 end
 
-function NPCData:_StartStateLoop()
+function NPCData._StartStateLoop(self: NPCController)
 	if self.Destroyed or self.StateThreadRunning then
 		return
         end
@@ -167,7 +173,7 @@ function NPCData:_StartStateLoop()
         ECS.set(self.ECSEntity, "NPCUpdate", Update)
 end
 
-function NPCData:_ConnectDied()
+function NPCData._ConnectDied(self: NPCController)
 	local stateMachine = self.StateMachine
 	if not stateMachine then
 		return
@@ -186,18 +192,13 @@ function NPCData:_ConnectDied()
         self.DiedConnection = self.Humanoid.Died:Connect(function()
                 stateMachine:SetState("Dead")
                 ECS.createEntity({
-                        Name = `{self.Name}:NPCRespawn`,
-                        ScheduledTask = {
-                                delay = self.Config.RespawnDelay,
-                                elapsed = 0,
-                                kind = "NPCRespawn",
-                                npcEntity = self.ECSEntity,
-                        },
+                        Name = "NPCRespawn:" .. self.Name,
+                        NPCRespawn = {Remaining = self.Config.RespawnDelay, NPCEntity = self.ECSEntity},
                 })
         end)
 end
 
-function NPCData:_ConnectHealthChanged()
+function NPCData._ConnectHealthChanged(self: NPCController)
 	if self.HealthConnection then
 		self.HealthConnection:Disconnect()
 		self.HealthConnection = nil
@@ -236,7 +237,7 @@ function NPCData:_ConnectHealthChanged()
 	end)
 end
 
-function NPCData:CharacterPool()
+function NPCData.CharacterPool(self: NPCController)
 	if self.Destroyed then
 		return
 	end
@@ -317,7 +318,7 @@ function NPCData:CharacterPool()
 	self:_StartStateLoop()
 end
 
-function NPCData:Destroy()
+function NPCData.Destroy(self: NPCController)
 	if self.Destroyed then
 		return
 	end

@@ -21,14 +21,17 @@ local RecoilLayer = require(script.Parent.Layers.RecoilLayer)
 local WeaponAnimator = {}
 WeaponAnimator.__index = WeaponAnimator
 
-export type WeaponAnimator = typeof(setmetatable({} :: {
-	_basePose: Pose.Pose,
-	_currentPose: Pose.Pose,
-	_idleLayer: any,
-	_bobLayer: any,
-	_swayLayer: any,
-	_recoilLayer: any,
-}, WeaponAnimator))
+export type WeaponAnimator = typeof(setmetatable(
+	{} :: {
+		_basePose: Pose.Pose,
+		_currentPose: Pose.Pose,
+		_idleLayer: any,
+		_bobLayer: any,
+		_swayLayer: any,
+		_recoilLayer: any,
+	},
+	WeaponAnimator
+))
 
 export type EvaluateContext = {
 	deltaTime: number,

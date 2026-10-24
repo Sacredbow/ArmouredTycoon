@@ -13,12 +13,22 @@ local AnimationRunner = require(script.Parent.Parent.WeaponAnimation.AnimationRu
 local AnimationController = {}
 AnimationController.__index = AnimationController
 
-export type AnimationController = typeof(setmetatable({} :: {
-	_animData: any,
-	_animContext: { any },
-}, AnimationController))
+export type AnimationController = typeof(setmetatable(
+	{} :: {
+		_animData: any,
+		_animContext: { any },
+	},
+	AnimationController
+))
 
-function AnimationController.new(animData: any, raArmWeld: Motor6D?, laArmWeld: Motor6D?, gunWeld: Motor6D?, weaponInHand: Model?, viewModel: Model?): AnimationController
+function AnimationController.new(
+	animData: any,
+	raArmWeld: Motor6D?,
+	laArmWeld: Motor6D?,
+	gunWeld: Motor6D?,
+	weaponInHand: Model?,
+	viewModel: Model?
+): AnimationController
 	return setmetatable({
 		_animData = animData,
 		_animContext = { raArmWeld, laArmWeld, gunWeld, weaponInHand, viewModel },

@@ -10,7 +10,7 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
-local Packets = require(ReplicatedStorage.Network.Packets)
+local Packets = require(ReplicatedStorage.Shared.Platform.Network.Packets)
 
 local LightningModule = {}
 
@@ -29,17 +29,14 @@ raycastParams.IgnoreWater = true
 
 local function strikeLightning(position: Vector3)
 	local startHeight = math.random(START_HEIGHT_MIN, START_HEIGHT_MAX)
-	local startPosition = position + Vector3.new(
-		math.random(-STRIKE_OFFSET, STRIKE_OFFSET),
-		startHeight,
-		math.random(-STRIKE_OFFSET, STRIKE_OFFSET)
-	)
+	local startPosition = position
+		+ Vector3.new(
+			math.random(-STRIKE_OFFSET, STRIKE_OFFSET),
+			startHeight,
+			math.random(-STRIKE_OFFSET, STRIKE_OFFSET)
+		)
 
-	local result = Workspace:Raycast(
-		startPosition,
-		Vector3.new(0, -startHeight - 100, 0),
-		raycastParams
-	)
+	local result = Workspace:Raycast(startPosition, Vector3.new(0, -startHeight - 100, 0), raycastParams)
 	local endPosition = if result then result.Position else position
 	local packet = Packets.packets.LightningStrike
 	if packet then
@@ -70,11 +67,7 @@ function LightningModule.StartStorm(position: Vector3?, radius: number?, duratio
 
 		local angle = math.random() * math.pi * 2
 		local distance = math.random() * strikeRadius
-		local strikePosition = center + Vector3.new(
-			math.cos(angle) * distance,
-			0,
-			math.sin(angle) * distance
-		)
+		local strikePosition = center + Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
 		strikeLightning(strikePosition)
 
 		local delay = math.clamp(

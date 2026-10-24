@@ -20,7 +20,7 @@ const ServerScriptService = game:GetService("ServerScriptService")
 
 --// Modules
 
-const ECS = require(ReplicatedStorage.ECS)
+const ECS = require(ReplicatedStorage.Shared.Core.ECS)
 const Observers = require(ReplicatedStorage.Packages.Observers)
 const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 const DamageRuntimeState = require(ServerScriptService.Services.Combat.DamageRuntimeState)

@@ -2,11 +2,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
-
 local ProfileManager = {}
-local Packets = require(ReplicatedStorage.Network.Packets)
+local Packets = require(ReplicatedStorage.Shared.Platform.Network.Packets)
 local Janitor = require(ReplicatedStorage.Packages.janitor)
-local QuestOptions = require(ReplicatedStorage.Progression.QuestOptions)
+local QuestOptions = require(ReplicatedStorage.Shared.Game.Progression.QuestOptions)
 local QuestProgression = require(ServerScriptService.Gameplay.Progression.QuestProgression)
 local SoundManager = require(ServerScriptService.Utilities.SoundManager)
 local NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
@@ -18,13 +17,12 @@ ProfileManager.QuestTrackingJanitors = {}
 
 local DAILY_COOLDOWN = QuestOptions.DailyCooldown
 local function copyQuestState(quests: { [string]: any }): { [string]: any }
-    local copied = {}
-    for questId, quest in pairs(quests) do
-        copied[questId] = if typeof(quest) == "table" then table.clone(quest) else quest
-    end
-    return copied
+	local copied = {}
+	for questId, quest in quests do
+		copied[questId] = if typeof(quest) == "table" then table.clone(quest) else quest
+	end
+	return copied
 end
-
 
 function ProfileManager.GetRequiredExperience(level: number): number
 	return math.floor(120 * (1.18 ^ math.max(level - 1, 0)))
@@ -121,7 +119,9 @@ end
 -- Adds Cash to the catorgized player.
 function ProfileManager.AddCash(player: Player, amount: number)
 	local profile = ProfileManager.Profiles[player]
-	if not profile then return end
+	if not profile then
+		return
+	end
 	profile.Data.Cash += amount
 	local cashStat = getStatisticValue(player, "leaderstats", "Cash")
 	if cashStat then
@@ -146,7 +146,7 @@ function ProfileManager.SetCash(player: Player, amount: number)
 end
 
 -- Adds Emerald to the catorgized player.
-function ProfileManager.AddEmerald(player : Player, amount : number)
+function ProfileManager.AddEmerald(player: Player, amount: number)
 	local profile = ProfileManager.Profiles[player]
 	if not profile then
 		return
@@ -185,12 +185,10 @@ function ProfileManager.AddExperience(player: Player, amount: number)
 		SoundManager.PlaySound("LevelUp")
 	end
 	ProfileManager.SyncProfileState(player)
-
 end
 
-
 -- Adds Kills to the catorgorized player.
-function ProfileManager.AddKills(player : Player, amount : number)
+function ProfileManager.AddKills(player: Player, amount: number)
 	local profile = ProfileManager.Profiles[player]
 	if not profile then
 		return
@@ -206,7 +204,7 @@ function ProfileManager.AddKills(player : Player, amount : number)
 end
 
 -- Adds Rebirths to the catorgorized player.
-function ProfileManager.AddRebirths(player : Player, amount : number)
+function ProfileManager.AddRebirths(player: Player, amount: number)
 	local profile = ProfileManager.Profiles[player]
 	if not profile then
 		return
@@ -301,18 +299,22 @@ function ProfileManager.BindQuestTracking(player: Player)
 		end
 
 		local lastJumpAt = 0
-		characterJanitor:Add(humanoid.Jumping:Connect(function(active: boolean)
-			if not active then
-				return
-			end
+		characterJanitor:Add(
+			humanoid.Jumping:Connect(function(active: boolean)
+				if not active then
+					return
+				end
 
-			local now = os.clock()
-			if now - lastJumpAt < 0.35 then
-				return
-			end
-			lastJumpAt = now
-			addQuestProgress(player, "Jump", 1)
-		end), "Disconnect", "Jumping")
+				local now = os.clock()
+				if now - lastJumpAt < 0.35 then
+					return
+				end
+				lastJumpAt = now
+				addQuestProgress(player, "Jump", 1)
+			end),
+			"Disconnect",
+			"Jumping"
+		)
 	end
 
 	if player.Character then
@@ -375,6 +377,5 @@ function ProfileManager.OnboardingSuccess(player: Player): boolean
 	ProfileManager.SyncProfileState(player)
 	return true
 end
-
 
 return ProfileManager

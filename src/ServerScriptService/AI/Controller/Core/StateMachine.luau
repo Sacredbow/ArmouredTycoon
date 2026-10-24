@@ -3,25 +3,17 @@
 	@class StateMachine
 
 	@desc
-	Finite state machine for NPC controllers. Registers states,
-	switches between them (calling Exit/Enter hooks), and steps the
-	active state's Update each tick.
+	Finite state machine for NPC controllers. State is held in a plain
+	component-like table and advanced by the ECS NPC update system.
 ]]
 
---// Modules
-
 const Types = require(script.Parent.Types)
-
---// Types
 
 type AIContext = Types.AIContext
 type State = Types.State
 type StateName = Types.StateName
 
---// Module
-
 local StateMachine = {}
-StateMachine.__index = StateMachine
 
 export type StateMachineController = {
 	Context: AIContext,
@@ -34,50 +26,56 @@ export type StateMachineController = {
 	Update: (self: StateMachineController) -> (),
 }
 
-function StateMachine.new(context: AIContext): StateMachineController
-	local self : any = setmetatable({
-		Context = context,
+function StateMachine.Create(Context: AIContext): StateMachineController
+	local Controller: any = {
+		Context = Context,
 		States = {},
 		CurrentState = nil,
 		CurrentStateName = nil,
-	}, StateMachine) 
-	return self  :: StateMachineController
+	}
+
+	Controller.RegisterState = StateMachine.RegisterState
+	Controller.GetStateName = StateMachine.GetStateName
+	Controller.SetState = StateMachine.SetState
+	Controller.Update = StateMachine.Update
+
+	return Controller :: StateMachineController
 end
 
-function StateMachine.RegisterState(self: StateMachineController, state: State)
-	self.States[state.Name] = state
+function StateMachine.RegisterState(Controller: StateMachineController, StateValue: State)
+	Controller.States[StateValue.Name] = StateValue
 end
 
-function StateMachine.GetStateName(self: StateMachineController): StateName?
-	return self.CurrentStateName
+function StateMachine.GetStateName(Controller: StateMachineController): StateName?
+	return Controller.CurrentStateName
 end
 
-function StateMachine.SetState(self: StateMachineController, stateName: StateName)
-	local nextState = self.States[stateName]
-	if not nextState then
-		warn(`[AIStateMachine] Missing state "{stateName}" for {self.Context.Name}`)
+function StateMachine.SetState(Controller: StateMachineController, StateNameValue: StateName)
+	local NextState = Controller.States[StateNameValue]
+	if not NextState then
+		warn(`[AIStateMachine] Missing state "{StateNameValue}" for {Controller.Context.Name}`)
 		return
 	end
 
-	if self.CurrentState == nextState then
+	if Controller.CurrentState == NextState then
 		return
 	end
 
-	if self.CurrentState and self.CurrentState.Exit then
-		self.CurrentState.Exit(self.Context, self)
+	if Controller.CurrentState and Controller.CurrentState.Exit then
+		Controller.CurrentState.Exit(Controller.Context, Controller)
 	end
 
-	self.CurrentState = nextState
-	self.CurrentStateName = stateName
+	Controller.CurrentState = NextState
+	Controller.CurrentStateName = StateNameValue
 
-	if nextState.Enter then
-		nextState.Enter(self.Context, self)
+	if NextState.Enter then
+		NextState.Enter(Controller.Context, Controller)
 	end
 end
 
-function StateMachine.Update(self: StateMachineController)
-	if self.CurrentState then
-		self.CurrentState.Update(self.Context, self)
+function StateMachine.Update(Controller: StateMachineController)
+	if Controller.CurrentState then
+		Controller.CurrentState.Update(Controller.Context, Controller)
 	end
 end
 

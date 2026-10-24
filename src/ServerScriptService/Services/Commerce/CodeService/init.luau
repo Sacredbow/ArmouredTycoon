@@ -12,17 +12,25 @@
 --// Services
 
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const ECS = require(ReplicatedStorage.Shared.Core.ECS)
 const ServerScriptService = game:GetService("ServerScriptService")
 const DataStoreService = game:GetService("DataStoreService")
 const RunService = game:GetService("RunService")
 
 --// Modules
 
-const Packets = require(ReplicatedStorage.Network.Packets)
+const Packets = require(ReplicatedStorage.Shared.Platform.Network.Packets)
 const Codes = require(script.Codes)
 const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
-const PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
 const NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
+
+
+local function FindPlayerEntity(Player: Player): number?
+	for Entity, PlayerRef in ECS.world:query(ECS.Components.PlayerRef) do
+		if PlayerRef == Player then return Entity end
+	end
+	return nil
+end
 
 -- A new campaign key starts when this release first runs on a live server.
 -- Keep this key stable across hotfixes so restarts cannot extend expiry.
@@ -31,20 +39,16 @@ local CampaignStore = DataStoreService:GetDataStore("PromoCampaigns")
 --// Module
 
 local CodeService: { [string]: any } = {}
-CodeService.__index = CodeService
+
 
 --// Constructor
-
-function CodeService.new(): any
-	return setmetatable({}, CodeService)
-end
 
 --// Internal Methods
 
 -- Returns the player's redeemed codes map (code -> unix timestamp).
 -- Returns nil when the profile isn't loaded yet (redeem should be deferred).
 -- Self-heals a corrupt non-table RedeemedCodes field instead of erroring.
-function CodeService:_GetRedeemedCodes(Player: Player): { [string]: number }?
+function CodeService._GetRedeemedCodes(Player: Player): { [string]: number }?
 	local profile = ProfileManager.Profiles[Player]
 	if not profile then
 		return nil
@@ -61,7 +65,7 @@ function CodeService:_GetRedeemedCodes(Player: Player): { [string]: number }?
 end
 
 -- Applies a code's reward table to the player.
-function CodeService:_ApplyReward(Player: Player, Reward: any)
+function CodeService._ApplyReward(Player: Player, Reward: any)
 	if typeof(Reward) ~= "table" then
 		return
 	end
@@ -83,12 +87,15 @@ function CodeService:_ApplyReward(Player: Player, Reward: any)
 
 	local Multiplier = Reward.Multiplier
 	if typeof(Multiplier) == "number" then
-		local Current = PlayerRuntimeState.GetMultiplier(Player)
-		PlayerRuntimeState.SetMultiplier(Player, math.max(Current, Multiplier))
+		local Entity = FindPlayerEntity(Player)
+		if Entity then
+			local Current = ECS.world:get(Entity, ECS.Components.PlayerMultiplier) or 1
+			ECS.world:set(Entity, ECS.Components.PlayerMultiplier, math.max(Current, Multiplier))
+		end
 	end
 end
 
-function CodeService:_Redeem(Player: Player, CodeInput: string): (boolean, string)
+function CodeService._Redeem(Player: Player, CodeInput: string): (boolean, string)
 	if typeof(CodeInput) ~= "string" or #CodeInput > 64 then
 		warn(`[CodeService] {Player.Name} submitted invalid code (not string or >64 chars)`)
 		return false, "Invalid Code"
@@ -113,7 +120,7 @@ function CodeService:_Redeem(Player: Player, CodeInput: string): (boolean, strin
 		return false, "Code Expired"
 	end
 
-	local RedeemedCodes = self:_GetRedeemedCodes(Player)
+	local RedeemedCodes = CodeService._GetRedeemedCodes(Player)
 	if not RedeemedCodes then
 		warn(`[CodeService] {Player.Name} attempted redemption before profile load`)
 		return false, "Profile not ready."
@@ -124,7 +131,7 @@ function CodeService:_Redeem(Player: Player, CodeInput: string): (boolean, strin
 	end
 
 	-- Apply the reward first so a failure mid-apply does NOT consume the code.
-	self:_ApplyReward(Player, Definition.Reward)
+	CodeService._ApplyReward(Player, Definition.Reward)
 
 	RedeemedCodes[CodeInput] = os.time()
 	ProfileManager.SyncProfileState(Player)
@@ -134,7 +141,7 @@ end
 
 --// Public API
 
-function CodeService:Init()
+function CodeService.Init()
 	task.spawn(function()
 		if RunService:IsStudio() then
 			Codes.SetCampaignStartUnix(os.time())
@@ -169,7 +176,7 @@ function CodeService:Init()
 		end
 
 		local Success, Accepted, Response = xpcall(function()
-			return self:_Redeem(Player, Request.code)
+			return CodeService._Redeem(Player, Request.code)
 		end, debug.traceback)
 		if not Success then
 			warn(`[CodeService] Redemption failed internally for {Player.Name}: {Accepted}`)
@@ -182,7 +189,7 @@ end
 
 --// Lifecycle hook (kept for Bootstrap compatibility).
 -- Redeemed codes live in the profile, so nothing to flush here.
-function CodeService:_OnPlayerRemoving(_Player: Player)
+function CodeService._OnPlayerRemoving(_Player: Player)
 end
 
 return CodeService

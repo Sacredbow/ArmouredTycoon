@@ -11,7 +11,7 @@
 
 const RunService = game:GetService("RunService")
 const TweenService = game:GetService("TweenService")
-const RuntimeSettings = require(game:GetService("ReplicatedStorage").Modules.SettingsManager.RuntimeSettings)
+const RuntimeSettings = require(game:GetService("ReplicatedStorage").Shared.Platform.Settings.RuntimeSettings)
 
 --// Constants
 

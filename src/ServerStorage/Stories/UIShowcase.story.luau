@@ -5,7 +5,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React = require(ReplicatedStorage.Packages.react)
 local ReactRoblox = require(ReplicatedStorage.Packages.ReactRoblox)
 
-local NotificationText = require(game.StarterPlayer.StarterPlayerScripts.UI.features.Notifications.components.NotificationText)
+local NotificationText =
+	require(game.StarterPlayer.StarterPlayerScripts.UI.features.Notifications.components.NotificationText)
 
 local e = React.createElement
 local previewStore = {

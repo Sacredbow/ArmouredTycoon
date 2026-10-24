@@ -4,7 +4,6 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Observers = require(ReplicatedStorage.Packages.Observers)
 
-
 export type Policy = {
 	Rate: number,
 	Burst: number,
@@ -118,7 +117,6 @@ function NetworkGuard.GetMetrics(): { [string]: Metrics }
 	end
 	return snapshot
 end
-
 
 Observers.observePlayer(function(_player: Player)
 	return function()

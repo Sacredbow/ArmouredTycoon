@@ -10,7 +10,6 @@ InitManager.__index = InitManager
 
 math.randomseed(os.clock())
 
-
 local STEPS = {
 	"Enabling AccessComponent",
 	"Starting UtilityManager",
@@ -517,12 +516,10 @@ local STEPS = {
 	"Building HeapAllocationTracker",
 	"Prewarming GraphicsQueueSubmit",
 	"Initializing TimelineSemaphore",
-	"Mounting DataMapperTransform"
+	"Mounting DataMapperTransform",
 }
 
-
 local READY_TEXT = "Ready"
-
 
 local COLORS = {
 	Normal = Color3.fromRGB(220, 220, 220),
@@ -563,11 +560,7 @@ function InitManager.new(config)
 	shuffle(self._steps)
 	self._index = 1
 
-	self._fadeInfo = TweenInfo.new(
-		self.FadeTime,
-		Enum.EasingStyle.Sine,
-		Enum.EasingDirection.Out
-	)
+	self._fadeInfo = TweenInfo.new(self.FadeTime, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 
 	return self
 end
@@ -575,14 +568,16 @@ end
 local function fade(label, info, transparency, color)
 	local tween = TweenService:Create(label, info, {
 		TextTransparency = transparency,
-		TextColor3 = color
+		TextColor3 = color,
 	})
 	tween:Play()
 	return tween
 end
 
 function InitManager:Start()
-	if self._running or not self.Label then return end
+	if self._running or not self.Label then
+		return
+	end
 	self._running = true
 	self._finished = false
 
@@ -610,7 +605,9 @@ function InitManager:Start()
 end
 
 function InitManager:Finish()
-	if self._finished or not self.Label then return end
+	if self._finished or not self.Label then
+		return
+	end
 	self._finished = true
 	self._running = false
 
@@ -618,15 +615,19 @@ function InitManager:Finish()
 	self.Label.TextColor3 = COLORS.Ready
 	self.Label.TextTransparency = 1
 
-	TweenService:Create(
-		self.Label,
-		TweenInfo.new(0.35, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
-		{ TextTransparency = 0 }
-	):Play()
+	TweenService
+		:Create(
+			self.Label,
+			TweenInfo.new(0.35, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+			{ TextTransparency = 0 }
+		)
+		:Play()
 end
 
 function InitManager:Hide()
-	if not self.Label then return end
+	if not self.Label then
+		return
+	end
 	fade(self.Label, self._fadeInfo, 1, self.Label.TextColor3)
 end
 

@@ -21,7 +21,7 @@ return function(context: any)
 		while TimedEmitter.elapsed >= TimedEmitter.interval do
 			TimedEmitter.elapsed -= TimedEmitter.interval
 
-			for _, Emitter in ipairs(TimedEmitter.emitters) do
+			for _, Emitter in TimedEmitter.emitters do
 				if Emitter.Parent then
 					Emitter:Emit(TimedEmitter.amount)
 				end

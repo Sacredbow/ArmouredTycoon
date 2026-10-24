@@ -46,7 +46,7 @@ local function getGunHud(statusGui: Instance): Instance?
 end
 
 local function findGui(root: Instance, names: { string }): GuiObject?
-	for _, name in ipairs(names) do
+	for _, name in names do
 		local descendant = root:FindFirstChild(name, true)
 		if descendant and descendant:IsA("GuiObject") then
 			return descendant
@@ -64,9 +64,11 @@ local function countMagazines(storedAmmo: number, ammoPerMagazine: number): numb
 	return math.ceil(storedAmmo / ammoPerMagazine)
 end
 local function setText(root: Instance, names: { string }, text: string)
-	for _, name in ipairs(names) do
+	for _, name in names do
 		local descendant = root:FindFirstChild(name, true)
-		if descendant and (descendant:IsA("TextLabel") or descendant:IsA("TextButton") or descendant:IsA("TextBox")) then
+		if
+			descendant and (descendant:IsA("TextLabel") or descendant:IsA("TextButton") or descendant:IsA("TextBox"))
+		then
 			descendant.Text = text
 		end
 	end
@@ -97,7 +99,10 @@ local function tweenAmmoBar(root: Instance, ammo: number, maxAmmo: number, jamme
 		originalSize.Y.Scale,
 		originalSize.Y.Offset
 	)
-	local targetColor = if jammed then Color3.fromRGB(255, 0, 0) elseif ratio > 0 then Color3.fromRGB(255, 255, 255) else Color3.fromRGB(0, 0, 0)
+	local targetColor = if jammed
+		then Color3.fromRGB(255, 0, 0)
+		elseif ratio > 0 then Color3.fromRGB(255, 255, 255)
+		else Color3.fromRGB(0, 0, 0)
 	local target: { [string]: any } = {
 		Size = targetSize,
 		BackgroundColor3 = targetColor,

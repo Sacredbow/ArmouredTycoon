@@ -4,19 +4,16 @@
 
 	Per-character anti-cheat state lives in ECS as plain counters, timestamps,
 	history, and boundary Instance references. Detection behavior stays here
-	instead of being captured by ScheduledTask callbacks.
+	instead of being captured by typed ECS lifecycle components.
 ]]
 
 const ServerScriptService = game:GetService("ServerScriptService")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-const PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+const ECS = require(ReplicatedStorage.Shared.Core.ECS)
 const LoggingEvent = require(ReplicatedStorage.Packages.signal).get("ServerLogging")
 const Config = require(ServerScriptService.Services.External.ServerAuthority.Utilities.Config)
 const Whitelist = require(ServerScriptService.Services.External.ServerAuthority.Utilities.Whitelist)
-
 const CheckInterval = 0.5
-
 local function CreateCharacterRayParams(character: Model): RaycastParams
 	local rayParams = RaycastParams.new()
 	rayParams.FilterDescendantsInstances = { character }
@@ -35,11 +32,8 @@ local function GetHorizontalDistance(fromPosition: Vector3, toPosition: Vector3)
 end
 
 local function GetHeightAboveGround(humanoidRootPart: BasePart, character: Model): number
-	local result = workspace:Raycast(
-		humanoidRootPart.Position,
-		Vector3.new(0, -300, 0),
-		CreateCharacterRayParams(character)
-	)
+	local result =
+		workspace:Raycast(humanoidRootPart.Position, Vector3.new(0, -300, 0), CreateCharacterRayParams(character))
 	if result then
 		return humanoidRootPart.Position.Y - result.Position.Y
 	end
@@ -85,7 +79,7 @@ end
 
 local function CopyPositionHistory(history: { any }): { any }
 	local copiedHistory = {}
-	for index, sample in ipairs(history) do
+	for index, sample in history do
 		copiedHistory[index] = {
 			Position = sample.Position,
 			Time = sample.Time,
@@ -95,8 +89,13 @@ local function CopyPositionHistory(history: { any }): { any }
 end
 
 local function IsServerTeleportAllowed(Player: Player, Now: number): boolean
-	const TeleportGraceExpiry = PlayerRuntimeState.GetTeleportGraceExpiry(Player)
-	return type(TeleportGraceExpiry) == "number" and Now <= TeleportGraceExpiry
+	for Entity, PlayerRef in ECS.world:query(ECS.Components.PlayerRef) do
+		if PlayerRef == Player then
+			const TeleportGraceExpiry = ECS.world:get(Entity, ECS.Components.TeleportGrace) or 0
+			return type(TeleportGraceExpiry) == "number" and Now <= TeleportGraceExpiry
+		end
+	end
+	return false
 end
 
 local function ResetCharacterToPosition(character: Model, humanoidRootPart: BasePart, targetPosition: Vector3)

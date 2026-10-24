@@ -1,6 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local QuestOptions = require(ReplicatedStorage.Progression.QuestOptions)
+local QuestOptions = require(ReplicatedStorage.Shared.Game.Progression.QuestOptions)
 
 return {
 	Cash = 125,

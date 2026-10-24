@@ -312,7 +312,7 @@ local function addOption(text: string, tone: string)
 end
 
 local function addQuotePool(pool: { string }, tone: string)
-	for _, quote in ipairs(pool) do
+	for _, quote in pool do
 		addOption(`"{quote}"`, tone)
 	end
 end
@@ -322,15 +322,15 @@ addQuotePool(NEUTRAL_QUOTES, "Normal")
 addQuotePool(ABRASIVE_QUOTES, "Rude")
 addQuotePool(FOLLOW_UP_QUOTES, "FollowUp")
 
-for _, topic in ipairs(QUOTE_TOPICS) do
+for _, topic in QUOTE_TOPICS do
 	addOption(`"Can I ask you about {topic}?"`, "Normal")
 	addOption(`"Be honest with me about {topic}."`, "FollowUp")
 	addOption(`"I hope {topic} has not been giving you trouble."`, "Happy")
 	addOption(`"Stop dodging questions about {topic}."`, "Rude")
 end
 
-for _, detail in ipairs(SCENE_DETAILS) do
-	for _, intent in ipairs(PLAYER_INTENTS) do
+for _, detail in SCENE_DETAILS do
+	for _, intent in PLAYER_INTENTS do
 		addOption(`"I noticed {detail}; {intent}"`, "Normal")
 		addOption(`"Not trying to start anything, but {detail}; {intent}"`, "Happy")
 		addOption(`"You saw that {detail}; {intent}"`, "FollowUp")
@@ -411,7 +411,10 @@ function ConversationOptions.GetResponse(disposition: string, optionTone: string
 		}
 	end
 
-	local responseDisposition = if disposition == "Happy" then "Happy" elseif disposition == "Abrasive" then "Abrasive" else "Normal"
+	local responseDisposition = if disposition == "Happy"
+		then "Happy"
+		elseif disposition == "Abrasive" then "Abrasive"
+		else "Normal"
 	return {
 		line = pick(RESPONSE_LINES[responseDisposition]),
 		endConversation = turnCount >= 7,

@@ -11,7 +11,6 @@
 
 const ServerScriptService = game:GetService("ServerScriptService")
 const NPCRegistry = require(ServerScriptService.AI.NPCRegistry)
-
 --// Module
 
 return function(context: any)

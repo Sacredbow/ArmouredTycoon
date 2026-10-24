@@ -3,8 +3,17 @@
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
 const ServerStorage = game:GetService("ServerStorage")
 const ServerScriptService = game:GetService("ServerScriptService")
+const ECS = require(ReplicatedStorage.Shared.Core.ECS)
 
-const PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+
+local function SetArmourEquipped(Player: Player, Value: boolean)
+	for Entity, PlayerRef in ECS.world:query(ECS.Components.PlayerRef) do
+		if PlayerRef == Player then
+			ECS.world:set(Entity, ECS.Components.ArmourEquipped, Value)
+			return
+		end
+	end
+end
 
 const GearDistribution = {}
 
@@ -35,7 +44,7 @@ function GearDistribution.GiveShield(Player: Player): boolean
 	end
 
 	if Character:FindFirstChild("Shield") then
-		PlayerRuntimeState.SetArmourEquipped(Player, true)
+		SetArmourEquipped(Player, true)
 		return true
 	end
 
@@ -64,7 +73,7 @@ function GearDistribution.GiveShield(Player: Player): boolean
 	Weld.C0 = CFrame.new(-0.1, 0, 0) * CFrame.Angles(math.rad(90), 0, math.rad(-90))
 	Weld.Parent = PrimaryPart
 	Shield.Parent = Character
-	PlayerRuntimeState.SetArmourEquipped(Player, true)
+	SetArmourEquipped(Player, true)
 	return true
 end
 
@@ -128,7 +137,7 @@ function GearDistribution.GiveClothes(Player: Player)
 
 	Humanoid.MaxHealth = 300
 	Humanoid.Health = 300
-	PlayerRuntimeState.SetArmourEquipped(Player, true)
+	SetArmourEquipped(Player, true)
 
 	const Description = Humanoid:GetAppliedDescription()
 	Description.Shirt = 6433605120

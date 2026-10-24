@@ -11,16 +11,19 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local WeaponUIState = require(script.Parent.Parent.UI.WeaponUIState)
-local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
+local RuntimeSettings = require(ReplicatedStorage.Shared.Platform.Settings.RuntimeSettings)
 
 local CrosshairController = {}
 CrosshairController.__index = CrosshairController
 
-export type CrosshairController = typeof(setmetatable({} :: {
-	_player: Player,
-	_gui: ScreenGui?,
-	_lastState: string,
-}, CrosshairController))
+export type CrosshairController = typeof(setmetatable(
+	{} :: {
+		_player: Player,
+		_gui: ScreenGui?,
+		_lastState: string,
+	},
+	CrosshairController
+))
 
 function CrosshairController.new(player: Player): CrosshairController
 	return setmetatable({
@@ -104,7 +107,9 @@ function CrosshairController:update(weaponData: any, toolEquip: boolean, aiming:
 		and not (aiming and self:_isSniper(weaponData, weaponName))
 
 	local state = if active
-		then `active:{if self:_isShotgun(weaponData, weaponName) then "shotgun" else "rifle"}:{if isThird then "third" else "first"}`
+		then `active:{if self:_isShotgun(weaponData, weaponName) then "shotgun" else "rifle"}:{if isThird
+			then "third"
+			else "first"}`
 		else "hidden"
 
 	local changed = self._lastState ~= state
@@ -180,11 +185,13 @@ function CrosshairController:_isSniper(weaponData: any, weaponName: string): boo
 		return true
 	end
 
-	if string.find(lowerName, "sniper", 1, true)
+	if
+		string.find(lowerName, "sniper", 1, true)
 		or string.find(lowerName, "barrett", 1, true)
 		or string.find(lowerName, "awm", 1, true)
 		or string.find(lowerName, "m82", 1, true)
-		or string.find(lowerName, "kar98", 1, true) then
+		or string.find(lowerName, "kar98", 1, true)
+	then
 		return true
 	end
 

@@ -1,192 +1,27 @@
 {
-  "workbench.colorTheme": "Abyss",
-
-  "workbench.colorCustomizations": {
-    "activityBar.background": "#182140",
-    "activityBar.foreground": "#E7ECFF",
-    "activityBar.inactiveForeground": "#92A6D9",
-    "activityBarBadge.background": "#8F9DFF",
-    "activityBarBadge.foreground": "#FFFFFF",
-
-    "sideBar.background": "#181F38",
-    "sideBar.foreground": "#D8E2FF",
-    "sideBar.border": "#1B2A4A",
-    "sideBarSectionHeader.background": "#1B284A",
-    "sideBarSectionHeader.foreground": "#E8EDF8",
-
-    "editorGroupHeader.tabsBackground": "#17203C",
-    "editorGroupHeader.tabsBorder": "#1F2D58",
-    "tab.activeBackground": "#1F2F5B",
-    "tab.activeForeground": "#F0F4FF",
-    "tab.inactiveBackground": "#16203B",
-    "tab.inactiveForeground": "#96A9D9",
-    "tab.border": "#1D2B53",
-    "tab.activeBorderTop": "#A47CFF",
-
-    "titleBar.activeBackground": "#1C2A49",
-    "titleBar.activeForeground": "#E8EDF8",
-    "titleBar.inactiveBackground": "#16223B",
-    "titleBar.inactiveForeground": "#9BB2D9",
-
-    "statusBar.background": "#141C34",
-    "statusBar.foreground": "#E8EDF8",
-    "statusBar.noFolderBackground": "#141C34",
-    "statusBar.debuggingBackground": "#263450",
-    "statusBarItem.remoteBackground": "#1F2E57",
-
-    "panel.background": "#161E39",
-    "panel.border": "#1B2A4A",
-    "panelTitle.activeForeground": "#E8EDF8",
-    "panelTitle.inactiveForeground": "#A1B1D7",
-    "panelTitle.activeBorder": "#A47CFF",
-
-    "terminal.background": "#101726",
-    "terminal.foreground": "#D8E4FF",
-
-    "breadcrumb.background": "#151E34",
-    "breadcrumb.foreground": "#AEBFEA",
-    "breadcrumb.focusForeground": "#E8EDF8",
-
-    "list.activeSelectionBackground": "#1E315D",
-    "list.activeSelectionForeground": "#FFFFFF",
-    "list.inactiveSelectionBackground": "#172244",
-    "list.hoverBackground": "#1E3054",
-    "list.focusOutline": "#A47CFF",
-
-    "quickInput.background": "#151E33",
-    "quickInput.foreground": "#E8EDF8",
-    "quickInputList.focusBackground": "#22325C",
-
-    "input.background": "#151D34",
-    "input.foreground": "#E8EDF8",
-    "input.border": "#23305A",
-    "focusBorder": "#A47CFF",
-
-    "button.background": "#2B3C6B",
-    "button.foreground": "#E8EDF8",
-    "button.hoverBackground": "#354A7C",
-
-    "editor.background": "#111827",
-    "editor.foreground": "#EBF1FF",
-    "editorLineNumber.foreground": "#5F74A5",
-    "editorLineNumber.activeForeground": "#9FB4E8",
-    "editorGutter.background": "#111827",
-    "editor.lineHighlightBackground": "#1B2D57",
-    "editor.selectionBackground": "#2B4C84",
-    "editor.selectionHighlightBackground": "#1D3B6E",
-    "editor.inactiveSelectionBackground": "#172847",
-    "editor.wordHighlightBackground": "#223A70",
-    "editor.wordHighlightStrongBackground": "#2A4B7A",
-    "editorCursor.foreground": "#F7F8FF",
-    "editorWhitespace.foreground": "#2F446F",
-    "editorIndentGuide.background1": "#223760",
-    "editorIndentGuide.activeBackground1": "#7D95FF",
-    "editorBracketMatch.background": "#1C2F58",
-    "editorBracketMatch.border": "#96B0FF"
-  },
-
+  "workbench.colorTheme": "Dark Modern",
   "[lua]": {
     "editor.defaultFormatter": "JohnnyMorganz.stylua",
     "editor.formatOnSave": true
   },
-
   "[luau]": {
     "editor.defaultFormatter": "JohnnyMorganz.stylua",
     "editor.formatOnSave": true
   },
-
   "luau-lsp.languageMode": "roblox",
   "luau-lsp.completion.autocompleteEnd": true,
   "luau-lsp.sourcemap.enabled": true,
   "luau-lsp.completion.imports.enabled": true,
-
   "editor.bracketPairColorization.independentColorPoolPerBracketType": true,
-
   "launch": {
     "configurations": [],
     "compounds": []
   },
-
   "workbench.editor.customLabels.patterns": {
     "**/init.lua": "${dirname} (${filename}.${extname})",
     "**/init.luau": "${dirname} (${filename}.${extname})"
   },
-
-  "editor.fontFamily": "JetBrains Mono Thin, JetBrains Mono, Fira Code, Cascadia Code, Consolas, 'Courier New', monospace",
-  "editor.fontSize": 14,
-  "editor.fontWeight": "100",
-  "editor.fontLigatures": true,
-  "editor.lineHeight": 22,
-  "editor.letterSpacing": 0.5,
   "editor.renderWhitespace": "boundary",
   "editor.cursorStyle": "line",
-  "editor.semanticHighlighting.enabled": true,
-
-  "editor.tokenColorCustomizations": {
-    "textMateRules": [
-      {
-        "scope": ["source.luau"],
-        "settings": {
-          "foreground": "#FFE0A3",
-          "fontStyle": "bold"
-        }
-      },
-      {
-        "scope": ["keyword", "storage.modifier.local.luau", "storage.type"],
-        "settings": {
-          "foreground": "#FF8A3D",
-          "fontStyle": "bold"
-        }
-      },
-      {
-        "scope": ["entity.name.function", "support.function"],
-        "settings": {
-          "foreground": "#FFC15A",
-          "fontStyle": "bold"
-        }
-      },
-      {
-        "scope": ["constant.numeric", "constant.language"],
-        "settings": {
-          "foreground": "#FFB347",
-          "fontStyle": "bold"
-        }
-      },
-      {
-        "scope": ["string"],
-        "settings": {
-          "foreground": "#73E7B7",
-          "fontStyle": "bold"
-        }
-      },
-      {
-        "scope": ["comment"],
-        "settings": {
-          "foreground": "#72798C",
-          "fontStyle": "bold"
-        }
-      },
-      {
-        "scope": ["support.class", "constant.language.global.luau", "entity.name.type"],
-        "settings": {
-          "foreground": "#7FB7FF",
-          "fontStyle": "bold"
-        }
-      },
-      {
-        "scope": ["variable", "variable.other.readwrite.luau", "variable.parameter"],
-        "settings": {
-          "foreground": "#E8D2AA",
-          "fontStyle": "bold"
-        }
-      },
-      {
-        "scope": ["variable.language.self.luau"],
-        "settings": {
-          "foreground": "#FF6F61",
-          "fontStyle": "bold"
-        }
-      }
-    ]
-  }
+  "editor.semanticHighlighting.enabled": true
 }

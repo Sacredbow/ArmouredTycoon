@@ -17,9 +17,9 @@ const ServerScriptService = game:GetService("ServerScriptService")
 
 --// Modules
 
-const SettingsConfig = require(ReplicatedStorage.Modules.SettingsManager.SettingsConfig)
+const SettingsConfig = require(ReplicatedStorage.Shared.Platform.Settings.SettingsConfig)
 const NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
-const Packets = require(ReplicatedStorage.Network.Packets)
+const Packets = require(ReplicatedStorage.Shared.Platform.Network.Packets)
 const Observers = require(ReplicatedStorage.Packages.Observers)
 
 --// Constants

@@ -1,4 +1,4 @@
-  --!strict
+--!strict
 --[[
 	@class RarityModule
 
@@ -11,11 +11,9 @@
 --// Services
 
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 --// Constants
 
 const BoxFolder = ReplicatedStorage.Assets.Workspace.Boxes
-
 const Boxes: { [string]: Instance } = {
 	Common = BoxFolder.Common,
 	Rare = BoxFolder.Rare,
@@ -26,7 +24,7 @@ const Boxes: { [string]: Instance } = {
 
 const RarityNames: { string } = { "Common", "Rare", "Legendary", "Mythical", "Divine" }
 const RarityWeights: { number } = { 49, 30, 16, 4, 1 }
-
+const RandomGenerator = Random.new()
 --// Module
 
 local RarityModule = {}
@@ -34,7 +32,7 @@ local RarityModule = {}
 --// Public API
 
 function RarityModule:SpawnRandomBox(): Instance?
-	const RandomNumber = math.random(1, 100)
+	const RandomNumber = RandomGenerator:NextInteger(1, 100)
 	local Counter = 0
 
 	for Index = 1, #RarityNames do

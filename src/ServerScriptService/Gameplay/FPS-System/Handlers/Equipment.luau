@@ -2,8 +2,8 @@
 -- ACS equipment requests. Authored settings and transforms are loaded on the server.
 
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
-const Packets = require(ReplicatedStorage.Network.Packets)
-const WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
+const Packets = require(ReplicatedStorage.Shared.Platform.Network.Packets)
+const WeaponDefinitionResolver = require(ReplicatedStorage.Shared.Game.Combat.Weapons.Resolver)
 
 const Weapons = require(script.Parent.Parent.Core.Weapons)
 const NetworkGuard = require(script.Parent.Parent.Parent.Services.Networking.NetworkGuard)
@@ -29,22 +29,17 @@ function Bind()
 		if mode ~= 1 or not character or weapon.Parent ~= character then
 			return
 		end
-		local settingsModule = WeaponDefinitionResolver.getSettings(weapon)
-		local animationsModule = WeaponDefinitionResolver.getAnimations(weapon)
-		if not settingsModule or not settingsModule:IsA("ModuleScript")
-			or not animationsModule or not animationsModule:IsA("ModuleScript") then
-			return
-		end
-
-		local settingsOk, settings = pcall(require, settingsModule)
-		local animationsOk, animations = pcall(require, animationsModule)
-		if not settingsOk or type(settings) ~= "table"
-			or not animationsOk or type(animations) ~= "table"
+		WeaponDefinitionResolver.assignId(weapon)
+		const settings = WeaponDefinitionResolver.getSettingsData(weapon)
+		const animations = WeaponDefinitionResolver.getAnimationsData(weapon)
+		if type(settings) ~= "table"
+			or type(animations) ~= "table"
 			or typeof(animations.SV_RightArmPos) ~= "CFrame"
 			or typeof(animations.SV_LeftArmPos) ~= "CFrame"
 			or typeof(animations.SV_GunPos) ~= "CFrame" then
 			return
 		end
+
 
 		Weapons.Equip(player, weapon, mode, settings, animations)
 	end)

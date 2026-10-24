@@ -4,11 +4,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local React = require(ReplicatedStorage.Packages.react)
 local ReactRoblox = require(ReplicatedStorage.Packages.ReactRoblox)
-local InventoryShared = require(ReplicatedStorage.CharacterUtilities.Inventory.InventoryShared)
+local InventoryShared = require(ReplicatedStorage.Shared.Game.Inventory.InventoryShared)
 
-local InventoryPanel = require(
-	game.StarterPlayer.StarterPlayerScripts.UI.components.Inventory.InventoryPanel
-)
+local InventoryPanel = require(game.StarterPlayer.StarterPlayerScripts.UI.components.Inventory.InventoryPanel)
 
 local previewItems: { InventoryShared.InventoryItem } = {
 	{

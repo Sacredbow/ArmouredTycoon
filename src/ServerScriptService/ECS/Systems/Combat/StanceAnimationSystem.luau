@@ -10,17 +10,14 @@
 --// Services
 
 const TweenService = game:GetService("TweenService")
-
 --// Constants
 
 const TWEEN_INFO = TweenInfo.new(0.3)
-
 --// Micro-Optimisations
 
 const math_rad = math.rad
 const CFrame_new = CFrame.new
 const CFrame_Angles = CFrame.Angles
-
 --// Internal Utilities
 
 local function TweenJoint(Joint: Motor6D?, C1: CFrame)
@@ -52,23 +49,47 @@ end
 local function ApplyLean(Joints, Stance: number, Lean: number)
 	if Lean == 1 then
 		if Stance == 0 then
-			TweenJoint(Joints.RootJoint, CFrame_new(-1, 0, 0) * CFrame_Angles(math_rad(-90), math_rad(-15), math_rad(-180)))
+			TweenJoint(
+				Joints.RootJoint,
+				CFrame_new(-1, 0, 0) * CFrame_Angles(math_rad(-90), math_rad(-15), math_rad(-180))
+			)
 			TweenJoint(Joints.RightHip, CFrame_new(0.5, 1, 0) * CFrame_Angles(math_rad(0), math_rad(90), math_rad(0)))
 			TweenJoint(Joints.LeftHip, CFrame_new(-0.5, 1, 0) * CFrame_Angles(math_rad(0), math_rad(-90), math_rad(0)))
 		elseif Stance == 1 then
-			TweenJoint(Joints.RootJoint, CFrame_new(-1, 0.75, 0.25) * CFrame_Angles(math_rad(-80), math_rad(-15), math_rad(-180)))
-			TweenJoint(Joints.RightHip, CFrame_new(0.5, 0, 0.4) * CFrame_Angles(math_rad(20), math_rad(90), math_rad(0)))
-			TweenJoint(Joints.LeftHip, CFrame_new(-0.5, 0, 0.4) * CFrame_Angles(math_rad(20), math_rad(-90), math_rad(0)))
+			TweenJoint(
+				Joints.RootJoint,
+				CFrame_new(-1, 0.75, 0.25) * CFrame_Angles(math_rad(-80), math_rad(-15), math_rad(-180))
+			)
+			TweenJoint(
+				Joints.RightHip,
+				CFrame_new(0.5, 0, 0.4) * CFrame_Angles(math_rad(20), math_rad(90), math_rad(0))
+			)
+			TweenJoint(
+				Joints.LeftHip,
+				CFrame_new(-0.5, 0, 0.4) * CFrame_Angles(math_rad(20), math_rad(-90), math_rad(0))
+			)
 		end
 	elseif Lean == -1 then
 		if Stance == 0 then
-			TweenJoint(Joints.RootJoint, CFrame_new(1, 0, 0) * CFrame_Angles(math_rad(-90), math_rad(15), math_rad(180)))
+			TweenJoint(
+				Joints.RootJoint,
+				CFrame_new(1, 0, 0) * CFrame_Angles(math_rad(-90), math_rad(15), math_rad(180))
+			)
 			TweenJoint(Joints.RightHip, CFrame_new(0.5, 1, 0) * CFrame_Angles(math_rad(0), math_rad(90), math_rad(0)))
 			TweenJoint(Joints.LeftHip, CFrame_new(-0.5, 1, 0) * CFrame_Angles(math_rad(0), math_rad(-90), math_rad(0)))
 		elseif Stance == 1 then
-			TweenJoint(Joints.RootJoint, CFrame_new(1, 0.75, 0.25) * CFrame_Angles(math_rad(-80), math_rad(15), math_rad(180)))
-			TweenJoint(Joints.RightHip, CFrame_new(0.5, 0, 0.4) * CFrame_Angles(math_rad(20), math_rad(90), math_rad(0)))
-			TweenJoint(Joints.LeftHip, CFrame_new(-0.5, 0, 0.4) * CFrame_Angles(math_rad(20), math_rad(-90), math_rad(0)))
+			TweenJoint(
+				Joints.RootJoint,
+				CFrame_new(1, 0.75, 0.25) * CFrame_Angles(math_rad(-80), math_rad(15), math_rad(180))
+			)
+			TweenJoint(
+				Joints.RightHip,
+				CFrame_new(0.5, 0, 0.4) * CFrame_Angles(math_rad(20), math_rad(90), math_rad(0))
+			)
+			TweenJoint(
+				Joints.LeftHip,
+				CFrame_new(-0.5, 0, 0.4) * CFrame_Angles(math_rad(20), math_rad(-90), math_rad(0))
+			)
 		end
 	elseif Lean == 0 then
 		if Stance == 0 then
@@ -76,9 +97,18 @@ local function ApplyLean(Joints, Stance: number, Lean: number)
 			TweenJoint(Joints.RightHip, CFrame_new(0.5, 1, 0) * CFrame_Angles(math_rad(0), math_rad(90), math_rad(0)))
 			TweenJoint(Joints.LeftHip, CFrame_new(-0.5, 1, 0) * CFrame_Angles(math_rad(0), math_rad(-90), math_rad(0)))
 		elseif Stance == 1 then
-			TweenJoint(Joints.RootJoint, CFrame_new(0, 1, 0.25) * CFrame_Angles(math_rad(-80), math_rad(0), math_rad(180)))
-			TweenJoint(Joints.RightHip, CFrame_new(0.5, 0, 0.4) * CFrame_Angles(math_rad(20), math_rad(90), math_rad(0)))
-			TweenJoint(Joints.LeftHip, CFrame_new(-0.5, 0, 0.4) * CFrame_Angles(math_rad(20), math_rad(-90), math_rad(0)))
+			TweenJoint(
+				Joints.RootJoint,
+				CFrame_new(0, 1, 0.25) * CFrame_Angles(math_rad(-80), math_rad(0), math_rad(180))
+			)
+			TweenJoint(
+				Joints.RightHip,
+				CFrame_new(0.5, 0, 0.4) * CFrame_Angles(math_rad(20), math_rad(90), math_rad(0))
+			)
+			TweenJoint(
+				Joints.LeftHip,
+				CFrame_new(-0.5, 0, 0.4) * CFrame_Angles(math_rad(20), math_rad(-90), math_rad(0))
+			)
 		end
 	end
 end
@@ -116,4 +146,3 @@ return function(context: any)
 		World:set(Entity, Components.StanceState, StanceState)
 	end
 end
-

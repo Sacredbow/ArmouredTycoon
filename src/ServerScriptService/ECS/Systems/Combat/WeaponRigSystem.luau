@@ -17,10 +17,15 @@ return function(context: any)
 		const Character = WeaponRig.character
 		const Model = WeaponRig.model
 		const AnimBase = WeaponRig.animBase
-
-		if not Character or not Character.Parent or not Model or not Model.Parent or not AnimBase or not AnimBase.Parent then
+		if
+			not Character
+			or not Character.Parent
+			or not Model
+			or not Model.Parent
+			or not AnimBase
+			or not AnimBase.Parent
+		then
 			World:delete(Entity)
 		end
 	end
 end
-

@@ -2,12 +2,12 @@ local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local ECS = require(ReplicatedStorage.ECS)
+local ECS = require(ReplicatedStorage.Shared.Core.ECS)
 local Observers = require(ReplicatedStorage.Packages.Observers)
 
 local LeaderboardService = {}
-LeaderboardService.__index = LeaderboardService
-local ActiveService = nil
+local Initialized = false
+local BoardEntities: { number } = {}
 
 local BOARD_UPDATE_INTERVAL = 600
 local DATASTORE_WRITE_COOLDOWN = 300
@@ -17,7 +17,7 @@ local RESET_PAGE_SIZE = 100
 local MAX_RESET_PAGES = 20
 
 local REQUEST_TYPES = {}
-for _, requestType in ipairs(Enum.DataStoreRequestType:GetEnumItems()) do
+for _, requestType in Enum.DataStoreRequestType:GetEnumItems() do
 	REQUEST_TYPES[requestType.Name] = requestType
 end
 
@@ -49,19 +49,6 @@ local BOARD_CONFIGS = {
 		end,
 	},
 }
-
-
-local function findDescendant(root, path)
-	local current = root
-	for _, name in ipairs(path) do
-		if not current then
-			return nil
-		end
-		current = current:FindFirstChild(name)
-	end
-
-	return current
-end
 
 local function hasDataStoreBudget(requestTypeName)
 	local requestType = REQUEST_TYPES[requestTypeName]
@@ -118,70 +105,54 @@ local function createBoard(config)
 	}
 end
 
-function LeaderboardService.new()
-	local self = setmetatable({}, LeaderboardService)
-	ActiveService = self
-
-	self._boards = {}
-	for index, config in ipairs(BOARD_CONFIGS) do
-		local board = createBoard(config)
-		board.id = index
-		table.insert(self._boards, board)
-	end
-
-	return self
-end
-
-function LeaderboardService:ResetUser(userOrUserId)
-	local userId = nil
-	if typeof(userOrUserId) == "Instance" and userOrUserId:IsA("Player") then
-		userId = userOrUserId.UserId
-	else
-		userId = tonumber(userOrUserId)
-	end
-
+function LeaderboardService.ResetUser(userOrUserId)
+	local userId = if typeof(userOrUserId) == "Instance" and userOrUserId:IsA("Player")
+		then userOrUserId.UserId
+		else tonumber(userOrUserId)
 	if not userId then
 		return false, "Invalid user"
 	end
 
-	for _, board in ipairs(self._boards) do
-		local key = getLeaderboardKey(board.config, userId)
-		local success, err = pcall(function()
-			board.datastore:RemoveAsync(key)
-		end)
-
-		if not success then
-			warn(`[LeaderboardService] Failed to reset {board.config.statName} for user {userId}: {err}`)
+	for _, entity in BoardEntities do
+		local board = ECS.world:get(entity, ECS.Components.LeaderboardBoard)
+		if board then
+			local key = getLeaderboardKey(board.config, userId)
+			local success, err = pcall(function()
+				board.datastore:RemoveAsync(key)
+			end)
+			if not success then
+				warn("[LeaderboardService] Failed to reset user " .. tostring(userId) .. ": " .. tostring(err))
+			end
+			board.usernameCache[userId] = nil
+			board.thumbnailCache[userId] = nil
+			board.lastWriteByUserId[userId] = nil
+			board.lastPublishedValueByUserId[userId] = nil
+			board.pendingValuesByUserId[userId] = nil
+			board.pendingWriteScheduled[userId] = nil
+			board.forceWriteByUserId[userId] = nil
+			board.writeQueuedByUserId[userId] = nil
+			ECS.world:set(entity, ECS.Components.LeaderboardBoard, board)
+			LeaderboardService.ClearBoard(board)
+			LeaderboardService.UpdateBoard(board)
 		end
-
-		board.usernameCache[userId] = nil
-		board.thumbnailCache[userId] = nil
-		board.lastWriteByUserId[userId] = nil
-		board.lastPublishedValueByUserId[userId] = nil
-		board.pendingValuesByUserId[userId] = nil
-		board.pendingWriteScheduled[userId] = nil
-		board.forceWriteByUserId[userId] = nil
-		board.writeQueuedByUserId[userId] = nil
-	end
-
-	for _, board in ipairs(self._boards) do
-		self:_clearBoard(board)
-		self:_updateBoard(board)
 	end
 
 	return true
 end
 
-function LeaderboardService:ResetAll()
+function LeaderboardService.ResetAll()
 	local removedByBoard = {}
-	for _, board in ipairs(self._boards) do
-		removedByBoard[board.config.id] = self:_resetBoardData(board)
+	for _, entity in BoardEntities do
+		local board = ECS.world:get(entity, ECS.Components.LeaderboardBoard)
+		if board then
+			removedByBoard[board.config.id] = LeaderboardService.ResetBoardData(board)
+			ECS.world:set(entity, ECS.Components.LeaderboardBoard, board)
+		end
 	end
-
 	return true, removedByBoard
 end
 
-function LeaderboardService:_resetBoardData(board)
+function LeaderboardService.ResetBoardData(board)
 	local removed = 0
 	for _ = 1, MAX_RESET_PAGES do
 		if not hasDataStoreBudget("GetSortedAsync") or not hasDataStoreBudget("SetIncrementSortedAsync") then
@@ -202,7 +173,7 @@ function LeaderboardService:_resetBoardData(board)
 			break
 		end
 
-		for _, entry in ipairs(entries) do
+		for _, entry in entries do
 			local removeSuccess, err = pcall(function()
 				board.datastore:RemoveAsync(entry.key)
 			end)
@@ -222,59 +193,64 @@ function LeaderboardService:_resetBoardData(board)
 	end
 
 	clearBoardRuntimeState(board)
-	self:_clearBoard(board)
-	self:_updateBoard(board)
+	LeaderboardService.ClearBoard(board)
+	LeaderboardService.UpdateBoard(board)
 
 	return removed
 end
 
-function LeaderboardService:Init()
-	for index, board in ipairs(self._boards) do
-		self:_bindBoard(board)
-		self:_bindPlayers(board)
-		board.secondsUntilBoardUpdate = math.min(BOARD_UPDATE_INTERVAL, 30 + (index - 1) * 45)
+function LeaderboardService.Init()
+	if Initialized then
+		return
+	end
+
+	for _, config in BOARD_CONFIGS do
+		local board = createBoard(config)
+		local entity = ECS.createEntity({
+			Name = "Leaderboard:" .. config.id,
+			LeaderboardBoard = board,
+		})
+		table.insert(BoardEntities, entity)
+		LeaderboardService.BindBoard(board)
+		LeaderboardService.BindPlayers(board)
+		board.secondsUntilBoardUpdate = BOARD_UPDATE_INTERVAL
+
+		local Loaded = LeaderboardService.UpdateBoard(board)
+		if not Loaded then
+			board.secondsUntilBoardUpdate = 1
+		end
+		ECS.world:set(entity, ECS.Components.LeaderboardBoard, board)
 
 		ECS.createEntity({
-			Name = "Leaderboard:" .. board.config.id .. ":BoardTimer",
-			ScheduledTask = {
-				kind = "LeaderboardBoardTick",
-				boardId = board.id,
-				delay = 1,
-				elapsed = 0,
-				repeatEvery = 1,
-			},
+			Name = "Leaderboard:" .. config.id .. ":BoardTimer",
+			LeaderboardBoardTick = { Remaining = 1, Interval = 1, BoardId = entity },
 		})
-
 		ECS.createEntity({
-			Name = "Leaderboard:" .. board.config.id .. ":WriteFlush",
-			ScheduledTask = {
-				kind = "LeaderboardWriteFlush",
-				boardId = board.id,
-				delay = 2 + (index - 1) * 4,
-				elapsed = 0,
-				repeatEvery = 2,
-			},
+			Name = "Leaderboard:" .. config.id .. ":WriteFlush",
+			LeaderboardWriteFlush = { Remaining = 2, Interval = 2, BoardId = entity },
 		})
 	end
+
+	Initialized = true
 end
 
-function LeaderboardService.TickBoardActive(boardId)
-	local service = ActiveService
-	local board = service and service._boards[boardId]
+function LeaderboardService.TickBoardActive(entity)
+	local board = ECS.world:get(entity, ECS.Components.LeaderboardBoard)
 	if board then
-		service:_tickBoardTimer(board)
+		LeaderboardService.TickBoardTimer(board)
+		ECS.world:set(entity, ECS.Components.LeaderboardBoard, board)
 	end
 end
 
-function LeaderboardService.FlushWriteActive(boardId)
-	local service = ActiveService
-	local board = service and service._boards[boardId]
+function LeaderboardService.FlushWriteActive(entity)
+	local board = ECS.world:get(entity, ECS.Components.LeaderboardBoard)
 	if board then
-		service:_flushNextWrite(board)
+		LeaderboardService.FlushNextWrite(board)
+		ECS.world:set(entity, ECS.Components.LeaderboardBoard, board)
 	end
 end
 
-function LeaderboardService:_bindBoard(board)
+function LeaderboardService.BindBoard(board)
 	local config = board.config
 	local model = workspace:FindFirstChild(config.modelName)
 	if not model then
@@ -284,23 +260,25 @@ function LeaderboardService:_bindBoard(board)
 
 	board.leaderboardModel = model
 	board.scoreBlock = model:FindFirstChild("ScoreBlock")
-	board.updateBoardTimer = findDescendant(model, { "UpdateBoardTimer", "Timer", "TextLabel" })
+	local UpdateBoardTimer = model:FindFirstChild("UpdateBoardTimer")
+	local Timer = UpdateBoardTimer and UpdateBoardTimer:FindFirstChild("Timer")
+	board.updateBoardTimer = Timer and Timer:FindFirstChild("TextLabel")
 
 	if not board.scoreBlock then
 		warn(`[LeaderboardService] {config.modelName}.ScoreBlock was not found`)
 	end
 end
 
-function LeaderboardService:_bindPlayers(board)
+function LeaderboardService.BindPlayers(board)
 	if board.playerObserverStop then
 		return
 	end
 
 	board.playerObserverStop = Observers.observePlayer(function(player: Player)
-		self:_trackPlayer(board, player)
+		LeaderboardService.TrackPlayer(board, player)
 
 		return function()
-			self:_flushPlayer(board, player)
+			LeaderboardService.FlushPlayer(board, player)
 
 			local connections = board.playerConnections[player]
 			if connections then
@@ -321,7 +299,7 @@ function LeaderboardService:_bindPlayers(board)
 	end)
 end
 
-function LeaderboardService:_trackPlayer(board, player)
+function LeaderboardService.TrackPlayer(board, player)
 	if board.trackedPlayers[player] then
 		return
 	end
@@ -344,10 +322,10 @@ function LeaderboardService:_trackPlayer(board, player)
 		end
 
 		board.trackedStats[stat] = player
-		self:_publishValue(board, player, stat.Value, false)
+		LeaderboardService.PublishValue(board, player, stat.Value, false)
 
 		connect(stat.Changed, function(value)
-			self:_publishValue(board, player, tonumber(value) or 0, false)
+			LeaderboardService.PublishValue(board, player, tonumber(value) or 0, false)
 		end)
 	end
 
@@ -383,7 +361,7 @@ function LeaderboardService:_trackPlayer(board, player)
 	end)
 end
 
-function LeaderboardService:_publishValue(board, player, value, force)
+function LeaderboardService.PublishValue(board, player, value, force)
 	local normalizedValue = math.max(0, math.floor(value))
 	if board.lastPublishedValueByUserId[player.UserId] == normalizedValue then
 		board.pendingValuesByUserId[player.UserId] = nil
@@ -395,7 +373,7 @@ function LeaderboardService:_publishValue(board, player, value, force)
 
 	if not force and lastWrite > 0 and now - lastWrite < DATASTORE_WRITE_COOLDOWN then
 		board.pendingValuesByUserId[player.UserId] = normalizedValue
-		self:_enqueueWrite(board, player.UserId)
+		LeaderboardService.EnqueueWrite(board, player.UserId)
 		return
 	end
 
@@ -403,10 +381,10 @@ function LeaderboardService:_publishValue(board, player, value, force)
 	if force then
 		board.forceWriteByUserId[player.UserId] = true
 	end
-	self:_enqueueWrite(board, player.UserId)
+	LeaderboardService.EnqueueWrite(board, player.UserId)
 end
 
-function LeaderboardService:_enqueueWrite(board, userId)
+function LeaderboardService.EnqueueWrite(board, userId)
 	if board.writeQueuedByUserId[userId] then
 		return
 	end
@@ -415,7 +393,7 @@ function LeaderboardService:_enqueueWrite(board, userId)
 	table.insert(board.writeQueue, userId)
 end
 
-function LeaderboardService:_flushNextWrite(board)
+function LeaderboardService.FlushNextWrite(board)
 	if #board.writeQueue == 0 then
 		return
 	end
@@ -439,7 +417,7 @@ function LeaderboardService:_flushNextWrite(board)
 	local lastWrite = board.lastWriteByUserId[userId] or 0
 	local isForced = board.forceWriteByUserId[userId] == true
 	if not isForced and lastWrite > 0 and os.clock() - lastWrite < DATASTORE_WRITE_COOLDOWN then
-		self:_enqueueWrite(board, userId)
+		LeaderboardService.EnqueueWrite(board, userId)
 		return
 	end
 
@@ -456,30 +434,30 @@ function LeaderboardService:_flushNextWrite(board)
 		board.forceWriteByUserId[userId] = nil
 	else
 		warn(`[LeaderboardService] Failed to publish {board.config.statName} for user {userId}: {err}`)
-		self:_enqueueWrite(board, userId)
+		LeaderboardService.EnqueueWrite(board, userId)
 	end
 end
 
-function LeaderboardService:_flushPlayer(board, player)
+function LeaderboardService.FlushPlayer(board, player)
 	local leaderstats = player:FindFirstChild("leaderstats")
 	local stat = leaderstats and leaderstats:FindFirstChild(board.config.statName)
 	if stat and (stat:IsA("IntValue") or stat:IsA("NumberValue")) then
-		self:_publishValue(board, player, stat.Value, true)
+		LeaderboardService.PublishValue(board, player, stat.Value, true)
 	end
 end
 
-function LeaderboardService:_tickBoardTimer(board)
+function LeaderboardService.TickBoardTimer(board)
 	if not board.scoreBlock or not board.scoreBlock.Parent then
-		self:_bindBoard(board)
+		LeaderboardService.BindBoard(board)
 	end
 
 	board.secondsUntilBoardUpdate -= 1
 	if board.updateBoardTimer and board.updateBoardTimer:IsA("TextLabel") then
-		board.updateBoardTimer.Text = (`Updating the board in {board.secondsUntilBoardUpdate} seconds`)
+		board.updateBoardTimer.Text = `Updating the board in {board.secondsUntilBoardUpdate} seconds`
 	end
 
 	if board.secondsUntilBoardUpdate <= 0 then
-		if self:_updateBoard(board) then
+		if LeaderboardService.UpdateBoard(board) then
 			board.secondsUntilBoardUpdate = BOARD_UPDATE_INTERVAL
 		else
 			board.secondsUntilBoardUpdate = 30
@@ -487,7 +465,7 @@ function LeaderboardService:_tickBoardTimer(board)
 	end
 end
 
-function LeaderboardService:_clearBoard(board)
+function LeaderboardService.ClearBoard(board)
 	local scoreBlock = board.scoreBlock
 	if not scoreBlock then
 		return
@@ -498,13 +476,13 @@ function LeaderboardService:_clearBoard(board)
 		return
 	end
 
-	for _, folderName in ipairs({ "Names", "Photos", "Score" }) do
+	for _, folderName in { "Names", "Photos", "Score" } do
 		local folder = leaderboard:FindFirstChild(folderName)
 		if not folder then
 			continue
 		end
 
-		for _, item in ipairs(folder:GetChildren()) do
+		for _, item in folder:GetChildren() do
 			if item:IsA("GuiObject") then
 				item.Visible = false
 			end
@@ -512,10 +490,10 @@ function LeaderboardService:_clearBoard(board)
 	end
 end
 
-function LeaderboardService:_updateBoard(board)
+function LeaderboardService.UpdateBoard(board)
 	local scoreBlock = board.scoreBlock
 	if not scoreBlock then
-		self:_bindBoard(board)
+		LeaderboardService.BindBoard(board)
 		scoreBlock = board.scoreBlock
 		if not scoreBlock then
 			return false
@@ -553,12 +531,14 @@ function LeaderboardService:_updateBoard(board)
 		noDataFound.Enabled = #results == 0
 	end
 
-	self:_clearBoard(board)
+	LeaderboardService.ClearBoard(board)
 
-	for rank, entry in ipairs(results) do
+	for rank, entry in results do
 		local userId = getUserIdFromKey(board.config, entry.key)
-		local name = if userId <= 0 then "Studio Test Profile" else self:_getUsernameAsync(board, userId)
-		local thumbnail = if userId <= 0 then "rbxassetid://11569282129" else self:_getThumbnailAsync(board, userId)
+		local name = if userId <= 0 then "Studio Test Profile" else LeaderboardService.GetUsernameAsync(board, userId)
+		local thumbnail = if userId <= 0
+			then "rbxassetid://11569282129"
+			else LeaderboardService.GetThumbnailAsync(board, userId)
 		local score = board.config.scoreFormatter(entry.value)
 
 		local names = leaderboard:FindFirstChild("Names")
@@ -597,7 +577,7 @@ function LeaderboardService:_updateBoard(board)
 	return true
 end
 
-function LeaderboardService:_getUsernameAsync(board, userId)
+function LeaderboardService.GetUsernameAsync(board, userId)
 	if board.usernameCache[userId] then
 		return board.usernameCache[userId]
 	end
@@ -614,7 +594,7 @@ function LeaderboardService:_getUsernameAsync(board, userId)
 	return result
 end
 
-function LeaderboardService:_getThumbnailAsync(board, userId)
+function LeaderboardService.GetThumbnailAsync(board, userId)
 	if board.thumbnailCache[userId] then
 		return board.thumbnailCache[userId]
 	end

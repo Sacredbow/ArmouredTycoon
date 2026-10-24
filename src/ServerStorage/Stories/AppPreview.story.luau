@@ -4,7 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local React = require(ReplicatedStorage.Packages.react)
 local ReactRoblox = require(ReplicatedStorage.Packages.ReactRoblox)
-local InventoryShared = require(ReplicatedStorage.CharacterUtilities.Inventory.InventoryShared)
+local InventoryShared = require(ReplicatedStorage.Shared.Game.Inventory.InventoryShared)
 
 local HUD = require(game.StarterPlayer.StarterPlayerScripts.UI.components.HUD)
 local InventoryPanel = require(game.StarterPlayer.StarterPlayerScripts.UI.components.Inventory.InventoryPanel)
@@ -111,12 +111,12 @@ local story = {
 					options = {
 						{
 							id = "calm",
-							text = "\"Relax. I am just passing through.\"",
+							text = '"Relax. I am just passing through."',
 							tone = "calm",
 						},
 						{
 							id = "ask",
-							text = "\"Have you seen anything strange nearby?\"",
+							text = '"Have you seen anything strange nearby?"',
 							tone = "curious",
 						},
 						{

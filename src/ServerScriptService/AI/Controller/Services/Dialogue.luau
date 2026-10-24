@@ -12,8 +12,8 @@ local Dialogue = {}
 
 local function buildLines(openers: { string }, closers: { string }): { string }
 	local lines = {}
-	for _, opener in ipairs(openers) do
-		for _, closer in ipairs(closers) do
+	for _, opener in openers do
+		for _, closer in closers do
 			table.insert(lines, `{opener} {closer}`)
 		end
 	end
@@ -214,7 +214,7 @@ local function pickLine(context: AIContext, lines: { string }): string
 
 	local choice = lines[math.random(1, #lines)]
 	if choice == context.LastSpokenLine then
-		for _, line in ipairs(lines) do
+		for _, line in lines do
 			if line ~= context.LastSpokenLine then
 				choice = line
 				break
@@ -271,7 +271,11 @@ function Dialogue.PrepareObservation(context: AIContext, targets: { BasePart }):
 	local secondaryTarget = targets[2]
 	local primaryUserId = getPlayerUserIdFromRoot(primaryTarget)
 
-	if primaryUserId ~= 0 and context.LastInteractionUserId == primaryUserId and now - context.LastInteractionTime <= context.Config.RepeatInteractionWindow then
+	if
+		primaryUserId ~= 0
+		and context.LastInteractionUserId == primaryUserId
+		and now - context.LastInteractionTime <= context.Config.RepeatInteractionWindow
+	then
 		context.RepeatInteractionCount += 1
 	else
 		context.LastInteractionUserId = primaryUserId

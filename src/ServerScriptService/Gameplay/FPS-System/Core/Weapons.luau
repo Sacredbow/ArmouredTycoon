@@ -12,8 +12,8 @@ const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 --// Modules
 
-const ECS = require(ReplicatedStorage.ECS)
-const Packets = require(ReplicatedStorage.Network.Packets)
+const ECS = require(ReplicatedStorage.Shared.Core.ECS)
+const Packets = require(ReplicatedStorage.Shared.Platform.Network.Packets)
 const State = require(script.Parent.State)
 
 --// Engine Folders

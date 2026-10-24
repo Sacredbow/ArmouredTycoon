@@ -1,5 +1,3 @@
-
-
 --[[
 	FireEffectsController
 
@@ -96,8 +94,14 @@ function FireEffectsController.apply(
 	local bSpread = state.bSpread
 	local recoilPower = state.recoilPower
 	if bSpread and recoilPower then
-		bSpread = math.min(weaponData.MaxSpread * modifiers.MaxSpread, bSpread + weaponData.AimInaccuracyStepAmount * modifiers.AimInaccuracyStepAmount)
-		recoilPower = math.min(weaponData.MaxRecoilPower * modifiers.MaxRecoilPower, recoilPower + weaponData.RecoilPowerStepAmount * modifiers.RecoilPowerStepAmount)
+		bSpread = math.min(
+			weaponData.MaxSpread * modifiers.MaxSpread,
+			bSpread + weaponData.AimInaccuracyStepAmount * modifiers.AimInaccuracyStepAmount
+		)
+		recoilPower = math.min(
+			weaponData.MaxRecoilPower * modifiers.MaxRecoilPower,
+			recoilPower + weaponData.RecoilPowerStepAmount * modifiers.RecoilPowerStepAmount
+		)
 	end
 
 	local slideMotor = handle:FindFirstChild("Slide")
@@ -105,7 +109,14 @@ function FireEffectsController.apply(
 		local shouldLockOpen = ammo <= 0 and weaponData.SlideLock == true
 		TweenService:Create(
 			slideMotor,
-			TweenInfo.new(30 / weaponData.ShootRate, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, 0, not shouldLockOpen, 0),
+			TweenInfo.new(
+				30 / weaponData.ShootRate,
+				Enum.EasingStyle.Linear,
+				Enum.EasingDirection.InOut,
+				0,
+				not shouldLockOpen,
+				0
+			),
 			{ C0 = weaponData.SlideEx:Inverse() }
 		):Play()
 	end

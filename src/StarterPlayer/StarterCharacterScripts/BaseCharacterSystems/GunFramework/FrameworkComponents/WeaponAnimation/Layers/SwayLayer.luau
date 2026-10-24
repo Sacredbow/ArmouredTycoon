@@ -13,10 +13,13 @@ local Spring = require(script.Parent.Parent.Spring)
 local SwayLayer = {}
 SwayLayer.__index = SwayLayer
 
-export type SwayLayer = typeof(setmetatable({} :: {
-	_rotation: any,
-	_lastCameraCFrame: CFrame?,
-}, SwayLayer))
+export type SwayLayer = typeof(setmetatable(
+	{} :: {
+		_rotation: any,
+		_lastCameraCFrame: CFrame?,
+	},
+	SwayLayer
+))
 
 function SwayLayer.new(): SwayLayer
 	return setmetatable({
@@ -56,10 +59,26 @@ function SwayLayer:Evaluate(deltaTime: number, cameraCFrame: CFrame, isAiming: b
 	local rotation = self._rotation:Update(deltaTime)
 	local poseMultiplier = 1
 
-	local main = CFrame.Angles(rotation.X * 0.65 * poseMultiplier, rotation.Y * 0.85 * poseMultiplier, rotation.Y * 0.25 * poseMultiplier)
-	local gun = CFrame.Angles(rotation.X * 0.18 * poseMultiplier, rotation.Y * 0.22 * poseMultiplier, rotation.Y * 0.08 * poseMultiplier)
-	local leftArm = CFrame.Angles(-rotation.X * 0.12 * poseMultiplier, rotation.Y * 0.1 * poseMultiplier, -rotation.Y * 0.08 * poseMultiplier)
-	local rightArm = CFrame.Angles(rotation.X * 0.08 * poseMultiplier, rotation.Y * 0.08 * poseMultiplier, rotation.Y * 0.05 * poseMultiplier)
+	local main = CFrame.Angles(
+		rotation.X * 0.65 * poseMultiplier,
+		rotation.Y * 0.85 * poseMultiplier,
+		rotation.Y * 0.25 * poseMultiplier
+	)
+	local gun = CFrame.Angles(
+		rotation.X * 0.18 * poseMultiplier,
+		rotation.Y * 0.22 * poseMultiplier,
+		rotation.Y * 0.08 * poseMultiplier
+	)
+	local leftArm = CFrame.Angles(
+		-rotation.X * 0.12 * poseMultiplier,
+		rotation.Y * 0.1 * poseMultiplier,
+		-rotation.Y * 0.08 * poseMultiplier
+	)
+	local rightArm = CFrame.Angles(
+		rotation.X * 0.08 * poseMultiplier,
+		rotation.Y * 0.08 * poseMultiplier,
+		rotation.Y * 0.05 * poseMultiplier
+	)
 
 	return Pose.new(main, gun, leftArm, rightArm)
 end

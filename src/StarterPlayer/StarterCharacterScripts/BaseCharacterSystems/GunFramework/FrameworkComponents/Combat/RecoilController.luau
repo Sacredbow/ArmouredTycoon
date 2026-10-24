@@ -20,7 +20,7 @@ export type RecoilContext = {
 	RecoilSpring: any,
 	RecoilCFrame: CFrame,
 	RandomRange: (number, number, number?) -> number,
-        Schedule: (number, () -> ()) -> (),
+	Schedule: (number, () -> ()) -> (),
 }
 
 -- applies camera and weapon recoil, then returns the new recoil cframe
@@ -44,8 +44,11 @@ function RecoilController.apply(context: RecoilContext): CFrame
 
 	local gvr = (math.random(weaponData.gunRecoil.gunRecoilUp[1], weaponData.gunRecoil.gunRecoilUp[2]) / 10)
 		* modTable.gunRecoilMod.RecoilUp
-	local gdr = (math.random(-1, 1) * math.random(weaponData.gunRecoil.gunRecoilTilt[1], weaponData.gunRecoil.gunRecoilTilt[2]) / 10)
-		* modTable.gunRecoilMod.RecoilTilt
+	local gdr = (
+		math.random(-1, 1)
+		* math.random(weaponData.gunRecoil.gunRecoilTilt[1], weaponData.gunRecoil.gunRecoilTilt[2])
+		/ 10
+	) * modTable.gunRecoilMod.RecoilTilt
 	local glr = math.random(weaponData.gunRecoil.gunRecoilLeft[1], weaponData.gunRecoil.gunRecoilLeft[2])
 		* modTable.gunRecoilMod.RecoilLeft
 	local grr = math.random(weaponData.gunRecoil.gunRecoilRight[1], weaponData.gunRecoil.gunRecoilRight[2])
@@ -60,61 +63,61 @@ function RecoilController.apply(context: RecoilContext): CFrame
 		context.CameraSpring:accelerate(Vector3.new(recoilX, recoilY / 2, 0))
 
 		if context.Aiming then
-			context.RecoilSpring:accelerate(Vector3.new(
-				math.rad(0.25 * gvr * recoilPower / aimReduction),
-				math.rad(0.25 * ghr * recoilPower / aimReduction),
-				math.rad(0.25 * gdr / aimReduction)
-			))
-			recoilCFrame *= CFrame.new(0, 0, 0.1)
-				* CFrame.Angles(
+			context.RecoilSpring:accelerate(
+				Vector3.new(
 					math.rad(0.25 * gvr * recoilPower / aimReduction),
 					math.rad(0.25 * ghr * recoilPower / aimReduction),
-					math.rad(0.25 * gdr * recoilPower / aimReduction)
+					math.rad(0.25 * gdr / aimReduction)
 				)
+			)
+			recoilCFrame *= CFrame.new(0, 0, 0.1) * CFrame.Angles(
+				math.rad(0.25 * gvr * recoilPower / aimReduction),
+				math.rad(0.25 * ghr * recoilPower / aimReduction),
+				math.rad(0.25 * gdr * recoilPower / aimReduction)
+			)
 		else
-			context.RecoilSpring:accelerate(Vector3.new(
-				math.rad(0.25 * gvr * recoilPower),
-				math.rad(0.25 * ghr * recoilPower),
-				math.rad(0.25 * gdr)
-			))
-			recoilCFrame *= CFrame.new(0, 0, 0.1)
-				* CFrame.Angles(
+			context.RecoilSpring:accelerate(
+				Vector3.new(
 					math.rad(0.25 * gvr * recoilPower),
 					math.rad(0.25 * ghr * recoilPower),
-					math.rad(0.25 * gdr * recoilPower)
+					math.rad(0.25 * gdr)
 				)
+			)
+			recoilCFrame *= CFrame.new(0, 0, 0.1) * CFrame.Angles(
+				math.rad(0.25 * gvr * recoilPower),
+				math.rad(0.25 * ghr * recoilPower),
+				math.rad(0.25 * gdr * recoilPower)
+			)
 		end
 
-                context.Schedule(0.05, function()
-                        context.CameraSpring:accelerate(Vector3.new(-recoilX, -recoilY / 2, 0))
-                end)
+		context.Schedule(0.05, function()
+			context.CameraSpring:accelerate(Vector3.new(-recoilX, -recoilY / 2, 0))
+		end)
 	else
 		context.CameraSpring:accelerate(Vector3.new(recoilX, recoilY, recoilZ))
 
 		if context.Aiming then
-			context.RecoilSpring:accelerate(Vector3.new(
-				math.rad(gvr * recoilPower / aimReduction),
-				math.rad(ghr * recoilPower / aimReduction),
-				math.rad(gdr / aimReduction)
-			))
-			recoilCFrame *= CFrame.new(0, 0, 0.1)
-				* CFrame.Angles(
+			context.RecoilSpring:accelerate(
+				Vector3.new(
 					math.rad(gvr * recoilPower / aimReduction),
 					math.rad(ghr * recoilPower / aimReduction),
-					math.rad(gdr * recoilPower / aimReduction)
+					math.rad(gdr / aimReduction)
 				)
+			)
+			recoilCFrame *= CFrame.new(0, 0, 0.1) * CFrame.Angles(
+				math.rad(gvr * recoilPower / aimReduction),
+				math.rad(ghr * recoilPower / aimReduction),
+				math.rad(gdr * recoilPower / aimReduction)
+			)
 		else
-			context.RecoilSpring:accelerate(Vector3.new(
+			context.RecoilSpring:accelerate(
+				Vector3.new(math.rad(gvr * recoilPower), math.rad(ghr * recoilPower), math.rad(gdr))
+			)
+			recoilCFrame *= CFrame.new(0, -0.05, 0.1) * CFrame.Angles(
 				math.rad(gvr * recoilPower),
 				math.rad(ghr * recoilPower),
-				math.rad(gdr)
-			))
-			recoilCFrame *= CFrame.new(0, -0.05, 0.1)
-				* CFrame.Angles(
-					math.rad(gvr * recoilPower),
-					math.rad(ghr * recoilPower),
-					math.rad(gdr * recoilPower)
-				)
+				math.rad(gdr * recoilPower)
+			)
 		end
 	end
 

@@ -19,10 +19,10 @@ const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 --// Modules
 
-const EnvironmentShared = require(ReplicatedStorage.Shared.World.EnvironmentShared)
+const EnvironmentDefinitions = require(ReplicatedStorage.Shared.Game.Environment.EnvironmentDefinitions)
 const EnvironmentSchedule = require(script.EnvironmentSchedule)
 const LightningModule = require(script.LightningModule)
-const ECS = require(ReplicatedStorage.ECS)
+const ECS = require(ReplicatedStorage.Shared.Core.ECS)
 const Observers = require(ReplicatedStorage.Packages.Observers)
 
 --// Constants
@@ -154,7 +154,7 @@ local function Blend(A: LightingPreset, B: LightingPreset, T: number): LightingP
 	}
 end
 
-local function BlendWeather(Base: LightingPreset, Weather: EnvironmentShared.WeatherState?, LightingWeight: number?): LightingPreset
+local function BlendWeather(Base: LightingPreset, Weather: EnvironmentDefinitions.WeatherState?, LightingWeight: number?): LightingPreset
 	if not Weather then
 		return Base
 	end
@@ -168,7 +168,7 @@ local function BlendWeather(Base: LightingPreset, Weather: EnvironmentShared.Wea
 	return Blend(Base, Target, Weight)
 end
 
-local function ToWeatherPacket(State: EnvironmentShared.WeatherState): WeatherPacketPayload
+local function ToWeatherPacket(State: EnvironmentDefinitions.WeatherState): WeatherPacketPayload
 	return {
 		["type"] = State["type"],
 		duration = State.duration,
@@ -208,112 +208,82 @@ end
 --// Module
 
 local EnvironmentService = {}
-EnvironmentService.__index = EnvironmentService
 
 local LightsAreOn = false
-local ActiveEnvironmentService: any = nil
+local Initialized = false
 
 --// Constructor
 
-type EnvironmentDependencies = {
-	LightingPackage: Instance?,
-	Props: Instance,
-	Packets: any,
-	BuildAssemble: any?,
-}
+type EnvironmentDependencies = { LightingPackage: Instance?, Props: Instance, Packets: any, BuildAssemble: any? }
 
-export type EnvironmentService = typeof(setmetatable({} :: {
-	LightingPackage: Instance?,
-	Props: Instance,
-	Packets: any,
-	BuildAssemble: any?,
-	WeatherSchedule: EnvironmentSchedule.EnvironmentSchedule,
-	CurrentWeather: EnvironmentShared.WeatherState,
-	WeatherLightingWeight: number,
-	NightStormActive: boolean,
-	_WeatherLightingTweenToken: number?,
-}, EnvironmentService))
-
-function EnvironmentService.new(Dependencies: EnvironmentDependencies): EnvironmentService
-	const self = setmetatable({}, EnvironmentService) :: EnvironmentService
-
-	self.LightingPackage = Dependencies.LightingPackage
-	self.Props = Dependencies.Props
-	self.Packets = Dependencies.Packets
-	self.BuildAssemble = Dependencies.BuildAssemble
-	self.WeatherSchedule = EnvironmentSchedule.new()
-	self.CurrentWeather = self.WeatherSchedule:GetCurrent()
-	self.WeatherLightingWeight = self.CurrentWeather.lightingWeight or 0
-	self.NightStormActive = false
-	self._WeatherLightingTweenToken = nil
-	self._WeatherPlayerObserverStop = nil
-	ActiveEnvironmentService = self
-
-	return self
+function EnvironmentService.Configure(Dependencies: EnvironmentDependencies)
+	EnvironmentService.LightingPackage = Dependencies.LightingPackage
+	EnvironmentService.Props = Dependencies.Props
+	EnvironmentService.Packets = Dependencies.Packets
+	EnvironmentService.BuildAssemble = Dependencies.BuildAssemble
+	EnvironmentService.WeatherSchedule = EnvironmentSchedule.Create()
+	EnvironmentService.CurrentWeather = EnvironmentSchedule.GetCurrent(EnvironmentService.WeatherSchedule)
+	EnvironmentService.WeatherLightingWeight = EnvironmentService.CurrentWeather.lightingWeight or 0
+	EnvironmentService.NightStormActive = false
+	EnvironmentService._WeatherLightingTweenToken = nil
+	EnvironmentService._WeatherPlayerObserverStop = nil
+	return EnvironmentService
 end
 
 --// Public API
 
-function EnvironmentService:Init()
-	self:_InitDayNight()
-	self:_InitWeather()
-	self:_InitShootingStar()
+function EnvironmentService.Start()
+	if Initialized then
+		return
+	end
+
+	Initialized = true
+	EnvironmentService.InitDayNight()
+	EnvironmentService.InitWeather()
+	EnvironmentService.InitShootingStar()
 end
 
 --// Internal Methods — Day/Night
 
 function EnvironmentService.UpdateLightingFromClock(Hour: number)
-	if ActiveEnvironmentService then
-		ActiveEnvironmentService:_UpdateLighting(Hour)
-	end
+	EnvironmentService.UpdateLighting(Hour)
 end
 
 function EnvironmentService.UpdateWeatherActive()
-	if ActiveEnvironmentService then
-		ActiveEnvironmentService:_UpdateWeather()
-	end
+	EnvironmentService.UpdateWeather()
 end
 
 function EnvironmentService.SpawnShootingStarActive()
-	if ActiveEnvironmentService then
-		ActiveEnvironmentService:_MaybeSpawnShootingStar()
-	end
+	EnvironmentService.MaybeSpawnShootingStar()
 end
 
-function EnvironmentService:_InitDayNight()
-	ECS.createEntity({
-		Name = "EnvironmentClock",
-		EnvironmentClock = {
-			currentTime = DAY_START_HOUR,
-			timeSpeed = TIME_SPEED,
-		},
-	})
+function EnvironmentService.InitDayNight()
 end
 
-function EnvironmentService:_UpdateLighting(Hour: number)
+function EnvironmentService.UpdateLighting(Hour: number)
 	Hour = Hour % 24
 	Lighting.ClockTime = Hour
 
 	if Hour < DAWN_START then
-		self:_ApplyLighting(Blend(DayNightPresets.Night, DayNightPresets.Dawn, Hour / DAWN_START))
-		self:_SetStreetLights(true)
+		EnvironmentService.ApplyLighting(Blend(DayNightPresets.Night, DayNightPresets.Dawn, Hour / DAWN_START))
+		EnvironmentService.SetStreetLights(true)
 	elseif Hour < DAY_START then
-		self:_ApplyLighting(Blend(DayNightPresets.Dawn, DayNightPresets.Day, (Hour - DAWN_START) / (DAY_START - DAWN_START)))
-		self:_SetStreetLights(false)
+		EnvironmentService.ApplyLighting(Blend(DayNightPresets.Dawn, DayNightPresets.Day, (Hour - DAWN_START) / (DAY_START - DAWN_START)))
+		EnvironmentService.SetStreetLights(false)
 	elseif Hour < DUSK_START then
-		self:_ApplyLighting(DayNightPresets.Day)
-		self:_SetStreetLights(false)
+		EnvironmentService.ApplyLighting(DayNightPresets.Day)
+		EnvironmentService.SetStreetLights(false)
 	elseif Hour < NIGHT_START then
-		self:_ApplyLighting(Blend(DayNightPresets.Day, DayNightPresets.Dusk, (Hour - DUSK_START) / (NIGHT_START - DUSK_START)))
-		self:_SetStreetLights(true)
+		EnvironmentService.ApplyLighting(Blend(DayNightPresets.Day, DayNightPresets.Dusk, (Hour - DUSK_START) / (NIGHT_START - DUSK_START)))
+		EnvironmentService.SetStreetLights(true)
 	else
-		self:_ApplyLighting(Blend(DayNightPresets.Dusk, DayNightPresets.Night, (Hour - NIGHT_START) / (24 - NIGHT_START)))
-		self:_SetStreetLights(true)
+		EnvironmentService.ApplyLighting(Blend(DayNightPresets.Dusk, DayNightPresets.Night, (Hour - NIGHT_START) / (24 - NIGHT_START)))
+		EnvironmentService.SetStreetLights(true)
 	end
 end
 
-function EnvironmentService:_ApplyLighting(Props: LightingPreset)
-	const ResolvedProps = BlendWeather(Props, self.CurrentWeather, self.WeatherLightingWeight)
+function EnvironmentService.ApplyLighting(Props: LightingPreset)
+	const ResolvedProps = BlendWeather(Props, EnvironmentService.CurrentWeather, EnvironmentService.WeatherLightingWeight)
 
 	Lighting.Brightness = ResolvedProps.Brightness
 	Lighting.OutdoorAmbient = ResolvedProps.OutdoorAmbient
@@ -323,13 +293,13 @@ end
 
 --// Internal Methods — Street Lights
 
-function EnvironmentService:_SetStreetLights(Enabled: boolean)
+function EnvironmentService.SetStreetLights(Enabled: boolean)
 	if LightsAreOn == Enabled then
 		return
 	end
 	LightsAreOn = Enabled
 
-	for _, Prop in self.Props:GetChildren() do
+	for _, Prop in EnvironmentService.Props:GetChildren() do
 		if Prop.Name == "StreetLights" and Prop:IsA("Model") then
 			const LightGroups = Prop:GetChildren()
 			for GroupIndex, Item in LightGroups do
@@ -340,8 +310,8 @@ function EnvironmentService:_SetStreetLights(Enabled: boolean)
 				const DelayTime = (GroupIndex - 1) * STREET_LIGHT_STAGGER
 				SetLightEffects(Item, false)
 
-				if Enabled and self.BuildAssemble then
-					self.BuildAssemble.Play(Item, function()
+				if Enabled and EnvironmentService.BuildAssemble then
+					EnvironmentService.BuildAssemble.Play(Item, function()
 						SetLightEffects(Item, true)
 					end, {
 						includeHidden = true,
@@ -361,8 +331,8 @@ function EnvironmentService:_SetStreetLights(Enabled: boolean)
 							Part.CanCollide = true
 						end
 					end
-				elseif self.BuildAssemble then
-					self.BuildAssemble.Deassemble(Item, nil, {
+				elseif EnvironmentService.BuildAssemble then
+					EnvironmentService.BuildAssemble.Deassemble(Item, nil, {
 						includeHidden = true,
 						timingScale = 0.9 + (GroupIndex % 2) * 0.15,
 						pieceBudget = 42,
@@ -385,52 +355,47 @@ end
 
 --// Internal Methods — Weather
 
-function EnvironmentService:_InitWeather()
-	self:_BroadcastWeather(nil :: Player?)
-	self._WeatherPlayerObserverStop = Observers.observePlayer(function(player: Player)
+function EnvironmentService.InitWeather()
+	EnvironmentService.BroadcastWeather(nil :: Player?)
+	EnvironmentService._WeatherPlayerObserverStop = Observers.observePlayer(function(player: Player)
 		task.defer(function()
-			self:_BroadcastWeather(player)
+			EnvironmentService.BroadcastWeather(player)
 		end)
 	end)
 
 	ECS.createEntity({
 		Name = "EnvironmentWeatherTick",
-		ScheduledTask = {
-			delay = WEATHER_TICK_INTERVAL,
-			repeatEvery = WEATHER_TICK_INTERVAL,
-			elapsed = 0,
-			kind = "EnvironmentWeatherTick",
-		},
+		EnvironmentWeatherTick = {Remaining = WEATHER_TICK_INTERVAL, Interval = WEATHER_TICK_INTERVAL},
 	})
 end
 
-function EnvironmentService:_BroadcastWeather(Player: Player?)
-	if not self.Packets then
+function EnvironmentService.BroadcastWeather(Player: Player?)
+	if not EnvironmentService.Packets then
 		return
 	end
 
-	const Payload = ToWeatherPacket(self.CurrentWeather)
+	const Payload = ToWeatherPacket(EnvironmentService.CurrentWeather)
 	if Player then
-		self.Packets.packets.Weather.sendTo(Payload, Player)
+		EnvironmentService.Packets.packets.Weather.sendTo(Payload, Player)
 	else
-		self.Packets.packets.Weather.sendToAll(Payload)
+		EnvironmentService.Packets.packets.Weather.sendToAll(Payload)
 	end
 end
 
-function EnvironmentService:_SetWeather(Weather: EnvironmentShared.WeatherState)
-	const PreviousWeight = self.WeatherLightingWeight
+function EnvironmentService.SetWeather(Weather: EnvironmentDefinitions.WeatherState)
+	const PreviousWeight = EnvironmentService.WeatherLightingWeight
 	const TargetWeight = Weather.lightingWeight or 0
 
-	self.CurrentWeather = Weather
-	self._WeatherLightingTweenToken = (self._WeatherLightingTweenToken or 0) + 1
-	const TweenToken = self._WeatherLightingTweenToken
+	EnvironmentService.CurrentWeather = Weather
+	EnvironmentService._WeatherLightingTweenToken = (EnvironmentService._WeatherLightingTweenToken or 0) + 1
+	const TweenToken = EnvironmentService._WeatherLightingTweenToken
 	const StartedAt = os.clock()
 
 	task.spawn(function()
-		while TweenToken == self._WeatherLightingTweenToken do
+		while TweenToken == EnvironmentService._WeatherLightingTweenToken do
 			const Alpha = math_clamp((os.clock() - StartedAt) / WEATHER_LIGHTING_TWEEN_TIME, 0, 1)
 			const EasedAlpha = 1 - (1 - Alpha) * (1 - Alpha)
-			self.WeatherLightingWeight = Lerp(PreviousWeight, TargetWeight, EasedAlpha)
+			EnvironmentService.WeatherLightingWeight = Lerp(PreviousWeight, TargetWeight, EasedAlpha)
 
 			if Alpha >= 1 then
 				break
@@ -439,27 +404,22 @@ function EnvironmentService:_SetWeather(Weather: EnvironmentShared.WeatherState)
 			task.wait(0.05)
 		end
 
-		if TweenToken == self._WeatherLightingTweenToken then
-			self.WeatherLightingWeight = TargetWeight
+		if TweenToken == EnvironmentService._WeatherLightingTweenToken then
+			EnvironmentService.WeatherLightingWeight = TargetWeight
 		end
 	end)
 end
 
 --// Internal Methods — Shooting Stars
 
-function EnvironmentService:_InitShootingStar()
+function EnvironmentService.InitShootingStar()
 	ECS.createEntity({
 		Name = "EnvironmentShootingStarTick",
-		ScheduledTask = {
-			delay = SHOOTING_STAR_INTERVAL,
-			repeatEvery = SHOOTING_STAR_INTERVAL,
-			elapsed = 0,
-			kind = "EnvironmentShootingStarTick",
-		},
+		EnvironmentShootingStarTick = {Remaining = SHOOTING_STAR_INTERVAL, Interval = SHOOTING_STAR_INTERVAL},
 	})
 end
 
-function EnvironmentService:_MaybeSpawnShootingStar()
+function EnvironmentService.MaybeSpawnShootingStar()
 	local Hour = Lighting.ClockTime % 24
 	local IsNight = Hour >= NIGHT_START or Hour < DAWN_START
 	if not IsNight then
@@ -504,8 +464,8 @@ function EnvironmentService:_MaybeSpawnShootingStar()
 	local Impact = false
 	local Direction = Vector3.new(1, -0.05, 0.4).Unit
 
-	if self.Packets then
-		self.Packets.packets.ShootingStar.sendToAll({
+	if EnvironmentService.Packets then
+		EnvironmentService.Packets.packets.ShootingStar.sendToAll({
 			startPosition = StartPosition,
 			direction = Direction,
 			impact = Impact,
@@ -513,21 +473,20 @@ function EnvironmentService:_MaybeSpawnShootingStar()
 	end
 end
 
-function EnvironmentService:_UpdateWeather()
-	if self.NightStormActive then
-		self.NightStormActive = false
-		self:_SetWeather(self.WeatherSchedule:GetCurrent())
-		self:_BroadcastWeather(nil)
-	elseif self.WeatherSchedule:ShouldAdvance() then
-		self:_SetWeather(self.WeatherSchedule:Next())
-		self:_BroadcastWeather(nil)
+function EnvironmentService.UpdateWeather()
+	if EnvironmentService.NightStormActive then
+		EnvironmentService.NightStormActive = false
+		EnvironmentService.SetWeather(EnvironmentSchedule.GetCurrent(EnvironmentService.WeatherSchedule))
+		EnvironmentService.BroadcastWeather(nil)
+	elseif EnvironmentSchedule.ShouldAdvance(EnvironmentService.WeatherSchedule) then
+		EnvironmentService.SetWeather(EnvironmentSchedule.Next(EnvironmentService.WeatherSchedule))
+		EnvironmentService.BroadcastWeather(nil)
 	end
 
-	local Weather: EnvironmentShared.WeatherState = self.CurrentWeather
+	local Weather: EnvironmentDefinitions.WeatherState = EnvironmentService.CurrentWeather
 	if math_random() < Weather.thunderChance then
 		LightningModule.StartStorm(Vector3.new(50, 0, 0), THUNDER_RADIUS, math_clamp(Weather.duration * 0.35, 25, 90))
 	end
 end
 
 return EnvironmentService
-

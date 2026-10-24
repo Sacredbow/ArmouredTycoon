@@ -11,13 +11,16 @@
 local Spring = {}
 Spring.__index = Spring
 
-export type Spring<T> = typeof(setmetatable({} :: {
-	Position: T,
-	Velocity: T,
-	Target: T,
-	Speed: number,
-	Damper: number,
-}, Spring))
+export type Spring<T> = typeof(setmetatable(
+	{} :: {
+		Position: T,
+		Velocity: T,
+		Target: T,
+		Speed: number,
+		Damper: number,
+	},
+	Spring
+))
 
 local function zeroLike(value)
 	-- Supports both scalar and Vector3 springs used by the current layers.

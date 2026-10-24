@@ -1,64 +1,80 @@
 --!strict
 
 local MarketplaceService = game:GetService("MarketplaceService")
-local ServerScriptService = game:GetService("ServerScriptService")
-
-local PlayerRuntimeState = require(ServerScriptService.Services.Players.PlayerRuntimeState)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ECS = require(ReplicatedStorage.Shared.Core.ECS)
 
 local GamepassCache = {}
-GamepassCache.__index = GamepassCache
+local GamepassIds: { [string]: number } = {}
 
-function GamepassCache.new()
-	local self = setmetatable({}, GamepassCache)
-	self.GamepassIds = {} :: { [string]: number }
-	return self
+local function FindPlayerEntity(Player: Player): number?
+	for Entity, PlayerRef in ECS.world:query(ECS.Components.PlayerRef) do
+		if PlayerRef == Player then
+			return Entity
+		end
+	end
+	return nil
 end
 
-function GamepassCache:RegisterGamepass(gamepassId: number, key: string?)
-	self.GamepassIds[key or tostring(gamepassId)] = gamepassId
+function GamepassCache.Configure(Definitions: { [string]: number })
+	table.clear(GamepassIds)
+	for Key, GamepassId in Definitions do
+		GamepassIds[Key] = GamepassId
+	end
 end
 
-function GamepassCache:Warm(player: Player)
-	if not player.Parent then
+function GamepassCache.Warm(Player: Player)
+	if not Player.Parent then
 		return
 	end
 
-	for _, gamepassId in self.GamepassIds do
-		local success, message = pcall(function()
-			self:Refresh(player, gamepassId)
+	for _, GamepassId in GamepassIds do
+		local Success, Message = pcall(function()
+			GamepassCache.Refresh(Player, GamepassId)
 		end)
-		if not success then
-			warn(`[GamepassCache] Ownership check failed for {player.Name}, pass {gamepassId}: {message}`)
+		if not Success then
+			warn(`[GamepassCache] Ownership check failed for {Player.Name}, pass {GamepassId}: {Message}`)
 		end
 	end
 end
 
-function GamepassCache:Refresh(player: Player, gamepassId: number): boolean?
-	if not player.Parent then
+function GamepassCache.Refresh(Player: Player, GamepassId: number): boolean?
+	if not Player.Parent then
 		return nil
 	end
 
-	local ownsPass = MarketplaceService:UserOwnsGamePassAsync(player.UserId, gamepassId)
-	if not player.Parent then
+	local OwnsPass = MarketplaceService:UserOwnsGamePassAsync(Player.UserId, GamepassId)
+	if not Player.Parent then
 		return nil
 	end
 
-	self:SetOwned(player, gamepassId, ownsPass)
-	return ownsPass
+	GamepassCache.SetOwned(Player, GamepassId, OwnsPass)
+	return OwnsPass
 end
 
-function GamepassCache:GetOwnership(player: Player, gamepassId: number): boolean?
-	return PlayerRuntimeState.GetGamepassOwnership(player, gamepassId)
+function GamepassCache.GetOwnership(Player: Player, GamepassId: number): boolean?
+	local Entity = FindPlayerEntity(Player)
+	local Ownership = Entity and ECS.world:get(Entity, ECS.Components.GamepassOwnership)
+	return Ownership and Ownership[GamepassId]
 end
 
-function GamepassCache:Has(player: Player, gamepassId: number): boolean
-	return self:GetOwnership(player, gamepassId) == true
+function GamepassCache.Has(Player: Player, GamepassId: number): boolean
+	return GamepassCache.GetOwnership(Player, GamepassId) == true
 end
 
-function GamepassCache:SetOwned(player: Player, gamepassId: number, value: boolean)
-	if player.Parent then
-		PlayerRuntimeState.SetGamepassOwned(player, gamepassId, value)
+function GamepassCache.SetOwned(Player: Player, GamepassId: number, Value: boolean)
+	if not Player.Parent then
+		return
 	end
+
+	local Entity = FindPlayerEntity(Player)
+	if not Entity then
+		return
+	end
+
+	local Ownership = ECS.world:get(Entity, ECS.Components.GamepassOwnership) or {}
+	Ownership[GamepassId] = Value
+	ECS.world:set(Entity, ECS.Components.GamepassOwnership, Ownership)
 end
 
 return GamepassCache

@@ -8,7 +8,7 @@
 	current feature flags.
 ]]
 
-local WeaponDefinitionResolver = require(game:GetService("ReplicatedStorage").Weapons.Resolver)
+local WeaponDefinitionResolver = require(game:GetService("ReplicatedStorage").Shared.Game.Combat.Weapons.Resolver)
 
 local WeaponToolClassifier = {}
 
@@ -22,27 +22,14 @@ export type FeatureFlags = {
 	GrenadesEnabled: boolean,
 }
 
-local function requireModule<T>(moduleScript: ModuleScript): T?
-	-- Tool configs are authored per weapon, so failed requires are treated as
-	-- non-equipable instead of crashing the character script.
-	local ok, result = pcall(require, moduleScript)
-	if not ok or type(result) ~= "table" then
-		return nil
-	end
-
-	return result :: T
-end
-
 function WeaponToolClassifier.readSettings(tool: Instance?): WeaponSettings?
 	-- A tool without ACS_Settings is just a normal Roblox tool and should be
 	-- ignored by the gun framework.
-	local settings = WeaponDefinitionResolver.getSettings(tool)
-	if not settings or not settings:IsA("ModuleScript") then
+	const settings = WeaponDefinitionResolver.getSettingsData(tool)
+	if type(settings) ~= "table" then
 		return nil
 	end
-
-	local weaponSettings: WeaponSettings? = requireModule(settings)
-	return weaponSettings
+	return settings :: WeaponSettings
 end
 
 function WeaponToolClassifier.canEquip(settings: WeaponSettings?, flags: FeatureFlags): boolean

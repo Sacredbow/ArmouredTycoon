@@ -11,25 +11,22 @@
 
 const ServerScriptService = game:GetService("ServerScriptService")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 --// Modules
 
-const Packets = require(ReplicatedStorage.Network.Packets)
+const Packets = require(ReplicatedStorage.Shared.Platform.Network.Packets)
 const Assets = ReplicatedStorage:WaitForChild("Assets")
-
-const PlayerService = require(ServerScriptService.Services.Tycoon.PlayerService)
-const TycoonService = require(ServerScriptService.Services.Tycoon.TycoonService)
+const PlayerService = require(ServerScriptService.Game.Tycoon.PlayerService)
+const TycoonService = require(ServerScriptService.Game.Tycoon.TycoonService)
 const PurchaseService = require(ServerScriptService.Services.Commerce.CommerceService)
 const EnvironmentService = require(ServerScriptService.Services.World.EnvironmentService)
-const BuildAssemble = require(ReplicatedStorage.Libraries.BuildAssemble)
+const BuildAssemble = require(ReplicatedStorage.Shared.Game.Tycoon.Building.BuildEffect)
 const RarityBoxService = require(ServerScriptService.Services.World.RarityBoxService)
 const LeaderboardService = require(ServerScriptService.Services.World.LeaderboardService)
 const KOTHService = require(ServerScriptService.Services.World.KOTHService)
 const CodeService = require(ServerScriptService.Services.Commerce.CodeService)
 const InventoryServer = require(ServerScriptService.Gameplay.Inventory.InventoryServer)
-const BuildService = require(ServerScriptService.Services.Tycoon.BuildService)
+const BuildService = require(ServerScriptService.Game.Tycoon.Building.BuildingService)
 const NukeService = require(ServerScriptService.Services.World.NukeService)
-
 --// Internal Utilities
 
 local function LoadModule(Name: string, Loader: () -> any)
@@ -47,9 +44,8 @@ end
 --// Module Initialization
 
 local PlayerSvc = LoadModule("PlayerService", function()
-	local S = PlayerService.create()
-	S:Init()
-	return S
+	PlayerService.Init()
+	return PlayerService
 end)
 
 if not PlayerSvc then
@@ -57,79 +53,60 @@ if not PlayerSvc then
 end
 
 local PurchaseSvc = LoadModule("PurchaseService", function()
-	local S = PurchaseService.new(PlayerSvc)
-	S:Init()
-	return S
+	PurchaseService.Init()
+	return PurchaseService
 end)
 
 if not PurchaseSvc then
 	error("[Bootstrap] PurchaseService failed to initialize — cannot continue.")
 end
 
-local TycoonSvc = LoadModule("TycoonService", function()
-	local S = TycoonService.create(PlayerSvc, PurchaseSvc)
-	S:Init()
-	return S
-end)
-
-if not TycoonSvc then
-	error("[Bootstrap] TycoonService failed to initialize — cannot continue.")
-end
-
-PlayerSvc.TycoonService = TycoonSvc
-
 local BuildSvc = LoadModule("BuildService", function()
-	local S = BuildService.create(PlayerSvc, TycoonSvc)
-	S:Init()
-	return S
+	BuildService.Init()
+	return BuildService
 end)
-if BuildSvc then
-	PlayerSvc.BuildService = BuildSvc
+if not BuildSvc then
+	error("[Bootstrap] BuildService failed to initialize — cannot continue.")
 end
+TycoonService.Init(PurchaseSvc, BuildSvc)
 
 local _NukeSvc = LoadModule("NukeService", function()
-	local S = NukeService.new(TycoonSvc, PlayerSvc)
-	S:Init()
-	return S
+	NukeService.Init(BuildSvc)
+	return NukeService
 end)
 
 local _EnvironmentSvc = LoadModule("EnvironmentService", function()
-	local S = EnvironmentService.new({
+	EnvironmentService.Configure({
 		LightingPackage = Assets.Lighting,
 		Props = workspace.Map.Props,
 		Packets = Packets,
 		BuildAssemble = BuildAssemble,
 	})
-	S:Init()
-	return S
+	EnvironmentService.Start()
+	return EnvironmentService
 end)
 
 local _RarityBoxSvc = LoadModule("RarityBoxService", function()
-	local S = RarityBoxService.new(Packets)
-	S:Init()
-	return S
+	RarityBoxService.Init(Packets)
+	return RarityBoxService
 end)
 
 local _LeaderboardSvc = LoadModule("LeaderboardService", function()
-	local S = LeaderboardService.new()
-	S:Init()
-	return S
+	LeaderboardService.Init()
+	return LeaderboardService
 end)
 
 local _KOTHSvc = LoadModule("KOTHService", function()
-	local S = KOTHService.new()
-	S:Init()
-	return S
+	KOTHService.Init()
+	return KOTHService
 end)
 
 local _InventorySvc = LoadModule("InventoryServer", function()
-	local S = InventoryServer.new()
-	S:Start()
-	return S
+	InventoryServer.Start()
+	return InventoryServer
 end)
 
 local CodeSvc = LoadModule("CodeService", function()
-	local S = CodeService.new()
-	S:Init()
-	return S
+	CodeService.Init()
+	return CodeService
 end)

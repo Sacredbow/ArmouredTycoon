@@ -120,7 +120,7 @@ local function formatHistory(history)
 	end
 
 	local lines = {}
-	for index, sample in ipairs(history) do
+	for index, sample in history do
 		lines[index] = string.format("%d. %s @ %s", index, formatVector3(sample.Position), tostring(sample.Time or "?"))
 	end
 

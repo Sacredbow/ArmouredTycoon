@@ -3,7 +3,7 @@
 	@class DamageSystem
 
 	@desc
-	Processes DamageRequest entities — applies damage to humanoids,
+	Processes DamageRequest entities â€” applies damage to humanoids,
 	tracks the last damager for kill credit, and cleans up request entities.
 ]]
 
@@ -11,22 +11,18 @@
 
 const Players = game:GetService("Players")
 const ServerScriptService = game:GetService("ServerScriptService")
-
 --// Modules
 
 const DamageRuntimeState = require(ServerScriptService.Services.Combat.DamageRuntimeState)
-
 --// Module
 
 return function(context: any)
 	const World = context.world
 	const Components = context.Components
-
 	for Entity, DamageRequest in World:query(Components.DamageRequest) do
 		const Humanoid = DamageRequest.humanoid
 		const Attacker = DamageRequest.attacker
 		const Amount = DamageRequest.amount
-
 		if Humanoid and Humanoid.Parent and Humanoid.Health > 0 and Amount and Amount > 0 then
 			-- Never award kill credit for self-inflicted damage (anti-farming).
 			if Attacker and Attacker.Character ~= Humanoid.Parent then
@@ -34,11 +30,8 @@ return function(context: any)
 				CreatorTag.Name = "creator"
 				CreatorTag.Value = Attacker
 				CreatorTag.Parent = Humanoid
-				task.delay(1, function()
-					if CreatorTag.Parent then
-						CreatorTag:Destroy()
-					end
-				end)
+				const TagEntity = World:entity()
+				World:set(TagEntity, Components.CreatorTagLifetime, { Tag = CreatorTag, Remaining = 1 })
 
 				DamageRuntimeState.SetLastDamager(Humanoid, Attacker.UserId)
 			end

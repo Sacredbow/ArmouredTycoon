@@ -25,10 +25,10 @@ const Workspace = game:GetService("Workspace")
 
 --// Modules
 
-const ECS = require(ReplicatedStorage.ECS)
+const ECS = require(ReplicatedStorage.Shared.Core.ECS)
 const Types = require(script.Parent.Types)
 const Security = require(script.Parent.Security)
-const WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
+const WeaponDefinitionResolver = require(ReplicatedStorage.Shared.Game.Combat.Weapons.Resolver)
 const ShotAuthority = require(script.Parent.ShotAuthority)
 const Weapons = require(script.Parent.Weapons)
 const State = require(script.Parent.State)
@@ -122,14 +122,11 @@ function HandleShieldHit(player: Player, shieldModel: Model)
 		return
 	end
 	local weapon = character:FindFirstChildOfClass("Tool")
-	local settingsModule = weapon and WeaponDefinitionResolver.getSettings(weapon)
-	if not settingsModule or not settingsModule:IsA("ModuleScript") then
+	local settings = weapon and WeaponDefinitionResolver.getSettingsData(weapon)
+	if type(settings) ~= "table" or type(settings.LimbDamage) ~= "table" then
 		return
 	end
-	local success, settings = pcall(require, settingsModule)
-	if not success or type(settings) ~= "table" or type(settings.LimbDamage) ~= "table" then
-		return
-	end
+
 	local damage = settings.LimbDamage[1]
 	if type(damage) ~= "number" or damage ~= damage or damage <= 0 then
 		return

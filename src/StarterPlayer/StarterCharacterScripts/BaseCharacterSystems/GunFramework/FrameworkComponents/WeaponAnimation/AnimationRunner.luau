@@ -10,9 +10,7 @@
 
 local AnimationRunner = {}
 
-export type AnimationContext = {
-	any
-}
+export type AnimationContext = { any }
 
 function AnimationRunner.run(animationName: string, callback: () -> ()): boolean
 	-- xpcall preserves a useful traceback, which matters because animation errors

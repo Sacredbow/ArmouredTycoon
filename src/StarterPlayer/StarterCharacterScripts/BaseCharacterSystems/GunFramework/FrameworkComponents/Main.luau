@@ -36,8 +36,8 @@ const PlayersService = game:GetService("Players")
 
 --// Modules
 
-local RuntimeSettings = require(ReplicatedStorage.Modules.SettingsManager.RuntimeSettings)
-local PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+local RuntimeSettings = require(ReplicatedStorage.Shared.Platform.Settings.RuntimeSettings)
+local PacketBootstrap = require(ReplicatedStorage.Shared.Platform.Network.PacketBootstrap)
 local Packets = PacketBootstrap.Get()
 
 local Engine = ReplicatedStorage:WaitForChild("ACS_Engine")
@@ -60,7 +60,7 @@ local Runtime = require(script.Parent.Core.Runtime)
 local FeatureFlags = require(script.Parent.Core.FeatureFlags)
 local InputBindings = require(script.Parent.Core.InputBindings)
 local WeaponToolClassifier = require(script.Parent.Core.WeaponToolClassifier)
-local WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
+local WeaponDefinitionResolver = require(ReplicatedStorage.Shared.Game.Combat.Weapons.Resolver)
 local InputController = require(script.Parent.Core.InputController)
 local EquipController = require(script.Parent.Core.EquipController)
 local CameraController = require(script.Parent.Core.CameraController)
@@ -805,7 +805,7 @@ function Main.start(hostScript)
 		if not WeaponToolClassifier.canEquip(toolData, FeatureFlags) then return end
 		if humanoid.Sit and humanoid.SeatPart and humanoid.SeatPart:IsA("VehicleSeat") then return end
 		equipGeneration += 1
-		if not equipController:setup(tool) then
+		if not equipController:init(tool) then
 			equipGeneration -= 1
 			return
 		end
@@ -992,16 +992,11 @@ function Main.start(hostScript)
 		if not tool or not tool:IsA("Tool") or not WeaponDefinitionResolver.getSettings(tool) then
 			return
 		end
-		local settingsModule = WeaponDefinitionResolver.getSettings(tool)
-		local settingsLoaded = false
-		local dataModule: any = nil
-		if settingsModule then
-			settingsLoaded, dataModule = pcall(require, settingsModule)
-		end
-		if not settingsLoaded or type(dataModule) ~= "table" then
-			return
-		end
-		local storedAmmo = equipController:getStoredAmmo()
+                const dataModule = WeaponDefinitionResolver.getSettingsData(tool)
+                if type(dataModule) ~= "table" then
+                        return
+                end
+                local storedAmmo = equipController:getStoredAmmo()
 		if data.infinite then
 			local configuredReserve = if typeof(dataModule.StoredAmmo) == "number" then dataModule.StoredAmmo else storedAmmo
 			local maxReserve = if typeof(dataModule.MaxStoredAmmo) == "number" then dataModule.MaxStoredAmmo else configuredReserve
@@ -1032,7 +1027,7 @@ function Main.start(hostScript)
 		castController:Destroy()
 		inputController:destroy()
 		crosshairController:destroy()
-		for _, conn in ipairs(connections) do conn:Disconnect() end
+		for _, conn in connections do conn:Disconnect() end
 		table.clear(connections)
 		RunService:UnbindFromRenderStep(renderStepName)
 		InputBindings.unbindDefaultActions(ContextActionService)

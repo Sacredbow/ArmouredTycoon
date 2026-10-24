@@ -11,8 +11,8 @@ if not character then
 end
 
 local Janitor = require(ReplicatedStorage.Packages.janitor)
-local ECS = require(ReplicatedStorage.ECS)
-local CharacterMovementSystem = require(ReplicatedStorage.CharacterUtilities.CharacterMovementSystem)
+local ECS = require(ReplicatedStorage.Shared.Core.ECS)
+local CharacterMovementSystem = require(ReplicatedStorage.Shared.Game.Character.CharacterMovementSystem)
 local janitor = Janitor.new()
 
 local movement = {
@@ -59,17 +59,29 @@ local function bindSprintButton()
 		end
 
 		boundButton = instance
-		janitor:Add(instance.InputBegan:Connect(function(input: InputObject)
-			if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-				movement.IsRunning = true
-			end
-		end), "Disconnect")
+		janitor:Add(
+			instance.InputBegan:Connect(function(input: InputObject)
+				if
+					input.UserInputType == Enum.UserInputType.Touch
+					or input.UserInputType == Enum.UserInputType.MouseButton1
+				then
+					movement.IsRunning = true
+				end
+			end),
+			"Disconnect"
+		)
 
-		janitor:Add(instance.InputEnded:Connect(function(input: InputObject)
-			if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-				movement.IsRunning = false
-			end
-		end), "Disconnect")
+		janitor:Add(
+			instance.InputEnded:Connect(function(input: InputObject)
+				if
+					input.UserInputType == Enum.UserInputType.Touch
+					or input.UserInputType == Enum.UserInputType.MouseButton1
+				then
+					movement.IsRunning = false
+				end
+			end),
+			"Disconnect"
+		)
 	end
 
 	for _, descendant in playerGui:GetDescendants() do
@@ -97,39 +109,51 @@ end
 
 bindSprintButton()
 
-janitor:Add(UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
-	if gameProcessed then
-		return
-	end
+janitor:Add(
+	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
+		if gameProcessed then
+			return
+		end
 
-	setMoveKeyFromInput(input.KeyCode, true)
+		setMoveKeyFromInput(input.KeyCode, true)
 
-	if input.KeyCode == Enum.KeyCode.LeftShift then
-		movement.IsRunning = true
-	elseif input.KeyCode == Enum.KeyCode.Space then
-		movement.JumpHeld = true
-	end
-end), "Disconnect", "InputBegan")
+		if input.KeyCode == Enum.KeyCode.LeftShift then
+			movement.IsRunning = true
+		elseif input.KeyCode == Enum.KeyCode.Space then
+			movement.JumpHeld = true
+		end
+	end),
+	"Disconnect",
+	"InputBegan"
+)
 
-janitor:Add(UserInputService.InputEnded:Connect(function(input: InputObject, _gameProcessed: boolean)
-	-- Always release held input; UI focus can consume the key-up event.
-	setMoveKeyFromInput(input.KeyCode, false)
+janitor:Add(
+	UserInputService.InputEnded:Connect(function(input: InputObject, _gameProcessed: boolean)
+		-- Always release held input; UI focus can consume the key-up event.
+		setMoveKeyFromInput(input.KeyCode, false)
 
-	if input.KeyCode == Enum.KeyCode.LeftShift then
+		if input.KeyCode == Enum.KeyCode.LeftShift then
+			movement.IsRunning = false
+		elseif input.KeyCode == Enum.KeyCode.Space then
+			movement.JumpHeld = false
+		end
+	end),
+	"Disconnect",
+	"InputEnded"
+)
+
+janitor:Add(
+	UserInputService.WindowFocusReleased:Connect(function()
+		-- losing focus can strand keys as pressed, so reset the whole snapshot
+		for key in movement.PressedKeys do
+			movement.PressedKeys[key] = false
+		end
 		movement.IsRunning = false
-	elseif input.KeyCode == Enum.KeyCode.Space then
 		movement.JumpHeld = false
-	end
-end), "Disconnect", "InputEnded")
-
-janitor:Add(UserInputService.WindowFocusReleased:Connect(function()
-	-- losing focus can strand keys as pressed, so reset the whole snapshot
-	for key in movement.PressedKeys do
-		movement.PressedKeys[key] = false
-	end
-	movement.IsRunning = false
-	movement.JumpHeld = false
-end), "Disconnect", "WindowFocusReleased")
+	end),
+	"Disconnect",
+	"WindowFocusReleased"
+)
 
 local cleanedUp = false
 script.Destroying:Connect(function()

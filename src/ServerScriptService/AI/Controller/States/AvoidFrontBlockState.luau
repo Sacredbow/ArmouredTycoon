@@ -6,11 +6,9 @@ local Types = require(script.Parent.Parent.Core.Types)
 type AIContext = Types.AIContext
 type StateMachineLike = Types.StateMachineLike
 
-
 local AvoidFrontBlockState = {
 	Name = "AvoidFrontBlock",
 }
-
 
 function AvoidFrontBlockState.Enter(context: AIContext, machine: StateMachineLike)
 	local blocker = context.AvoidTarget

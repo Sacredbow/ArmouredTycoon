@@ -15,7 +15,7 @@ const ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 --// Modules
 
-const QuestOptions = require(ReplicatedStorage.Progression.QuestOptions)
+const QuestOptions = require(ReplicatedStorage.Shared.Game.Progression.QuestOptions)
 
 --// Module
 

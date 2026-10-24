@@ -9,7 +9,7 @@
 --// Services
 
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
-const Packets = require(ReplicatedStorage.Network.Packets)
+const Packets = require(ReplicatedStorage.Shared.Platform.Network.Packets)
 const ServerScriptService = game:GetService("ServerScriptService")
 
 --// Modules

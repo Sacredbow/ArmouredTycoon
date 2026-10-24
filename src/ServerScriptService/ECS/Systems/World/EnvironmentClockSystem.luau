@@ -11,7 +11,6 @@
 
 const ServerScriptService = game:GetService("ServerScriptService")
 const EnvironmentService = require(ServerScriptService.Services.World.EnvironmentService)
-
 --// Module
 
 return function(context: any)

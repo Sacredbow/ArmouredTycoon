@@ -3,70 +3,62 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
-local Packets = require(ReplicatedStorage.Network.Packets)
+local Packets = require(ReplicatedStorage.Shared.Platform.Network.Packets)
 local NetworkGuard = require(ServerScriptService.Services.Networking.NetworkGuard)
+
 local InventoryServer = {}
-InventoryServer.__index = InventoryServer
+local Started = false
+local Disconnect: (() -> ())? = nil
 
-function InventoryServer.new()
-	return setmetatable({
-		_started = false,
-	}, InventoryServer)
-end
-
-local function playerOwnsTool(player: Player, tool: Tool): boolean
-	local backpack = player:FindFirstChildOfClass("Backpack")
-	if backpack and tool:IsDescendantOf(backpack) then
+local function PlayerOwnsTool(Player: Player, Tool: Tool): boolean
+	local Backpack = Player:FindFirstChildOfClass("Backpack")
+	if Backpack and Tool:IsDescendantOf(Backpack) then
 		return true
 	end
 
-	local character = player.Character
-	return character ~= nil and tool:IsDescendantOf(character)
+	local Character = Player.Character
+	return Character ~= nil and Tool:IsDescendantOf(Character)
 end
 
-function InventoryServer:_removeTool(player: Player, tool: Instance?)
-	if not tool or not tool:IsA("Tool") then
-		warn(`[InventoryServer] {player.Name} sent RemoveTool with an invalid tool`)
+local function RemoveTool(Player: Player, Tool: Instance?)
+	if not Tool or not Tool:IsA("Tool") then
+		warn(`[InventoryServer] {Player.Name} sent RemoveTool with an invalid tool`)
 		return
 	end
 
-	if not playerOwnsTool(player, tool) then
-		warn(`[InventoryServer] {player.Name} targeted unowned tool {tool:GetFullName()}`)
+	if not PlayerOwnsTool(Player, Tool) then
+		warn(`[InventoryServer] {Player.Name} targeted unowned tool {Tool:GetFullName()}`)
 		return
 	end
 
-	tool:Destroy()
+	Tool:Destroy()
 end
 
-function InventoryServer:Start()
-	if self._started then
+function InventoryServer.Start()
+	if Started then
 		return
 	end
 
-	self._disconnect = NetworkGuard.Listen(
-		Packets.packets.InventoryAction,
-		"InventoryAction",
-		{
-			Rate = 8,
-			Burst = 12,
-			Validate = function(payload)
-				return type(payload) == "table"
-					and payload.action == "RemoveTool"
-					and (payload.tool == nil or typeof(payload.tool) == "Instance")
-			end,
-		},
-		function(payload, player)
-			self:_removeTool(player, payload.tool)
-		end
-	)
-	self._started = true
+	Disconnect = NetworkGuard.Listen(Packets.packets.InventoryAction, "InventoryAction", {
+		Rate = 8,
+		Burst = 12,
+		Validate = function(Payload)
+			return type(Payload) == "table"
+				and Payload.action == "RemoveTool"
+				and (Payload.tool == nil or typeof(Payload.tool) == "Instance")
+		end,
+	}, function(Payload, Player)
+		RemoveTool(Player, Payload.tool)
+	end)
+	Started = true
 end
 
-function InventoryServer:Destroy()
-	if self._disconnect then
-		self._disconnect()
-		self._disconnect = nil
+function InventoryServer.Destroy()
+	if Disconnect then
+		Disconnect()
+		Disconnect = nil
 	end
-	self._started = false
+	Started = false
 end
+
 return InventoryServer

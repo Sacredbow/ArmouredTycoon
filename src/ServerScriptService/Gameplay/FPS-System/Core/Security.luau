@@ -10,7 +10,7 @@
 --// Types
 
 const Types = require(script.Parent.Types)
-const WeaponDefinitionResolver = require(game:GetService("ReplicatedStorage").Weapons.Resolver)
+const WeaponDefinitionResolver = require(game:GetService("ReplicatedStorage").Shared.Game.Combat.Weapons.Resolver)
 
 --// Public API
 
@@ -90,17 +90,12 @@ function SecureSettings(player: Player, gun: Tool?, clientSettings: any?): any?
 		return nil
 	end
 
-	local settingsModule = WeaponDefinitionResolver.getSettings(gun)
-	if not settingsModule or not settingsModule:IsA("ModuleScript") then
-		RejectRequest(player, "weapon is missing ACS_Settings")
-		return nil
-	end
-
-	local success, serverSettings = pcall(require, settingsModule)
-	if not success or type(serverSettings) ~= "table" then
+	const serverSettings = WeaponDefinitionResolver.getSettingsData(gun)
+	if type(serverSettings) ~= "table" then
 		RejectRequest(player, "weapon settings could not be loaded")
 		return nil
 	end
+
 	if clientSettings ~= nil and not CompareSettings(clientSettings, serverSettings) then
 		RejectRequest(player, "weapon settings mismatch")
 		return nil

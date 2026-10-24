@@ -38,7 +38,7 @@ local function InitializeNPCControllers(NpcFolder: Folder, ControllerMap: NPCCon
 	for _, Instance: Instance in NpcFolder:GetChildren() do
 		if Instance:IsA("Model") and Instance:FindFirstChildOfClass("Humanoid") then
 			const Npc: Model = Instance
-			ControllerMap[Npc.Name] = NPCData.new(Npc)
+			ControllerMap[Npc.Name] = NPCData.Create(Npc)
 		else
 			warn(`[AIController] Skipping "{Instance.Name}" because it is not a valid NPC model`)
 		end
@@ -71,5 +71,5 @@ NPCs.ChildAdded:Connect(function(Instance: Instance)
 		return
 	end
 
-	NPCController[Npc.Name] = NPCData.new(Npc)
+	NPCController[Npc.Name] = NPCData.Create(Npc)
 end)

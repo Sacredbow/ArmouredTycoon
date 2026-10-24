@@ -15,6 +15,7 @@ const CollectionService = game:GetService("CollectionService")
 const Players = game:GetService("Players")
 const ServerScriptService = game:GetService("ServerScriptService")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
+const ECS = require(ReplicatedStorage.Shared.Core.ECS)
 const Observers = require(ReplicatedStorage.Packages.Observers)
 
 --// Modules
@@ -23,8 +24,8 @@ const ProfileManager = require(ServerScriptService.DataManager.ProfileManager)
 const ProductRewards = require(script.Parent.Handlers.ProductRewards)
 const GearDistribution = require(script.Parent.Handlers.GearDistribution)
 const GamepassCache = require(script.Parent.GamepassCache)
-const TycoonRuntime = require(ServerScriptService.ECS.TycoonRuntime)
-const TycoonFactory = require(ServerScriptService.ECS.TycoonFactory)
+const TycoonRuntime = require(ServerScriptService.Game.Tycoon.TycoonCoordinator)
+const TycoonFactory = require(ServerScriptService.Game.Tycoon.TycoonFactory)
 
 --// Types
 
@@ -55,6 +56,23 @@ const GamepassIds: { [string]: number } = {
 }
 
 const ProcessingReceipts: { [any]: ProcessingReceiptSet } = setmetatable({}, { __mode = "k" })
+
+
+local function FindOwnedTycoon(Player: Player): number?
+	for Entity, OwnerData in ECS.world:query(ECS.Components.Owner) do
+		if OwnerData.player == Player then return Entity end
+	end
+	return nil
+end
+
+local function SetPlayerComponent(Player: Player, Component: any, Value: any)
+	for Entity, PlayerRef in ECS.world:query(ECS.Components.PlayerRef) do
+		if PlayerRef == Player then
+			ECS.world:set(Entity, Component, Value)
+			return
+		end
+	end
+end
 
 local function ResolveButtonGamepassId(Button: BasePart, GamepassKey: string?): number?
 	if GamepassKey then
@@ -101,59 +119,59 @@ end
 --// Module
 
 const CommerceService = {}
-CommerceService.__index = CommerceService
+local Initialized = false
 
 --// Constructor
 
-function CommerceService.new(PlayerService: any): any
-	const Self = setmetatable({}, CommerceService)
-	Self.PlayerService = PlayerService
-	Self.ProfileManager = ProfileManager
-	Self.PurchaseHandlers = {} :: { [number]: PurchaseHandler }
-	Self.PendingPurchases = setmetatable({}, { __mode = "k" }) :: { [Player]: PendingPurchase }
-	Self.GamepassCache = GamepassCache.new()
-	Self.GamepassCache:RegisterGamepass(GamepassIds.RainbowCarpet, "RainbowCarpet")
-	Self.GamepassCache:RegisterGamepass(GamepassIds.Raygun, "Raygun")
-	Self.GamepassCache:RegisterGamepass(GamepassIds.X2Cash, "X2Cash")
-	Self.GamepassCache:RegisterGamepass(GamepassIds.SWAT_Gamepass, "SWAT_Gamepass")
-	Self.GamepassCache:RegisterGamepass(GamepassIds.GoldenDropper, "GoldenDropper")
-	return Self
-end
-
 --// Public API
 
-function CommerceService:Init()
-	self:_SetupProductHandlers()
-	self:_SetupProcessReceipt()
-	self:_SetupGamepassHandlers()
+function CommerceService.Init()
+	if Initialized then
+		return
+	end
+
+	Initialized = true
+	CommerceService.ProfileManager = ProfileManager
+	CommerceService.PurchaseHandlers = {}
+	CommerceService.PendingPurchases = setmetatable({}, { __mode = "k" })
+	GamepassCache.Configure({
+		RainbowCarpet = GamepassIds.RainbowCarpet,
+		Raygun = GamepassIds.Raygun,
+		X2Cash = GamepassIds.X2Cash,
+		SWAT_Gamepass = GamepassIds.SWAT_Gamepass,
+		GoldenDropper = GamepassIds.GoldenDropper,
+	})
+	CommerceService._SetupProductHandlers()
+	CommerceService._SetupProcessReceipt()
+	CommerceService._SetupGamepassHandlers()
 	Observers.observePlayer(function(Player: Player)
 		return function()
-			self.PendingPurchases[Player] = nil
+			CommerceService.PendingPurchases[Player] = nil
 		end
 	end)
 end
 
 --// Internal Methods -- Setup
 
-function CommerceService:_SetupProductHandlers()
+function CommerceService._SetupProductHandlers()
 	for ProductId, Handler in ProductRewards do
-		self.PurchaseHandlers[ProductId] = Handler
+		CommerceService.PurchaseHandlers[ProductId] = Handler
 	end
 end
 
-function CommerceService:_SetupProcessReceipt()
+function CommerceService._SetupProcessReceipt()
 	MarketplaceService.ProcessReceipt = function(ReceiptInfo)
 		const Player = Players:GetPlayerByUserId(ReceiptInfo.PlayerId)
 		if not Player then
 			return Enum.ProductPurchaseDecision.NotProcessedYet
 		end
 
-		const Profile = self.ProfileManager.Profiles[Player]
+		const Profile = CommerceService.ProfileManager.Profiles[Player]
 		if not Profile or not Profile:IsActive() then
 			return Enum.ProductPurchaseDecision.NotProcessedYet
 		end
 
-		const Handler = self.PurchaseHandlers[ReceiptInfo.ProductId]
+		const Handler = CommerceService.PurchaseHandlers[ReceiptInfo.ProductId]
 		if not Handler then
 			warn(
 				`[CommerceService] No receipt handler exists for product {ReceiptInfo.ProductId} (purchase {tostring(ReceiptInfo.PurchaseId)})`
@@ -184,7 +202,7 @@ function CommerceService:_SetupProcessReceipt()
 
 			Processing[PurchaseId] = true
 			const Success, Decision = xpcall(function()
-				return Handler(Player, self.ProfileManager)
+				return Handler(Player, CommerceService.ProfileManager)
 			end, debug.traceback)
 			Processing[PurchaseId] = nil
 
@@ -212,9 +230,9 @@ function CommerceService:_SetupProcessReceipt()
 	end
 end
 
-function CommerceService:_HandleSWATItemClick(Player: Player, ModelParent: Model, TycoonModel: Model)
-	const OwnedTycoon = self.PlayerService:GetTycoon(Player)
-	if not OwnedTycoon or TycoonFactory.getModel(OwnedTycoon) ~= TycoonModel then
+function CommerceService._HandleSWATItemClick(Player: Player, ModelParent: Model, TycoonModel: Model)
+	const OwnedTycoon = FindOwnedTycoon(Player)
+	if not OwnedTycoon or TycoonFactory.GetModel(OwnedTycoon) ~= TycoonModel then
 		return
 	end
 
@@ -222,10 +240,10 @@ function CommerceService:_HandleSWATItemClick(Player: Player, ModelParent: Model
 		return
 	end
 
-	local Ownership = self.GamepassCache:GetOwnership(Player, GamepassIds.SWAT_Gamepass)
+	local Ownership = GamepassCache.GetOwnership(Player, GamepassIds.SWAT_Gamepass)
 	if Ownership == nil then
 		const Success, Result = pcall(function()
-			return self.GamepassCache:Refresh(Player, GamepassIds.SWAT_Gamepass)
+			return GamepassCache.Refresh(Player, GamepassIds.SWAT_Gamepass)
 		end)
 		if not Success then
 			warn(`[CommerceService] SWAT ownership check failed for {Player.Name}: {Result}`)
@@ -250,7 +268,7 @@ function CommerceService:_HandleSWATItemClick(Player: Player, ModelParent: Model
 	end
 end
 
-function CommerceService:_SetupSWATGamepassClickHandlers()
+function CommerceService._SetupSWATGamepassClickHandlers()
 	const TycoonsFolder = workspace:FindFirstChild("Tycoons")
 	if not TycoonsFolder then
 		return
@@ -278,7 +296,7 @@ function CommerceService:_SetupSWATGamepassClickHandlers()
 				const ClickDetector = Descendant:FindFirstChildWhichIsA("ClickDetector")
 				if ClickDetector then
 					ClickDetector.MouseClick:Connect(function(Player: Player)
-						self:_HandleSWATItemClick(Player, Descendant, TycoonModel)
+						CommerceService._HandleSWATItemClick(Player, Descendant, TycoonModel)
 					end)
 				end
 			end
@@ -286,18 +304,18 @@ function CommerceService:_SetupSWATGamepassClickHandlers()
 	end
 end
 
-function CommerceService:_SetupGamepassHandlers()
-	self:_SetupSWATGamepassClickHandlers()
+function CommerceService._SetupGamepassHandlers()
+	CommerceService._SetupSWATGamepassClickHandlers()
 
 	Observers.observePlayer(function(Player: Player)
-		self:_CheckGamepassOwnership(Player)
+		CommerceService._CheckGamepassOwnership(Player)
 	end)
 
 	MarketplaceService.PromptGamePassPurchaseFinished:Connect(
 		function(Player: Player, GamepassId: number, WasPurchased: boolean)
 			if WasPurchased then
-				self.GamepassCache:SetOwned(Player, GamepassId, true)
-			elseif not self.GamepassCache:Has(Player, GamepassId) then
+				GamepassCache.SetOwned(Player, GamepassId, true)
+			elseif not GamepassCache.Has(Player, GamepassId) then
 				-- Player cancelled the purchase and does not own the gamepass.
 				return
 			end
@@ -308,37 +326,37 @@ function CommerceService:_SetupGamepassHandlers()
 			elseif GamepassId == GamepassIds.Raygun then
 				GearDistribution.GiveRayGun(Player)
 			elseif GamepassId == GamepassIds.X2Cash then
-				self.PlayerService:SetX2(Player, true)
+				SetPlayerComponent(Player, ECS.Components.X2, true)
 			end
 
-			self:CompletePendingPurchase(Player, GamepassId)
+			CommerceService.CompletePendingPurchase(Player, GamepassId)
 		end
 	)
 end
 
-function CommerceService:_CheckGamepassOwnership(Player: Player)
+function CommerceService._CheckGamepassOwnership(Player: Player)
 	task.delay(2, function()
 		if not Player.Parent then
 			return
 		end
 
-		self.GamepassCache:Warm(Player)
+		GamepassCache.Warm(Player)
 
-		if self.GamepassCache:Has(Player, GamepassIds.RainbowCarpet) then
+		if GamepassCache.Has(Player, GamepassIds.RainbowCarpet) then
 			GearDistribution.GiveRainbowCarpet(Player)
 		end
 
-		if self.GamepassCache:Has(Player, GamepassIds.Raygun) then
+		if GamepassCache.Has(Player, GamepassIds.Raygun) then
 			GearDistribution.GiveRayGun(Player)
 		end
 
-		if self.GamepassCache:Has(Player, GamepassIds.X2Cash) then
-			self.PlayerService:SetX2(Player, true)
+		if GamepassCache.Has(Player, GamepassIds.X2Cash) then
+			SetPlayerComponent(Player, ECS.Components.X2, true)
 		end
 	end)
 end
 
-function CommerceService:PromptGamepass(
+function CommerceService.PromptGamepass(
 	Player: Player,
 	Button: BasePart,
 	Tycoon: TycoonPurchaseTarget,
@@ -350,10 +368,10 @@ function CommerceService:PromptGamepass(
 		return
 	end
 
-	local Ownership = self.GamepassCache:GetOwnership(Player, GamepassId)
+	local Ownership = GamepassCache.GetOwnership(Player, GamepassId)
 	if Ownership == nil then
 		const Success, Result = pcall(function()
-			return self.GamepassCache:Refresh(Player, GamepassId)
+			return GamepassCache.Refresh(Player, GamepassId)
 		end)
 		if not Success then
 			warn(`[CommerceService] Ownership check failed for {Player.Name}, pass {GamepassId}: {Result}`)
@@ -367,11 +385,11 @@ function CommerceService:PromptGamepass(
 	end
 
 	if Ownership then
-		TycoonRuntime.applyPurchasedButton(Tycoon, Button)
+		TycoonRuntime.ApplyPurchasedButton(Tycoon, Button)
 		return
 	end
 
-	self.PendingPurchases[Player] = {
+	CommerceService.PendingPurchases[Player] = {
 		Tycoon = Tycoon,
 		Button = Button,
 		GamepassId = GamepassId,
@@ -379,8 +397,8 @@ function CommerceService:PromptGamepass(
 	MarketplaceService:PromptGamePassPurchase(Player, GamepassId)
 end
 
-function CommerceService:CompletePendingPurchase(Player: Player, PurchasedGamepassId: number?)
-	const Data = self.PendingPurchases[Player]
+function CommerceService.CompletePendingPurchase(Player: Player, PurchasedGamepassId: number?)
+	const Data = CommerceService.PendingPurchases[Player]
 	if not Data then
 		return
 	end
@@ -392,10 +410,10 @@ function CommerceService:CompletePendingPurchase(Player: Player, PurchasedGamepa
 	const Tycoon = Data.Tycoon
 	const Button = Data.Button
 	if Tycoon and Button and Button.Parent then
-		TycoonRuntime.applyPurchasedButton(Tycoon, Button)
+		TycoonRuntime.ApplyPurchasedButton(Tycoon, Button)
 	end
 
-	self.PendingPurchases[Player] = nil
+	CommerceService.PendingPurchases[Player] = nil
 end
 
 return CommerceService

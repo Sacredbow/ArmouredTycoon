@@ -18,7 +18,7 @@
 const TweenService = game:GetService("TweenService")
 const UserInputService = game:GetService("UserInputService")
 const ReplicatedStorage = game:GetService("ReplicatedStorage")
-const PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+const PacketBootstrap = require(ReplicatedStorage.Shared.Platform.Network.PacketBootstrap)
 const Packets = PacketBootstrap.Get()
 
 --// Micro-Optimisations

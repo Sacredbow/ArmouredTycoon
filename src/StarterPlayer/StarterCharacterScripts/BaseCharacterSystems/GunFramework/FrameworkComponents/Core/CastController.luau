@@ -19,7 +19,7 @@ const ReplicatedStorage = game:GetService("ReplicatedStorage")
 const Runtime = require(script.Parent.Runtime)
 const HitResolver = require(script.Parent.Parent.Combat.HitResolver)
 const HitMod = require(ReplicatedStorage["ACS_Engine"].Modules:WaitForChild("Hitmarker"))
-const PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+const PacketBootstrap = require(ReplicatedStorage.Shared.Platform.Network.PacketBootstrap)
 const Packets = PacketBootstrap.Get()
 
 --// Constants
@@ -225,7 +225,7 @@ function CastController:createBullet(
 			})
 		end
 
-		local ProjectileVisuals = require(game:GetService("ReplicatedStorage").Modules.ProjectileVisuals)
+		local ProjectileVisuals = require(game:GetService("ReplicatedStorage").Shared.Game.Combat.ProjectileRenderer)
 		ProjectileVisuals.spawnTracer(origin, direction, {
 			parent = self._effectsFolder,
 			weaponData = self._weaponData,

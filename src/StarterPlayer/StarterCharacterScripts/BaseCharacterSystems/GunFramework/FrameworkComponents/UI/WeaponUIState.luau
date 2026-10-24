@@ -10,7 +10,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local ClientRuntimeState = require(ReplicatedStorage.Modules.ClientRuntimeState)
+local ClientRuntimeState = require(ReplicatedStorage.Shared.Game.Combat.ClientRuntimeState)
 
 local WeaponUIState = {}
 
@@ -75,7 +75,15 @@ function WeaponUIState.publishCrosshair(player: Player, info: CrosshairInfo)
 	})
 end
 
-function WeaponUIState.publishHud(player: Player, weaponData: WeaponData?, ammo: number?, storedAmmo: number?, safeMode: boolean, shootType: number?, jammed: boolean?)
+function WeaponUIState.publishHud(
+	player: Player,
+	weaponData: WeaponData?,
+	ammo: number?,
+	storedAmmo: number?,
+	safeMode: boolean,
+	shootType: number?,
+	jammed: boolean?
+)
 	if not weaponData or weaponData.Type ~= "Gun" then
 		WeaponUIState.clear(player)
 		return
@@ -84,7 +92,9 @@ function WeaponUIState.publishHud(player: Player, weaponData: WeaponData?, ammo:
 	local maxAmmo = math.max(read(weaponData.Ammo, 0), 0)
 	local currentAmmo = math.max(read(ammo, read(weaponData.AmmoInGun, maxAmmo)), 0)
 	local reserveAmmo = math.max(read(storedAmmo, read(weaponData.StoredAmmo, 0)), 0)
-	local magazines = if read(weaponData.MagCount, false) and maxAmmo > 0 then countMagazines(reserveAmmo, maxAmmo) else reserveAmmo
+	local magazines = if read(weaponData.MagCount, false) and maxAmmo > 0
+		then countMagazines(reserveAmmo, maxAmmo)
+		else reserveAmmo
 	local zeroText = if read(weaponData.EnableZeroing, false) then `{read(weaponData.CurrentZero, 0)} m` else "0 m"
 
 	ClientRuntimeState.SetWeaponState(player, {

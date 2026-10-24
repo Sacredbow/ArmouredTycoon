@@ -18,14 +18,14 @@ const ContextActionService = game:GetService("ContextActionService")
 const Runtime = require(script.Parent.Runtime)
 const FeatureFlags = require(script.Parent.FeatureFlags)
 const WeaponToolClassifier = require(script.Parent.WeaponToolClassifier)
-const WeaponDefinitionResolver = require(ReplicatedStorage.Weapons.Resolver)
+const WeaponDefinitionResolver = require(ReplicatedStorage.Shared.Game.Combat.Weapons.Resolver)
 const AttachmentController = require(script.Parent.Parent.Combat.AttachmentController)
 const AttachmentModifiers = require(script.Parent.Parent.Combat.AttachmentModifiers)
 const WeaponAnimator = require(script.Parent.Parent.WeaponAnimation.WeaponAnimator)
 const AnimationController = require(script.Parent.AnimationController)
 const WeaponUIState = require(script.Parent.Parent.UI.WeaponUIState)
 const WeaponHudAdapter = require(script.Parent.Parent.UI.WeaponHudAdapter)
-const PacketBootstrap = require(ReplicatedStorage.Network.PacketBootstrap)
+const PacketBootstrap = require(ReplicatedStorage.Shared.Platform.Network.PacketBootstrap)
 const Packets = PacketBootstrap.Get()
 
 --// Engine Folders
@@ -316,7 +316,7 @@ function EquipController:loadAttachment(weapon: any)
 end
 
 
-function EquipController:setup(tool: Tool): boolean
+function EquipController:init(tool: Tool): boolean
 	if self._toolEquip then
 		return false
 	end
@@ -329,26 +329,17 @@ function EquipController:setup(tool: Tool): boolean
 		return false
 	end
 
-	const weaponId = WeaponDefinitionResolver.getId(tool) or tool.Name
+	const weaponId = WeaponDefinitionResolver.assignId(tool) or tool.Name
 	const gunModelCheck = self._gunModels:FindFirstChild(weaponId)
 	if not gunModelCheck or not gunModelCheck:IsA("Model") then
 		warn(("[ACS] Gun model does not exist for weapon %s"):format(weaponId))
 		return false
 	end
 
-	const settingsModule = WeaponDefinitionResolver.getSettings(tool)
-	const animationsModule = WeaponDefinitionResolver.getAnimations(tool)
-
-	if not settingsModule or not settingsModule:IsA("ModuleScript")
-		or not animationsModule or not animationsModule:IsA("ModuleScript") then
-		warn(("[ACS] %s is missing authored settings or animations"):format(tool.Name))
-		return false
-	end
-
-	local settingsOk, loadedSettings = pcall(require, settingsModule)
-	local animationsOk, loadedAnimations = pcall(require, animationsModule)
-	if not settingsOk or type(loadedSettings) ~= "table"
-		or not animationsOk or type(loadedAnimations) ~= "table"
+	const loadedSettings = WeaponDefinitionResolver.getSettingsData(tool)
+	const loadedAnimations = WeaponDefinitionResolver.getAnimationsData(tool)
+	if type(loadedSettings) ~= "table"
+		or type(loadedAnimations) ~= "table"
 		or typeof(loadedAnimations.MainCFrame) ~= "CFrame"
 		or typeof(loadedAnimations.GunCFrame) ~= "CFrame" then
 		warn(("[ACS] %s has invalid authored settings or animations"):format(tool.Name))

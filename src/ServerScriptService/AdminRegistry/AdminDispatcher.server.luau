@@ -3,7 +3,7 @@
 local ServerStorage = game:GetService("ServerStorage")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Observers = require(ReplicatedStorage.Packages.Observers)
-local Packets = require(ReplicatedStorage.Network.Packets)
+local Packets = require(ReplicatedStorage.Shared.Platform.Network.Packets)
 
 local Administrator = ServerStorage:WaitForChild("AdminRegistry")
 

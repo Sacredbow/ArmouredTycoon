@@ -84,4 +84,3 @@ function ReloadController.insertOne(state: AmmoState): AmmoState
 end
 
 return ReloadController
-

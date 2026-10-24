@@ -13,9 +13,12 @@ local Spring = require(script.Parent.Parent.Spring)
 local BobLayer = {}
 BobLayer.__index = BobLayer
 
-export type BobLayer = typeof(setmetatable({} :: {
-	_intensity: any,
-}, BobLayer))
+export type BobLayer = typeof(setmetatable(
+	{} :: {
+		_intensity: any,
+	},
+	BobLayer
+))
 
 function BobLayer.new(): BobLayer
 	return setmetatable({
@@ -44,21 +47,14 @@ function BobLayer:Evaluate(deltaTime: number, moveSpeed: number, isSprinting: bo
 	local roll = math.sin(t * rate) * (if isSprinting then 1.15 else 0.55) * intensity
 	local pitch = math.cos(t * rate * 0.5) * 0.35 * intensity
 
-	local main =
-		CFrame.new(x, -y, 0)
-		* CFrame.Angles(math.rad(pitch), 0, math.rad(roll))
+	local main = CFrame.new(x, -y, 0) * CFrame.Angles(math.rad(pitch), 0, math.rad(roll))
 
-	local gun =
-		CFrame.new(x * 0.35, -y * 0.18, 0)
-		* CFrame.Angles(math.rad(pitch * 0.25), 0, math.rad(roll * 0.3))
+	local gun = CFrame.new(x * 0.35, -y * 0.18, 0) * CFrame.Angles(math.rad(pitch * 0.25), 0, math.rad(roll * 0.3))
 
-	local leftArm =
-		CFrame.new(-x * 0.25, y * 0.12, 0)
+	local leftArm = CFrame.new(-x * 0.25, y * 0.12, 0)
 		* CFrame.Angles(math.rad(-pitch * 0.12), 0, math.rad(-roll * 0.16))
 
-	local rightArm =
-		CFrame.new(x * 0.18, y * 0.08, 0)
-		* CFrame.Angles(math.rad(pitch * 0.1), 0, math.rad(roll * 0.12))
+	local rightArm = CFrame.new(x * 0.18, y * 0.08, 0) * CFrame.Angles(math.rad(pitch * 0.1), 0, math.rad(roll * 0.12))
 
 	return Pose.new(main, gun, leftArm, rightArm)
 end
